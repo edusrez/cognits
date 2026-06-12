@@ -1,8 +1,8 @@
-"""Port de internal/agent/agent.go: el bucle agéntico (stream → tool calls →
-ejecutar → repetir hasta finish_reason != tool_calls o max_steps).
+"""Port of internal/agent/agent.go: the agentic loop (stream → tool calls →
+execute → repeat until finish_reason != tool_calls or max_steps).
 
-Los eventos son dicts {"type": str, "data": Any}. emit no debe bloquear: se
-llama desde el callback del stream, en el event loop.
+Events are dicts {"type": str, "data": Any}. emit must not block: it's called
+from the stream callback, on the event loop.
 """
 
 from __future__ import annotations
@@ -50,8 +50,8 @@ class Agent:
         iteration = 0
         while cfg.max_steps == 0 or iteration < cfg.max_steps:
             content_parts: list[str] = []
-            # Los índices de tool calls pueden venir dispersos: acumular por
-            # índice y recorrer ordenado, sin asumir 0..n-1.
+            # Tool call indices can come scattered: accumulate by index and
+            # iterate sorted, without assuming 0..n-1.
             tool_accs: dict[int, dict] = {}
             finish_reason = ""
 

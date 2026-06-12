@@ -16,7 +16,7 @@ export default function ContextMenu(props: {
   const [pos, setPos] = createSignal({ x: props.x, y: props.y })
   let menuRef: HTMLDivElement | undefined
 
-  // Reposicionar tras medir el menú para que no se salga del viewport.
+  // Reposition after measuring the menu so it doesn't overflow the viewport.
   onMount(() => {
     if (!menuRef) return
     const rect = menuRef.getBoundingClientRect()

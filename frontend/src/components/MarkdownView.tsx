@@ -1,8 +1,8 @@
 import { createMemo } from "solid-js"
 import { renderMarkdown, renderMarkdownStreaming } from "../lib/markdown"
 
-// Único punto de inserción de HTML derivado de markdown: memoiza por contenido
-// y elige el render incremental mientras el mensaje sigue creciendo.
+// Single insertion point for HTML derived from markdown: memoizes by content
+// and chooses incremental rendering while the message is still growing.
 export default function MarkdownView(props: { content: string; streaming?: boolean }) {
   const html = createMemo(() =>
     props.streaming ? renderMarkdownStreaming(props.content) : renderMarkdown(props.content),

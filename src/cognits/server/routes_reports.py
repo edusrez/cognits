@@ -1,4 +1,4 @@
-"""Port de internal/server/reports.go."""
+"""Port of internal/server/reports.go."""
 
 from __future__ import annotations
 

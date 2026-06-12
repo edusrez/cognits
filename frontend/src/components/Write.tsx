@@ -3,7 +3,7 @@ import { sendMessage, isStreaming } from "../stores/chat-store"
 import { writeLangs } from "../stores/settings-store"
 
 export default function Write() {
-  const lang = createMemo(() => writeLangs()[0] || "es")
+  const lang = createMemo(() => writeLangs()[0] || "en")
   const spellcheck = createMemo(() => writeLangs().length > 0)
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -25,7 +25,7 @@ export default function Write() {
         spellcheck={spellcheck()}
         lang={lang()}
         class="border border-white/20 px-3 py-3 text-[13px] bg-transparent text-[#e0e0e0] w-full h-full resize-none outline-none"
-        placeholder={isStreaming() ? "La IA está respondiendo..." : "Escribe tu mensaje... (Ctrl+Enter para enviar)"}
+        placeholder={isStreaming() ? "AI is responding..." : "Type your message... (Ctrl+Enter to send)"}
         disabled={isStreaming()}
       />
     </div>

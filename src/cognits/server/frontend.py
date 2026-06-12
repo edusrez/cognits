@@ -1,7 +1,7 @@
-"""Port de internal/server/frontend.go: sirve el SPA empaquetado.
+"""Port of internal/server/frontend.go: serves the packaged SPA.
 
-Solo el index va sin caché; los assets llevan hash/cache-buster en el nombre
-y pueden cachearse con normalidad.
+Only the index is served uncached; assets carry a hash/cache-buster in
+their name and can be cached normally.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ def register_prod_frontend(app: FastAPI) -> None:
                 headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
             )
         target = (root / path).resolve()
-        # Nunca servir fuera del directorio empaquetado.
+        # Never serve outside the packaged directory.
         if not target.is_relative_to(root) or not target.is_file():
             return PlainTextResponse("404 page not found\n", status_code=404)
         return FileResponse(target)

@@ -1,9 +1,9 @@
-"""Rutas de datos y configuración.
+"""Data and configuration paths.
 
-Los datos viven en cwd/.cognits (antes cwd/.learnit, era del backend Go).
-Durante la transición ambos nombres son válidos: si solo existe .learnit se
-usa in place, sin renombrar, para que el binario Go legado pueda seguir
-abriendo los mismos datos hasta que se retire.
+Data lives in cwd/.cognits (formerly cwd/.learnit, from the Go backend).
+During the transition both names are valid: if only .learnit exists it is
+used in place, without renaming, so the legacy Go binary can keep opening
+the same data until it is retired.
 """
 
 import os
@@ -30,8 +30,8 @@ LEGACY_DB_FILE_NAME = "learnit.db"
 
 
 def db_path(base: Path) -> Path:
-    """Base de datos en base/cognits.db; si solo existe el learnit.db del
-    backend Go se sigue usando in place (mismo esquema)."""
+    """Database at base/cognits.db; if only the Go backend's learnit.db
+    exists it is used in place (same schema)."""
     target = base / DB_FILE_NAME
     legacy = base / LEGACY_DB_FILE_NAME
     if not target.exists() and legacy.exists():
@@ -40,13 +40,13 @@ def db_path(base: Path) -> Path:
 
 
 def user_config_dir() -> Path:
-    # Clon de os.UserConfigDir de Go: en Windows usa APPDATA (Roaming), que es
-    # donde el backend Go dejó la clave; platformdirs usaría LocalAppData y la
-    # perdería.
+    # Clone of Go's os.UserConfigDir: on Windows it uses APPDATA (Roaming),
+    # which is where the Go backend stored the key; platformdirs would use
+    # LocalAppData and lose it.
     if sys.platform == "win32":
         appdata = os.environ.get("APPDATA")
         if not appdata:
-            raise RuntimeError("APPDATA no está definido")
+            raise RuntimeError("APPDATA is not set")
         return Path(appdata)
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support"
@@ -61,5 +61,5 @@ def encryption_key_path() -> Path:
 
 
 def go_encryption_key_path() -> Path:
-    """Donde el backend Go guardaba la clave (~/.config/learnit/...)."""
+    """Where the Go backend stored the key (~/.config/learnit/...)."""
     return user_config_dir() / "learnit" / "encryption.key"

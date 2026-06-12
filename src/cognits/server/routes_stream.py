@@ -1,11 +1,11 @@
-"""Port de internal/server/session_stream.go: el wire format SSE exacto.
+"""Port of internal/server/session_stream.go: the exact SSE wire format.
 
-- `history` siempre primero (snapshot atómico con la suscripción).
-- Tokens SIN línea `event:`, en formato OpenAI delta.
-- Keepalive como comentario `: keepalive` cada 15s.
-- Al terminar el run se drena la cola pendiente y se emite `done` (data: null
-  en la ruta viva, data: {} en la ruta snapshot — las dos variantes existen
-  en el Go original).
+- `history` always first (snapshot atomic with the subscription).
+- Tokens WITHOUT an `event:` line, in OpenAI delta format.
+- Keepalive as a `: keepalive` comment every 15s.
+- When the run ends, the pending queue is drained and `done` is emitted
+  (data: null on the live route, data: {} on the snapshot route — both
+  variants exist in the original Go).
 """
 
 from __future__ import annotations
@@ -64,9 +64,9 @@ def register(app: FastAPI, st) -> None:
         if sa is None:
             return await _messages_snapshot(st, session_id)
 
-        # Suscripción y snapshot son atómicos (sección síncrona): ningún
-        # evento puede quedar a la vez dentro del snapshot y pendiente en la
-        # cola (duplicaría tokens).
+        # Subscription and snapshot are atomic (synchronous section): no
+        # event can be both inside the snapshot and pending in the queue
+        # (that would duplicate tokens).
         queue, snap = sa.subscribe_with_snapshot()
 
         history = {
@@ -84,7 +84,7 @@ def register(app: FastAPI, st) -> None:
                 yield f"event: history\ndata: {_dumps(history)}\n\n"
                 while True:
                     if sa.done_event.is_set():
-                        # Drenar los eventos pendientes antes de cerrar.
+                        # Drain pending events before closing.
                         while True:
                             try:
                                 ev = queue.get_nowait()
@@ -98,12 +98,12 @@ def register(app: FastAPI, st) -> None:
                     try:
                         ev = await asyncio.wait_for(queue.get(), timeout=KEEPALIVE_SECONDS)
                     except TimeoutError:
-                        # Detecta clientes muertos al escribir; sin esto un
-                        # cliente desconectado retendría el generador.
+                        # Detects dead clients on write; without this a
+                        # disconnected client would hold the generator open.
                         yield ": keepalive\n\n"
                         continue
                     if ev is None:
-                        continue  # sentinela de close(): vuelve al check de done
+                        continue  # close() sentinel: back to the done check
                     out = _format_event(ev)
                     if out:
                         yield out

@@ -1,4 +1,4 @@
-"""Port de internal/agent/tools/rag_search.go."""
+"""Port of internal/agent/tools/rag_search.go."""
 
 from __future__ import annotations
 
@@ -13,17 +13,17 @@ class RagSearch(Tool):
 
     name = "rag_search"
     description = (
-        "Busca informacion en la base de conocimiento interna (informes de "
-        "investigacion y documentacion indexada). Devuelve fragmentos "
-        "relevantes con su fuente y puntuacion de similitud."
+        "Search the internal knowledge base (indexed research reports and "
+        "documentation). Returns relevant fragments with their source and "
+        "similarity score."
     )
     schema = {
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "Texto de busqueda semantica"},
+            "query": {"type": "string", "description": "Semantic search text"},
             "max_results": {
                 "type": "integer",
-                "description": "Maximo de fragmentos a devolver (por defecto 10)",
+                "description": "Maximum number of fragments to return (default 10)",
             },
         },
         "required": ["query"],

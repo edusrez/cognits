@@ -1,4 +1,4 @@
-"""Port de internal/storage/db_test.go + smoke FTS5 end-to-end."""
+"""Port of internal/storage/db_test.go + smoke FTS5 end-to-end."""
 
 import pytest
 
@@ -80,21 +80,21 @@ def test_fts_search_end_to_end(store):
     assert "<mark>" in result["reports"][0]["titleHighlighted"]
     assert "score" in result["reports"][0]
 
-    # Actualizar un informe debe reindexar vía triggers (upsert sin REPLACE).
+    # Updating a report must reindex via triggers (upsert without REPLACE).
     rid = result["reports"][0]["id"]
     store.save(
         Report(
             id=rid,
             session_id="s1",
             title="Historia de Rust",
-            content="Rust nació en Mozilla.",
+            content="Rust was born at Mozilla.",
             summary="Origen de Rust",
         )
     )
     assert store.search_reports_fts(1, 10, "", "python")["total"] == 0
     assert store.search_reports_fts(1, 10, "", "rust")["total"] == 1
 
-    # Borrar también debe salir del índice.
+    # Deleting must also remove from the index.
     store.delete_report(rid)
     assert store.search_reports_fts(1, 10, "", "rust")["total"] == 0
 
@@ -109,18 +109,18 @@ def test_search_reports_like(store):
 
 def test_messages_roundtrip(store):
     msgs = [
-        MessageRow(session_id="s1", role="user", content="hola"),
-        MessageRow(session_id="s1", role="assistant", content="¿qué tal?", reasoning="pensando"),
+        MessageRow(session_id="s1", role="user", content="hello"),
+        MessageRow(session_id="s1", role="assistant", content="how are you?", reasoning="thinking"),
     ]
     store.save_messages("s1", msgs)
-    store.append_message("s1", MessageRow(session_id="s1", role="user", content="bien"))
+    store.append_message("s1", MessageRow(session_id="s1", role="user", content="good"))
 
     loaded = store.load_messages("s1")
-    assert [m.content for m in loaded] == ["hola", "¿qué tal?", "bien"]
-    assert loaded[1].reasoning == "pensando"
+    assert [m.content for m in loaded] == ["hello", "how are you?", "good"]
+    assert loaded[1].reasoning == "thinking"
     assert loaded[0].created_at != ""
 
-    # save_messages reemplaza el historial entero (DELETE+INSERT).
+    # save_messages replaces the full history (DELETE+INSERT).
     store.save_messages("s1", msgs[:1])
     assert len(store.load_messages("s1")) == 1
 
@@ -133,7 +133,7 @@ def test_session_config_roundtrip(store):
 
     assert store.load_session_config("nope") is None
     store.save_session_config(
-        SessionConfigRow("s1", "deepseek", "deepseek-v4-pro", "max", "orquestador")
+        SessionConfigRow("s1", "deepseek", "deepseek-v4-pro", "max", "orchestrator")
     )
     cfg = store.load_session_config("s1")
     assert cfg.to_json() == {
@@ -141,5 +141,5 @@ def test_session_config_roundtrip(store):
         "provider": "deepseek",
         "model": "deepseek-v4-pro",
         "reasoning": "max",
-        "agentId": "orquestador",
+        "agentId": "orchestrator",
     }

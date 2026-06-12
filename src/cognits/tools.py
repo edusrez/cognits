@@ -1,4 +1,4 @@
-"""Port de internal/tools/tools.go: registry de herramientas del agente."""
+"""Port of internal/tools/tools.go: agent tool registry."""
 
 from __future__ import annotations
 
@@ -25,9 +25,9 @@ class Tool(ABC):
 
     @abstractmethod
     async def execute(self, raw_args: str) -> str:
-        """Recibe los argumentos como JSON crudo (puede venir malformado del
-        LLM); los errores de uso se devuelven como JSON {"error": ...}, no
-        como excepción, para que el modelo pueda corregirse."""
+        """Receives arguments as raw JSON (may come malformed from the LLM);
+        usage errors are returned as JSON {"error": ...}, not as an
+        exception, so the model can correct itself."""
 
 
 class Registry:
@@ -41,8 +41,8 @@ class Registry:
         return self._tools.get(name)
 
     def definitions(self) -> list[dict]:
-        # Orden estable (por nombre): un orden variable cambiaría el prompt
-        # entre peticiones y rompería el prefix-cache de DeepSeek.
+        # Stable order (by name): a variable order would change the prompt
+        # between requests and break DeepSeek's prefix-cache.
         defs = []
         for name in sorted(self._tools):
             t = self._tools[name]

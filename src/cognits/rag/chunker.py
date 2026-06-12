@@ -1,8 +1,8 @@
-"""Port de internal/rag/chunker.go.
+"""Port of internal/rag/chunker.go.
 
-Los IDs generados ({report_id}_c{idx}) deben coincidir con los del backend Go
-para no duplicar chunks de informes ya indexados: len() de str en Python
-cuenta codepoints, igual que utf8.RuneCountInString.
+The generated IDs ({report_id}_c{idx}) must match those from the Go backend
+to avoid duplicating chunks from already indexed reports: len() of str in
+Python counts codepoints, same as utf8.RuneCountInString.
 """
 
 from __future__ import annotations
@@ -12,9 +12,9 @@ CHUNK_OVERLAP = 160
 
 
 def split_paragraphs(md: str) -> list[str]:
-    """Separa por líneas en blanco, pero trata cada bloque fenced (``` ... ```)
-    como un párrafo atómico: el split ciego por "\\n\\n" perdía los fences sin
-    líneas en blanco y filtraba código suelto sin contexto cuando las tenían."""
+    """Splits by blank lines, but treats each fenced block (``` ... ```)
+    as an atomic paragraph: a blind split by "\\n\\n" lost fences without
+    blank lines and filtered out loose code without context when they had them."""
     paragraphs: list[str] = []
     current: list[str] = []
     in_fence = False

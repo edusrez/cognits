@@ -44,9 +44,9 @@ export const [searchResults, { refetch: refetchReports }] = createResource(
   },
 )
 
-// El createResource ya reacciona al memo fuente: basta con actualizar las
-// señales (en batch, para un único fetch). refetchReports queda solo para
-// recargar tras acciones sin cambio de señal (p. ej. borrar un informe).
+// createResource already reacts to the source memo: just update the signals
+// (batched, for a single fetch). refetchReports remains only for reloading
+// after actions without signal change (e.g. deleting a report).
 export function setSearch(value: string) {
   if (debounceTimer) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {

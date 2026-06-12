@@ -1,8 +1,8 @@
-"""Port de internal/storage/db.go: SQLite con FTS5 de contenido externo.
+"""Port of internal/storage/db.go: SQLite with external-content FTS5.
 
-Una única conexión serializada con un lock de hilos: con un solo usuario
-local no hay contención real y evita los problemas de pool. Los métodos son
-síncronos; el código async los invoca vía asyncio.to_thread.
+A single connection serialized with a thread lock: with one local user
+there is no real contention and it avoids pool issues. Methods are
+synchronous; async code invokes them via asyncio.to_thread.
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ from pathlib import Path
 
 SCHEMA_VERSION = 1
 
-# baseSchema es idempotente (CREATE IF NOT EXISTS). reports_fts es una tabla
-# FTS5 de contenido externo: el texto vive solo en reports y los triggers
-# mantienen el índice sincronizado, sin duplicar datos.
+# The base schema is idempotent (CREATE IF NOT EXISTS). reports_fts is an
+# external-content FTS5 table: the text lives only in reports and the
+# triggers keep the index in sync, without duplicating data.
 BASE_SCHEMA = """
     CREATE TABLE IF NOT EXISTS reports (
         id TEXT PRIMARY KEY,
@@ -52,7 +52,7 @@ BASE_SCHEMA = """
         provider TEXT NOT NULL DEFAULT 'deepseek',
         model TEXT NOT NULL DEFAULT 'deepseek-v4-pro',
         reasoning TEXT NOT NULL DEFAULT 'max',
-        agent_id TEXT NOT NULL DEFAULT 'orquestador'
+        agent_id TEXT NOT NULL DEFAULT 'orchestrator'
     );
 
     CREATE VIRTUAL TABLE IF NOT EXISTS reports_fts USING fts5(
@@ -160,7 +160,7 @@ def new_report_id() -> str:
 
 
 def escape_like(s: str) -> str:
-    # Neutraliza los comodines de LIKE; las cláusulas que lo usan llevan ESCAPE '\'.
+    # Neutralizes LIKE wildcards; clauses using this must carry ESCAPE '\'.
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
@@ -170,9 +170,9 @@ def build_fts5_query(raw: str) -> str:
         return ""
     processed = []
     for w in raw.split():
-        # Dentro de una cadena FTS5 solo la comilla doble es especial: se
-        # escapa doblándola. Trim no bastaba — una comilla interior (fo"o)
-        # rompía la query y devolvía 500.
+        # Inside an FTS5 string only the double quote is special: it is
+        # escaped by doubling it. Trimming was not enough — an interior
+        # quote (fo"o) broke the query and returned 500.
         w = w.strip("()*")
         w = w.replace('"', '""')
         if not w:
@@ -208,8 +208,8 @@ class ReportStore:
     def __init__(self, db_path: Path | str):
         self.db_path = str(db_path)
         self._lock = threading.Lock()
-        # isolation_level=None: autocommit; las transacciones se abren con
-        # BEGIN explícito. Misma semántica que database/sql en Go.
+        # isolation_level=None: autocommit; transactions are opened with an
+        # explicit BEGIN. Same semantics as Go's database/sql.
         self._conn = sqlite3.connect(
             self.db_path, check_same_thread=False, isolation_level=None
         )
@@ -229,9 +229,9 @@ class ReportStore:
             self._conn.execute("DROP TABLE temp.__fts5_check")
         except sqlite3.OperationalError as e:
             raise RuntimeError(
-                "Tu instalación de Python trae un SQLite sin FTS5, que Cognits "
-                "necesita para la búsqueda de informes. Instala un Python oficial "
-                "de python.org o uno gestionado por uv (uv python install 3.12)."
+                "Your Python installation ships a SQLite without FTS5, which "
+                "Cognits needs for report search. Install an official Python "
+                "from python.org or one managed by uv (uv python install 3.12)."
             ) from e
 
     def _migrate(self) -> None:
@@ -243,8 +243,8 @@ class ReportStore:
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='reports'"
             ).fetchone()[0]
             if has_reports:
-                # DB heredada (pre-versionado): copia de seguridad y limpieza de
-                # estructuras incompatibles antes de recrearlas con BASE_SCHEMA.
+                # Inherited DB (pre-versioning): back up and clean incompatible
+                # structures before recreating them with BASE_SCHEMA.
                 self._backup()
                 cur.execute("DROP TABLE IF EXISTS reports_fts")
                 has_api_key = cur.execute(
@@ -276,9 +276,9 @@ class ReportStore:
 
     def save(self, r: Report) -> None:
         src_json = json.dumps(r.sources if r.sources is not None else [])
-        # Upsert explícito en vez de INSERT OR REPLACE: REPLACE borra+inserta
-        # sin disparar los triggers de borrado, lo que corrompería el índice
-        # FTS de contenido externo.
+        # Explicit upsert instead of INSERT OR REPLACE: REPLACE deletes and
+        # re-inserts without firing the delete triggers, which would corrupt
+        # the external-content FTS index.
         with self._lock:
             self._conn.execute(
                 """INSERT INTO reports (id, session_id, title, content, summary, sources, subagent)
@@ -352,7 +352,7 @@ class ReportStore:
 
         fts_query = build_fts5_query(search)
         if not fts_query:
-            # Input sin términos útiles (solo comodines/paréntesis): MATCH '' falla.
+            # Input with no useful terms (only wildcards/parens): MATCH '' fails.
             return {"reports": [], "total": 0, "page": page, "totalPages": 1}
 
         sort_sql = {
@@ -442,8 +442,9 @@ class ReportStore:
                 raise
 
     def append_message(self, session_id: str, m: MessageRow) -> None:
-        # Inserta una sola fila al final del historial; save_messages reescribe
-        # la sesión entera y su transacción crece con la conversación.
+        # Inserts a single row at the end of the history; save_messages
+        # rewrites the whole session and its transaction grows with the
+        # conversation.
         with self._lock:
             self._conn.execute(
                 """INSERT INTO messages (session_id, role, content, reasoning, report_id, report_title)

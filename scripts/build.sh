@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build completo: frontend (bun + vite) → package data → wheel (uv build).
+# Full build: frontend (bun + vite) → package data → wheel (uv build).
 set -e
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -18,7 +18,7 @@ rm -rf dist
 uv build
 
 echo ""
-echo "Hecho. Instalar localmente con:"
+echo "Done. Install locally with:"
 echo "  uv tool install --force dist/cognits-*.whl"
 echo "Publicar en PyPI con:"
 echo "  uv publish"

@@ -1,8 +1,8 @@
-"""Port de internal/llm/deepseek.go: cliente streaming de DeepSeek.
+"""Port of internal/llm/deepseek.go: DeepSeek streaming client.
 
-El watchdog de inactividad de Go (120s) se obtiene gratis con el read timeout
-de httpx, que aplica a cada operación de lectura del socket, no al stream
-completo: si la API se queda muda sin FIN (NAT, wifi caída), salta ReadTimeout.
+The Go inactivity watchdog (120s) comes free with httpx's read timeout,
+which applies to each socket read operation, not the whole stream: if the
+API goes silent without FIN (NAT, wifi drop), ReadTimeout fires.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import httpx
 
 from cognits.llm.types import Message
 
-# Si la API deja de enviar datos este tiempo, el stream se da por muerto.
+# If the API stops sending data for this duration, the stream is considered dead.
 STREAM_IDLE_TIMEOUT = 120.0
 
 BASE_URL = "https://api.deepseek.com/chat/completions"
@@ -27,8 +27,8 @@ class DeepSeekError(Exception):
 class DeepSeekClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
-        # Timeouts por fase y nunca uno global: un timeout total cortaría
-        # streams legítimos de varios minutos.
+        # Phase timeouts, never a global one: a total timeout would cut
+        # legitimate multi-minute streams short.
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(
                 connect=10.0, read=STREAM_IDLE_TIMEOUT, write=30.0, pool=10.0
@@ -46,8 +46,8 @@ class DeepSeekClient:
         reasoning: str,
         on_chunk: Callable[[dict], None],
     ) -> None:
-        # La API de thinking es binaria: "high"/"max" → enabled. Con tools se
-        # omite el parámetro (la API lo rechaza en esa combinación).
+        # The thinking API is binary: "high"/"max" → enabled. With tools, omit
+        # the parameter (the API rejects that combination).
         body: dict = {
             "model": model,
             "messages": [m.to_payload() for m in messages],
@@ -68,8 +68,8 @@ class DeepSeekClient:
                 headers={"Authorization": f"Bearer {self.api_key}"},
             ) as resp:
                 if resp.status_code != 200:
-                    # Limitar la lectura (un cuerpo enorme inflaría logs/chat) y
-                    # extraer el mensaje del JSON de error de la API si lo trae.
+                    # Limit the read (a huge body would bloat logs/chat) and
+                    # extract the error message from the API JSON if present.
                     raw = (await resp.aread())[: 8 << 10]
                     msg = raw.decode("utf-8", errors="replace").strip()
                     try:
@@ -93,7 +93,7 @@ class DeepSeekClient:
                     on_chunk(chunk)
         except httpx.ReadTimeout as e:
             raise DeepSeekError(
-                f"deepseek: stream inactivo durante {int(STREAM_IDLE_TIMEOUT)}s"
+                f"deepseek: stream idle for {int(STREAM_IDLE_TIMEOUT)}s"
             ) from e
         except httpx.HTTPError as e:
             raise DeepSeekError(f"deepseek: request: {e}") from e

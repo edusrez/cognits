@@ -1,4 +1,4 @@
-"""Port de internal/tinyfish/client.go: búsqueda y fetch web."""
+"""Port of internal/tinyfish/client.go: web search and fetch."""
 
 from __future__ import annotations
 

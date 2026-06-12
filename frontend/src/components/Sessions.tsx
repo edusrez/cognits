@@ -47,7 +47,7 @@ export default function Sessions() {
     }
   }
 
-  // Enter solo quita el foco; el guardado único ocurre en blur (evita dos PUT).
+  // Enter only removes focus; the single save happens on blur (avoids two PUTs).
   const onRenameKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
@@ -78,7 +78,7 @@ export default function Sessions() {
           createNewSession()
         }}
       >
-        + Crear Sesión
+        + Create Session
       </button>
 
       <For each={sessions()}>
@@ -130,8 +130,8 @@ export default function Sessions() {
             y={m().y}
             onClose={() => setCtxMenu(null)}
             items={[
-              { label: "Renombrar", onClick: startRenaming },
-              { label: "Borrar", onClick: handleDelete, class: "text-red-400" },
+              { label: "Rename", onClick: startRenaming },
+              { label: "Delete", onClick: handleDelete, class: "text-red-400" },
             ]}
           />
         )}

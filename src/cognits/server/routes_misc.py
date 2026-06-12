@@ -1,4 +1,4 @@
-"""Port de internal/server/{api,agents,messages,session_config,desktops}.go."""
+"""Port of internal/server/{api,agents,messages,session_config,desktops}.go."""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ def register(app: FastAPI, st) -> None:
                 provider="deepseek",
                 model="deepseek-v4-pro",
                 reasoning="max",
-                agent_id="orquestador",
+                agent_id="orchestrator",
             )
         return JSONResponse(cfg.to_json())
 
@@ -152,8 +152,8 @@ def register(app: FastAPI, st) -> None:
 
         path = desktop_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        # Dos pestañas pueden persistir a la vez (BroadcastChannel): serializar
-        # y escribir atómicamente para no dejar el JSON truncado.
+        # Two tabs can persist at the same time (BroadcastChannel): serialize
+        # and write atomically so the JSON is never left truncated.
         async with st.desktop_lock:
             try:
                 await asyncio.to_thread(write_file_atomic, path, data)
