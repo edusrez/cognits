@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+dist/
+
+# Datos de runtime (sesiones, DB, índice RAG, claves cifradas)
+.learnit/
+.cognits/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+src/cognits/frontend_dist/
+
+# Binario Go legado (el código fuente de legacy/ sí se versiona)
+legacy/learnit
+
+# Local
+nohup.out
+*.log
+.claude/settings.local.json
