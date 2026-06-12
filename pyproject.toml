@@ -5,7 +5,7 @@ description = "Cognits — Context-Oriented Generation for Neural Intelligent Tu
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = "MIT"
-authors = [{ name = "Eduardo Suárez", email = "eduardosrez@gmail.com" }]
+authors = [{ name = "Eduardo Suárez", email = "edusrez@proton.me" }]
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
