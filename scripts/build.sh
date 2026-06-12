@@ -20,5 +20,5 @@ uv build
 echo ""
 echo "Done. Install locally with:"
 echo "  uv tool install --force dist/cognits-*.whl"
-echo "Publicar en PyPI con:"
+echo "Publish to PyPI with:"
 echo "  uv publish"
