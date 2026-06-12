@@ -5,19 +5,26 @@ __pycache__/
 .pytest_cache/
 dist/
 
-# Datos de runtime (sesiones, DB, índice RAG, claves cifradas)
+# Runtime data (sessions, DB, RAG index, encrypted keys)
 .learnit/
 .cognits/
 
-# Frontend
+# Frontend build artifacts
 frontend/node_modules/
 frontend/dist/
 src/cognits/frontend_dist/
 
-# Binario Go legado (el código fuente de legacy/ sí se versiona)
-legacy/learnit
+# Internal design docs and dev tooling
+IDEA.md
+CONVERSACION_CON_LA_IDEA.md
+AGENTS.md
+.opencode/
+opencode.jsonc
+.claude/
+
+# Legacy Go code (pre-Python rewrite, kept for reference)
+legacy/
 
 # Local
 nohup.out
 *.log
-.claude/settings.local.json
