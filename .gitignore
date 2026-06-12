@@ -12,7 +12,6 @@ dist/
 # Frontend build artifacts
 frontend/node_modules/
 frontend/dist/
-src/cognits/frontend_dist/
 
 # Internal design docs and dev tooling
 IDEA.md
