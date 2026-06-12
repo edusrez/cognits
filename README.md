@@ -2,38 +2,37 @@
 
 **C**ontext-**O**riented **G**eneration for **N**eural **I**ntelligent **T**utoring **S**ystems.
 
-Tutor personal multiagente con IA: un orquestador socrático coordina subagentes
-(documentalista con RAG local, investigador web) para guiar tu aprendizaje desde
-una interfaz web local, anclada a la carpeta del proyecto en el que estás
-aprendiendo.
+Multi-agent AI personal tutor: a Socratic orchestrator coordinates subagents
+(documentalist with local RAG, web researcher) to guide your learning from a
+local web interface, anchored to the project folder you're learning about.
 
-## Instalación
+## Installation
 
 ```bash
 uv tool install cognits
 ```
 
-> La instalación incluye el motor RAG local (onnxruntime + ChromaDB, ~600 MB).
-> En el primer arranque se descarga el modelo de embeddings BGE-M3 (~2,3 GB).
+> The installation includes the local RAG engine (onnxruntime + ChromaDB, ~600 MB).
+> On first launch, the BGE-M3 embeddings model is downloaded (~2.3 GB).
 
-## Uso
+## Usage
 
 ```bash
-cd mi-proyecto-de-aprendizaje
+cd my-learning-project
 cognits
 ```
 
-Arranca un servidor local (puerto 5173 por defecto, variable `PORT`) y abre la
-interfaz en el navegador. El estado vive en `./.cognits/` (sesiones, informes,
-configuración con claves cifradas, índice RAG).
+Starts a local server (port 5173 by default, `PORT` env var) and opens the
+interface in your browser. State lives in `./.cognits/` (sessions, reports,
+encrypted configuration, RAG index).
 
-## Desarrollo
+## Development
 
 ```bash
 scripts/dev.sh    # Vite (HMR) + uvicorn --reload
-scripts/build.sh  # build del frontend + wheel
+scripts/build.sh  # frontend build + wheel
 uv run pytest
 ```
 
-El frontend es una SPA SolidJS en `frontend/`; el backend es Python (FastAPI)
-en `src/cognits/`.
+The frontend is a SolidJS SPA in `frontend/`; the backend is Python (FastAPI)
+in `src/cognits/`.
