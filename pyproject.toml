@@ -4,7 +4,7 @@ version = "0.0.1"
 description = "Cognits — Context-Oriented Generation for Neural Intelligent Tutoring Systems. Tutor personal multiagente con IA."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
-license = "MIT"
+license = "AGPL-3.0-or-later"
 authors = [{ name = "Eduardo Suárez", email = "eduardosrez@gmail.com" }]
 dependencies = [
     "fastapi>=0.115",
