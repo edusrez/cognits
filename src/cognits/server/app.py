@@ -1,8 +1,8 @@
-"""Port de internal/server/server.go: estado de la aplicación y factory.
+"""Port of internal/server/server.go: application state and factory.
 
-Invariante de concurrencia: todo el estado compartido (cached_config,
-active_agents, pub/sub de SessionAgent) se toca solo desde el event loop;
-los handlers son async y delegan el I/O bloqueante a asyncio.to_thread.
+Concurrency invariant: all shared state (cached_config, active_agents,
+SessionAgent pub/sub) is touched only from the event loop; handlers are
+async and delegate blocking I/O to asyncio.to_thread.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ class AppState:
         # session_id -> SessionAgent (server/session_agent.py)
         self.active_agents: dict[str, object] = {}
         self.desktop_lock = asyncio.Lock()
-        self.rag = None  # rag.engine.RagEngine, se inicializa en main
+        self.rag = None  # rag.engine.RagEngine, initialized in main
 
         try:
             base = paths.data_dir()
@@ -58,8 +58,8 @@ class AppState:
             log.error("storage: init db: %s", e)
 
     async def drain_agents(self, timeout: float) -> None:
-        """Cancela todos los runs activos y espera a que sus finally persistan
-        la respuesta parcial, con un timeout total compartido."""
+        """Cancels all active runs and waits for their finally blocks to
+        persist the partial response, with a shared total timeout."""
         agents = list(self.active_agents.values())
         for sa in agents:
             sa.task.cancel()
@@ -70,7 +70,7 @@ class AppState:
         for t in pending:
             t.cancel()
         if pending:
-            log.warning("server: drain timeout (%d agentes sin cerrar)", len(pending))
+            log.warning("server: drain timeout (%d agents still open)", len(pending))
 
 
 def create_app(state: AppState | None = None) -> FastAPI:
@@ -79,9 +79,9 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
-        # El motor RAG carga en un hilo de fondo (ONNX ~5-15s, primera vez
-        # descarga ~2,3 GB): el servidor responde al instante y las tools
-        # degradan con error claro hasta que esté listo.
+        # The RAG engine loads in a background thread (ONNX ~5-15s, first
+        # run downloads ~2.3 GB): the server responds immediately and the
+        # tools degrade with a clear error until it is ready.
         if state.rag is None and os.environ.get("COGNITS_DISABLE_RAG") != "1":
             from cognits.rag.engine import RagEngine
 
@@ -109,8 +109,8 @@ def create_app(state: AppState | None = None) -> FastAPI:
     routes_chat.register(app, state)
     routes_stream.register(app, state)
 
-    # El catch-all del frontend va al final: Starlette resuelve por orden de
-    # registro y las rutas /api/* deben ganar.
+    # The frontend catch-all goes last: Starlette resolves routes in
+    # registration order and /api/* must win.
     if os.environ.get("ENV") == "dev":
         from cognits.server.devproxy import register_dev_proxy
 

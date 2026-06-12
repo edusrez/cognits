@@ -12,8 +12,8 @@ import {
 import { activeSessionId } from "./session-store"
 import { defaultChatViewport, defaultWriteViewport } from "./settings-store"
 
-// El efecto de App.tsx solo coloca las pestañas de sesión al cambiar de sesión;
-// al restaurar otro árbol de escritorio hay que re-colocarlas explícitamente.
+// App.tsx's effect only places session tabs when the session changes;
+// when restoring another desktop tree, they must be re-placed explicitly.
 function restoreSessionTabs() {
   if (activeSessionId()) {
     placeSessionTabs(defaultChatViewport(), defaultWriteViewport())
@@ -40,8 +40,8 @@ function initChannel() {
 }
 
 function persistDesktops() {
-  // Los snapshots del signal ya son objetos planos (salen de snapshotTree);
-  // no hace falta clonarlos antes de serializar.
+  // Signal snapshots are already plain objects (from snapshotTree);
+  // no need to clone them before serializing.
   fetch("/api/desktops", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -52,7 +52,7 @@ function persistDesktops() {
 function syncDesktops() {
   persistDesktops()
   if (desktopChannel) {
-    // postMessage ya hace structured clone del payload por su cuenta.
+    // postMessage already does structured clone of the payload on its own.
     desktopChannel.postMessage({
       type: "DESKTOPS_CHANGED",
       desktops: desktops(),

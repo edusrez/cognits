@@ -1,4 +1,4 @@
-"""Port de internal/server/sessions.go."""
+"""Port of internal/server/sessions.go."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ log = logging.getLogger("cognits.sessions")
 def register(app: FastAPI, st) -> None:
     def ensure_sessions():
         if st.store is None:
-            return text_error("almacenamiento no disponible", 503)
+            return text_error("storage not available", 503)
         return None
 
     @app.post("/api/sessions")
@@ -80,7 +80,7 @@ def register(app: FastAPI, st) -> None:
         except OSError as e:
             return text_error(str(e), 500)
 
-        # Los informes se conservan: son biblioteca transversal en la vista Learn It.
+        # Reports are kept: they are a cross-session library in the reports view.
         if st.report_store is not None:
             try:
                 await asyncio.to_thread(st.report_store.delete_messages_by_session, session_id)

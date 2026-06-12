@@ -34,25 +34,25 @@ export default function LearnitView() {
   })
 
   const sortOptions = [
-    { value: "date_desc" as const, label: "Fecha (más reciente)" },
-    { value: "date_asc" as const, label: "Fecha (más antiguo)" },
-    { value: "title_asc" as const, label: "Título (A-Z)" },
-    { value: "title_desc" as const, label: "Título (Z-A)" },
+    { value: "date_desc" as const, label: "Date (newest)" },
+    { value: "date_asc" as const, label: "Date (oldest)" },
+    { value: "title_asc" as const, label: "Title (A-Z)" },
+    { value: "title_desc" as const, label: "Title (Z-A)" },
   ]
 
   return (
     <div class="h-full overflow-y-auto px-3 py-2 text-[13px]">
-      <CollapsibleSection title="Informes" defaultOpen={true}>
+      <CollapsibleSection title="Reports" defaultOpen={true}>
         <div class="flex flex-col gap-2">
           <input
             type="text"
-            placeholder="Buscar informes..."
+            placeholder="Search reports..."
             onInput={(e) => setSearch(e.currentTarget.value)}
             class="bg-transparent border border-white/20 px-2 py-1 text-[13px] text-[#e0e0e0] outline-hidden focus:border-white/40"
           />
 
           <div class="flex items-center gap-1 text-[#9a9a9a]">
-            <span>Ordenar:</span>
+            <span>Sort:</span>
             <Dropdown
               value={sortBy()}
               options={sortOptions}
@@ -60,13 +60,13 @@ export default function LearnitView() {
               class="w-44"
             />
             <span class="ml-auto text-[#6a6a6a]">
-              {totalResults()} resultado{totalResults() !== 1 ? "s" : ""}
+              {totalResults()} result{totalResults() !== 1 ? "s" : ""}
             </span>
           </div>
 
           <Show
             when={displayReports().length > 0 || !searchResults.loading}
-            fallback={<div class="text-[#6a6a6a]">Cargando...</div>}
+            fallback={<div class="text-[#6a6a6a]">Loading...</div>}
           >
             <For each={displayReports()}>
               {(report: any) => (
@@ -112,17 +112,17 @@ export default function LearnitView() {
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
-                {" Anterior"}
+                {" Previous"}
               </button>
               <span class="text-[#9a9a9a]">
-                Pág. {currentPage()} de {totalPages()}
+                Page {currentPage()} of {totalPages()}
               </span>
               <button
                 class="border border-white/20 px-2 py-0.5 text-[13px] hover:bg-white/10 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                 disabled={currentPage() >= totalPages()}
                 onClick={() => goToPage(currentPage() + 1)}
               >
-                {"Siguiente "}
+                {"Next "}
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
@@ -140,7 +140,7 @@ export default function LearnitView() {
             onClose={() => setCtxMenu(null)}
             items={[
               {
-                label: "Abrir",
+                label: "Open",
                 onClick: () => {
                   const reportId = m().reportId
                   setCtxMenu(null)
@@ -150,7 +150,7 @@ export default function LearnitView() {
                 },
               },
               {
-                label: "Eliminar Informe",
+                label: "Delete Report",
                 class: "text-red-400",
                 onClick: async () => {
                   const reportId = m().reportId

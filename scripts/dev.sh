@@ -1,6 +1,6 @@
 #!/bin/bash
-# Entorno de desarrollo: Vite con HMR (5174) + uvicorn --reload (5173).
-# El backend en ENV=dev proxéa el frontend a Vite (HTTP y WebSocket).
+# Development environment: Vite with HMR (5174) + uvicorn --reload (5173).
+# The backend in ENV=dev proxies the frontend to Vite (HTTP and WebSocket).
 set -e
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 

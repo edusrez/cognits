@@ -78,17 +78,17 @@ function formatNumber(n: number): string {
 function tabDisplayName(tabId: string | null): string | null {
   const names: Record<string, string> = {
     chat: "Chat",
-    sessions: "Sesiones",
-    write: "Escribir",
+    sessions: "Sessions",
+    write: "Write",
     learnit: ".learnit",
   }
   return tabId ? names[tabId] ?? null : null
 }
 
-// Los agentes por defecto viven en el backend (internal/agent/prompts.go);
-// aquí solo se consultan para mostrarlos y editarlos vía agentOverrides.
+// Default agents live in the backend (internal/agent/prompts.go);
+// here they're only queried to display them and edit via agentOverrides.
 const [defaultAgents, setDefaultAgents] = createSignal<AgentDef[]>([
-  { id: "orquestador", name: "Orquestador", systemPrompt: "" },
+  { id: "orchestrator", name: "Orchestrator", systemPrompt: "" },
 ])
 
 fetch("/api/agents")
@@ -99,8 +99,8 @@ fetch("/api/agents")
   .catch(() => {})
 
 const basicTabs = [
-  { id: "files", label: "Archivos" },
-  { id: "sessions", label: "Sesiones" },
+  { id: "files", label: "Files" },
+  { id: "sessions", label: "Sessions" },
 ] as const
 
 type LinkTarget = "viewport" | "chat" | "write" | "learnit"
@@ -164,7 +164,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
     const tabId = linkedActiveTabId()
     if (!vpId) return
     const tabLabel = tabDisplayName(tabId)
-    const label = tabLabel ? `Ajustes (${tabLabel})` : "Ajustes"
+    const label = tabLabel ? `Settings (${tabLabel})` : "Settings"
     setTabLabel(vpId, "settings", label)
   })
 
@@ -194,9 +194,9 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
     saveConfig()
   }
 
-  // Un único listener vivo: si se re-activa el modo linking sin haber hecho
-  // clic, el anterior se retira antes de añadir el nuevo (y al desmontar),
-  // para no acumular listeners zombie en document.
+  // A single live listener: if linking mode is reactivated without having
+  // clicked, the previous one is removed before adding the new one (and on
+  // unmount), to avoid accumulating zombie listeners on document.
   let linkingHandler: ((e: MouseEvent) => void) | null = null
 
   const removeLinkingHandler = () => {
@@ -235,45 +235,45 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
     <div class="p-3 flex flex-col gap-3 text-[13px]">
       <Show when={!linkedViewport() && !scopedTabId()}>
         <p class="text-[#9a9a9a] leading-relaxed">
-          Ajustes funciona vinculado a un viewport para mostrar los ajustes
-          específicos de la pestaña activa de ese viewport.
+          Settings works linked to a viewport to show the specific
+          settings for that viewport's active tab.
         </p>
         <div class="flex justify-center">
           <button
             class="border border-white/20 px-3 py-1.5 hover:bg-white/10 transition-colors cursor-pointer w-full"
             onClick={() => beginLinking("viewport")}
           >
-            Vincular Viewport
+            Link Viewport
           </button>
         </div>
       </Show>
 
       <Show when={linkingMode()}>
-        <p class="text-[#9a9a9a]">Haz clic en un viewport para vincularlo.</p>
+        <p class="text-[#9a9a9a]">Click on a viewport to link it.</p>
       </Show>
 
       <Show when={linkedViewport() && linkedActiveTabId() === "sessions"}>
-        <CollapsibleSection title="Viewports de Chat y Escribir">
+        <CollapsibleSection title="Chat and Write Viewports">
           <div class="flex flex-col gap-2">
             <div class="flex items-center justify-between gap-2">
-              <span class="text-[#9a9a9a]">Viewport vinculado a Chat</span>
+              <span class="text-[#9a9a9a]">Viewport linked to Chat</span>
               <button
                 class="border border-white/20 px-3 py-1 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
                 onClick={() => beginLinking("chat")}
                 disabled={linkingMode()}
               >
-                Cambiar
+                Change
               </button>
             </div>
 
             <div class="flex items-center justify-between gap-2">
-              <span class="text-[#9a9a9a]">Viewport vinculado a Escribir</span>
+              <span class="text-[#9a9a9a]">Viewport linked to Write</span>
               <button
                 class="border border-white/20 px-3 py-1 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
                 onClick={() => beginLinking("write")}
                 disabled={linkingMode()}
               >
-                Cambiar
+                Change
               </button>
             </div>
           </div>
@@ -281,16 +281,16 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
       </Show>
 
       <Show when={linkedViewport() && linkedActiveTabId() === "learnit"}>
-        <CollapsibleSection title="Archivos del Proyecto">
+        <CollapsibleSection title="Project Files">
           <div class="flex flex-col gap-2">
             <div class="flex items-center justify-between gap-2">
-              <span class="text-[#9a9a9a]">Viewport vinculado a Informes</span>
+              <span class="text-[#9a9a9a]">Viewport linked to Reports</span>
               <button
                 class="border border-white/20 px-3 py-1 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
                 onClick={() => beginLinking("learnit")}
                 disabled={linkingMode()}
               >
-                Cambiar
+                Change
               </button>
             </div>
           </div>
@@ -298,9 +298,9 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
       </Show>
 
       <Show when={linkedViewport() && linkedActiveTabId() === "write"}>
-        <CollapsibleSection title="Escribir">
+        <CollapsibleSection title="Write">
           <div class="flex flex-col gap-2">
-            <div class="text-[#9a9a9a]">Idiomas del Corrector</div>
+            <div class="text-[#9a9a9a]">Spell Check Languages</div>
             {(["es", "en"] as const).map((lang) => {
               const active = () => writeLangs().includes(lang)
               return (
@@ -321,7 +321,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                     classList={{ "bg-white/20": active() }}
                   />
                   <span classList={{ "text-[#6a6a6a]": !active() }}>
-                    {lang === "es" ? "Español" : "English"}
+                    {lang === "es" ? "Spanish" : "English"}
                   </span>
                 </button>
               )
@@ -331,13 +331,13 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
       </Show>
 
       <Show when={linkedViewport() && linkedActiveTabId() === "chat"}>
-        <CollapsibleSection title="Información">
+        <CollapsibleSection title="Info">
           <div class="flex flex-col gap-1">
             <Show
               when={usageInfo()}
               fallback={
                 <span class="text-[#6a6a6a]">
-                  Envía un mensaje para ver las estadísticas de tokens.
+                  Send a message to see token statistics.
                 </span>
               }
             >
@@ -367,10 +367,10 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Agente">
+        <CollapsibleSection title="Agent">
           <div class="flex flex-col gap-2">
             <div class="flex flex-col gap-1">
-              <label class="text-[#9a9a9a]">Proveedor</label>
+              <label class="text-[#9a9a9a]">Provider</label>
               <Dropdown
                 value={activeProvider()}
                 options={[
@@ -400,7 +400,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                   class="border border-white/20 px-2 py-1 hover:bg-white/10 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                   onClick={() => setShowKey((p) => !p)}
                   disabled={conversationStarted()}
-                  title={showKey() ? "Ocultar" : "Mostrar"}
+                  title={showKey() ? "Hide" : "Show"}
                 >
                   {showKey() ? (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -418,7 +418,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
             </div>
 
             <div class="flex flex-col gap-1">
-              <label class="text-[#9a9a9a]">Modelo</label>
+              <label class="text-[#9a9a9a]">Model</label>
               <Dropdown
                 value={activeModel() as "deepseek-v4-flash" | "deepseek-v4-pro"}
                 options={[
@@ -435,13 +435,13 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
             </div>
 
             <div class="flex flex-col gap-1">
-              <label class="text-[#9a9a9a]">Razonamiento</label>
+              <label class="text-[#9a9a9a]">Reasoning</label>
               <Dropdown
                 value={activeReasoning() as "disabled" | "high" | "max"}
                 options={[
-                  { value: "disabled" as const, label: "Desactivado" },
-                  { value: "high" as const, label: "Alto" },
-                  { value: "max" as const, label: "Máximo" },
+                  { value: "disabled" as const, label: "Disabled" },
+                  { value: "high" as const, label: "High" },
+                  { value: "max" as const, label: "Maximum" },
                 ]}
                 onChange={(v) => {
                   const sid = activeSessionId()
@@ -453,7 +453,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
             </div>
 
             <div class="flex flex-col gap-1">
-              <label class="text-[#9a9a9a]">Agente</label>
+              <label class="text-[#9a9a9a]">Agent</label>
               <Dropdown
                 value={activeAgentId()}
                 options={agentOptions()}
@@ -473,7 +473,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                   <button
                     class="text-[#6a6a6a] hover:text-[#e0e0e0] transition-colors cursor-pointer"
                     onClick={resetPrompt}
-                    title="Restaurar prompt por defecto"
+                    title="Restore default prompt"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <polyline points="23 4 23 10 17 10" />
@@ -494,14 +494,14 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Subagentes">
+        <CollapsibleSection title="Subagents">
           <div class="flex flex-col gap-2">
             <div class="flex flex-col gap-1">
-              <label class="text-[#9a9a9a]">Subagente</label>
+              <label class="text-[#9a9a9a]">Subagent</label>
               <Dropdown
                 value={"web_researcher" as const}
                 options={[
-                  { value: "web_researcher" as const, label: "Investigador Web (def)" },
+                  { value: "web_researcher" as const, label: "Web Researcher (def)" },
                 ]}
                 onChange={() => {}}
                 disabled={true}
@@ -509,7 +509,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
             </div>
 
             <div class="flex flex-col gap-1">
-              <label class="text-[#9a9a9a]">Proveedor Servicio</label>
+              <label class="text-[#9a9a9a]">Service Provider</label>
               <Dropdown
                 value={"tinyfish" as const}
                 options={[
@@ -538,11 +538,11 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
             </div>
 
             <div class="flex flex-col gap-1">
-              <label class="text-[#9a9a9a]">Tarifa</label>
+              <label class="text-[#9a9a9a]">Tier</label>
               <Dropdown
                 value={tinyfishTier() as string}
                 options={[
-                  { value: "gratuito" as const, label: "Gratuito" },
+                  { value: "gratuito" as const, label: "Free" },
                   { value: "payg" as const, label: "PAYG" },
                   { value: "starter" as const, label: "Starter" },
                   { value: "pro" as const, label: "Pro" },
@@ -556,7 +556,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
             </div>
 
             <div class="flex flex-col gap-1">
-              <label class="text-[#9a9a9a]">Proveedor IA</label>
+              <label class="text-[#9a9a9a]">AI Provider</label>
               <Dropdown
                 value={"deepseek" as const}
                 options={[
@@ -568,7 +568,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
             </div>
 
             <div class="flex flex-col gap-1">
-              <label class="text-[#9a9a9a]">Modelo</label>
+              <label class="text-[#9a9a9a]">Model</label>
               <Dropdown
                 value={(subagentConfig()["web_researcher"]?.model || "deepseek-v4-flash") as "deepseek-v4-flash" | "deepseek-v4-pro"}
                 options={[
@@ -587,13 +587,13 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
             </div>
 
             <div class="flex flex-col gap-1">
-              <label class="text-[#9a9a9a]">Razonamiento</label>
+              <label class="text-[#9a9a9a]">Reasoning</label>
               <Dropdown
                 value={(subagentConfig()["web_researcher"]?.reasoning || "high") as "disabled" | "high" | "max"}
                 options={[
-                  { value: "disabled" as const, label: "Desactivado" },
-                  { value: "high" as const, label: "Alto" },
-                  { value: "max" as const, label: "Máximo" },
+                  { value: "disabled" as const, label: "Disabled" },
+                  { value: "high" as const, label: "High" },
+                  { value: "max" as const, label: "Maximum" },
                 ]}
                 onChange={(v) => {
                   setSubagentConfig((prev) => ({
@@ -607,7 +607,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
             </div>
 
             <div class="flex flex-col gap-1">
-              <label class="text-[#9a9a9a]">Pasos Máximos</label>
+              <label class="text-[#9a9a9a]">Max Steps</label>
               <div class="flex items-center gap-2">
                 <input
                   type="number"
@@ -624,16 +624,16 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                   class="no-spinner bg-transparent border border-white/20 px-2 py-1 text-[13px] text-[#e0e0e0] outline-hidden focus:border-white/40 w-20 disabled:opacity-40 disabled:cursor-not-allowed"
                   disabled={conversationStarted()}
                 />
-                <span class="text-[#6a6a6a] text-[13px]">(0 = por defecto: 15)</span>
+                <span class="text-[#6a6a6a] text-[13px]">(0 = default: 15)</span>
               </div>
             </div>
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Datos Compartidos">
+        <CollapsibleSection title="Shared Data">
           <div class="flex flex-col gap-2">
             <div class="flex flex-col gap-1">
-              <label class="text-[#9a9a9a]">Tu Nombre</label>
+              <label class="text-[#9a9a9a]">Your Name</label>
               <input
                 type="text"
                 value={userName()}
@@ -646,7 +646,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
               />
             </div>
             <div class="flex flex-col gap-1">
-              <label class="text-[#9a9a9a]">Ubicación</label>
+              <label class="text-[#9a9a9a]">Location</label>
               <input
                 type="text"
                 value={userLocation()}
@@ -661,11 +661,11 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Visualización">
+        <CollapsibleSection title="Display">
           <div class="flex flex-col gap-2">
             <div class="flex flex-col gap-1">
               <div class="flex items-center justify-between text-[#9a9a9a]">
-                <span>Tamaño de texto</span>
+                <span>Text size</span>
                 <span>{chatFontSize()}px</span>
               </div>
               <input
@@ -688,9 +688,9 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
         </CollapsibleSection>
       </Show>
 
-      <CollapsibleSection title="Ajustes generales">
+      <CollapsibleSection title="General Settings">
         <div class="flex flex-col gap-2">
-          <div class="text-[#9a9a9a]">Pestañas básicas</div>
+          <div class="text-[#9a9a9a]">Basic tabs</div>
           <For each={basicTabs}>
             {(tab) => {
               const hidden = () => hiddenBasicTabs().has(tab.id)
@@ -716,7 +716,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
               class="border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors cursor-pointer w-full text-center"
               onClick={resetTree}
             >
-              Restaurar Layout por Defecto
+              Restore Default Layout
             </button>
           </div>
 
@@ -727,7 +727,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                 onClick={() => beginLinking("viewport")}
                 disabled={linkingMode()}
               >
-                Cambiar Viewport Vinculado
+                Change Linked Viewport
               </button>
             </div>
           </Show>

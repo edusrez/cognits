@@ -28,7 +28,7 @@ export async function openReportInViewport(vpId: string, reportId: string) {
 
   addDynamicTab(vpId, {
     id: tabId,
-    label: "Informe Web",
+    label: "Web Report",
     hidden: false,
   })
 }

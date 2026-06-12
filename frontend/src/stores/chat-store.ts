@@ -108,14 +108,14 @@ function broadcastAgentStarted(sessionId: string) {
   }
 }
 
-// Un único stream activo en toda la app: suscribirse a una sesión aborta
-// siempre el stream anterior (evita tokens duplicados con dos lectores).
+// A single active stream across the app: subscribing to a session always
+// aborts the previous stream (prevents duplicate tokens with two readers).
 let streamController: AbortController | null = null
 
-// Los tokens del SSE se acumulan aquí y se aplican al store en lotes de ~50ms:
-// actualizar el signal por cada token re-renderiza todo el chat decenas de
-// veces por segundo. setTimeout y no rAF: en pestañas en segundo plano rAF se
-// congela y el buffer crecería sin límite.
+// SSE tokens accumulate here and are applied to the store in ~50ms batches:
+// updating the signal per token re-renders the entire chat dozens of times
+// per second. setTimeout, not rAF: in background tabs rAF freezes and the
+// buffer would grow unbounded.
 const pendingTokens = new Map<string, { content: string; reasoning: string }>()
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -161,8 +161,8 @@ function flushPendingTokens() {
 function createStreamCallbacks(sid: string, controller: AbortController): StreamCallbacks {
   return {
     onHistory(snap: HistorySnapshot) {
-      // El snapshot ya incluye el contenido en vivo: los tokens en buffer de
-      // esta sesión son redundantes y aplicarlos los duplicaría.
+      // The snapshot already includes live content: buffered tokens for
+      // this session are redundant and applying them would duplicate.
       pendingTokens.delete(sid)
       let finalMsgs = snap.messages
       if (snap.agentActive) {
@@ -206,7 +206,7 @@ function createStreamCallbacks(sid: string, controller: AbortController): Stream
       })
     },
     onToolProgress(data: any) {
-      // El servidor manda mensaje vacío para limpiar el banner (subagente fallido).
+      // The server sends an empty message to clear the banner (failed subagent).
       setToolStatusBySession((prev) => ({ ...prev, [sid]: data?.message || null }))
     },
     onToolEnd(_data: any) {},
@@ -249,8 +249,8 @@ async function finalizeStream(sid: string, controller: AbortController) {
   flushPendingTokens()
   setToolStatusBySession((prev) => ({ ...prev, [sid]: null }))
   try {
-    // Reconciliación: el servidor persistió la respuesta completa; recargar
-    // absorbe cualquier token perdido por el pub/sub no bloqueante.
+    // Reconciliation: the server persisted the full response; reloading
+    // absorbs any tokens lost by non-blocking pub/sub.
     const msgs = await loadFromDB(sid)
     if (msgs.length > 0) {
       setMessagesBySession((prev) => ({ ...prev, [sid]: capMessages(msgs) }))
@@ -271,9 +271,9 @@ export function subscribeToSession(sid: string, attempt = 0) {
   streamSession(sid, createStreamCallbacks(sid, controller), controller.signal)
     .then(({ completed }) => {
       if (completed || streamController !== controller) return
-      // Conexión cortada sin "done" (red, suspensión del equipo): el agente
-      // puede seguir vivo en el servidor. Reintentar; el "history" de la
-      // reconexión resincroniza todo el estado.
+      // Connection cut without "done" (network, machine sleep): the agent
+      // may still be alive on the server. Retry; the reconnection "history"
+      // resynchronizes all state.
       if (attempt < MAX_STREAM_RETRIES) {
         setTimeout(() => {
           if (streamController === controller) subscribeToSession(sid, attempt + 1)
@@ -290,8 +290,8 @@ export function subscribeToSession(sid: string, attempt = 0) {
     })
 }
 
-// El propio stream entrega el historial (evento "history"), tanto si hay un
-// agente vivo como si la sesión está inactiva (snapshot de DB).
+// The stream itself delivers the history ("history" event), whether there's a
+// live agent or the session is inactive (DB snapshot).
 export async function loadSessionMessages(sessionId: string) {
   subscribeToSession(sessionId)
 }
@@ -315,7 +315,7 @@ export async function sendMessage(content: string) {
     broadcastAgentStarted(sid)
   } catch {
     setStreamState(sid, { active: false, thinking: false })
-    // Re-sincronizar con el servidor (cubre "agent already running" y rechazos).
+    // Re-sync with the server (covers "agent already running" and rejections).
     subscribeToSession(sid)
     return
   }
@@ -328,8 +328,8 @@ export async function cancelStreaming() {
   if (!sid) return
   setStreamState(sid, { thinking: false })
   try {
-    // El servidor cancela el run, persiste el parcial y emite "done";
-    // el stream abierto se cierra solo por esa vía.
+    // The server cancels the run, persists the partial, and emits "done";
+    // the open stream closes on its own via that path.
     await fetch(`/api/sessions/${encodeURIComponent(sid)}/agent`, { method: "DELETE" })
   } catch {
     streamController?.abort()

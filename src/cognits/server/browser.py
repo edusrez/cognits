@@ -1,4 +1,4 @@
-"""Port de internal/server/browser.go: abre el navegador del sistema."""
+"""Port of internal/server/browser.go: opens the system browser."""
 
 from __future__ import annotations
 

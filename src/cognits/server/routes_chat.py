@@ -1,8 +1,8 @@
-"""Port de internal/server/chat.go: POST /api/chat y DELETE .../agent.
+"""Port of internal/server/chat.go: POST /api/chat and DELETE .../agent.
 
-El run del agente es una asyncio.Task; su bloque finally es 100% síncrono
-(persistencia de la respuesta parcial incluida) para que una segunda
-cancelación no pueda saltarse la limpieza en un await.
+The agent run is an asyncio.Task; its finally block is 100% synchronous
+(partial-response persistence included) so a second cancellation cannot
+skip the cleanup at an await point.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from fastapi import FastAPI, Request, Response
 
 from cognits.agent.agent import Agent, AgentConfig
 from cognits.agent.prompts import DEFAULT_AGENT_ID, default_agent_prompt
-from cognits.agent.subagents import documentalista_config, researcher_config
+from cognits.agent.subagents import documentalist_config, researcher_config
 from cognits.agent.tool_deploy import DeploySubagent
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import ROLE_SYSTEM, Message
@@ -34,13 +34,13 @@ DEFAULT_MODEL = "deepseek-v4-pro"
 DEFAULT_RESEARCHER_MAX_STEPS = 15
 ORCHESTRATOR_MAX_STEPS = 25
 
-SPANISH_MONTHS = [
-    "enero", "febrero", "marzo", "abril", "mayo", "junio",
-    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+# Explicit lists instead of strftime %A/%B: those are locale-dependent.
+MONTHS = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
 ]
-# Sin acentos, como en el Go original.
-SPANISH_WEEKDAYS = [
-    "lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo",
+WEEKDAYS = [
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
 ]
 
 FORMATTING_RULES = (
@@ -58,9 +58,9 @@ FORMATTING_RULES = (
 def build_chat_messages(
     cfg: Config, incoming: list[dict]
 ) -> tuple[list[Message], list[MessageRow]]:
-    """Separa lo que ve el LLM de lo que se persiste: el historial se guarda
-    tal cual llegó y solo el último mensaje del usuario lleva sello de fecha,
-    para no invalidar el prefix-cache de DeepSeek en cada turno."""
+    """Separates what the LLM sees from what gets persisted: the history is
+    stored as it arrived and only the last user message carries a date stamp,
+    so DeepSeek's prefix cache is not invalidated on every turn."""
     llm_messages: list[Message] = []
 
     if cfg.user_name or cfg.user_location:
@@ -81,9 +81,8 @@ def build_chat_messages(
     now = datetime.now().astimezone()
     tz = now.strftime("%Z") or now.strftime("%z")
     date_str = (
-        f"{SPANISH_WEEKDAYS[now.weekday()]}, {now.day} de "
-        f"{SPANISH_MONTHS[now.month - 1]} de {now.year}, "
-        f"{now.strftime('%H:%M')} {tz}"
+        f"{WEEKDAYS[now.weekday()]}, {now.day} {MONTHS[now.month - 1]} "
+        f"{now.year}, {now.strftime('%H:%M')} {tz}"
     )
 
     storage_messages: list[MessageRow] = []
@@ -131,7 +130,7 @@ def register(app: FastAPI, st) -> None:
         if not sid:
             return text_error("sessionId required", 400)
 
-        # Resolución de config: sesión → global → default.
+        # Config resolution: session → global → default.
         model = cfg.llm_model
         reasoning = cfg.llm_reasoning
         agent_id = cfg.llm_agent_id
@@ -153,7 +152,7 @@ def register(app: FastAPI, st) -> None:
 
         llm_messages, storage_messages = build_chat_messages(cfg, incoming)
 
-        # Check 409 + registro sin await entre medias: atómico en el loop.
+        # 409 check + registration with no await in between: atomic on the loop.
         if sid in st.active_agents:
             return text_error("agent already running", 409)
         sa = SessionAgent(sid, storage_messages)
@@ -167,8 +166,8 @@ def register(app: FastAPI, st) -> None:
     @app.delete("/api/sessions/{session_id}/agent")
     async def cancel_agent(session_id: str):
         sa = st.active_agents.get(session_id)
-        # La limpieza de active_agents la hace siempre el finally del run;
-        # borrar aquí permitiría arrancar un segundo run concurrente.
+        # Cleanup of active_agents is always done by the run's finally;
+        # removing here would allow a second concurrent run to start.
         if sa is not None and sa.task is not None:
             sa.task.cancel()
         return Response(status_code=204)
@@ -189,19 +188,19 @@ async def _run_agent(
     tf_client = TinyfishClient(cfg.tinyfish_api_key)
 
     try:
-        # El servidor es la fuente de verdad: guarda historial + mensaje nuevo
-        # ya al empezar. Aquí y no en el handler: el POST responde al instante
-        # aunque SQLite esté ocupado, y los suscriptores inmediatos leen el
-        # snapshot de sa.messages en memoria, no de la DB.
+        # The server is the source of truth: it stores history + new message
+        # right at the start. Here and not in the handler: the POST responds
+        # immediately even if SQLite is busy, and immediate subscribers read
+        # the in-memory sa.messages snapshot, not the DB.
         if st.report_store is not None:
             try:
                 await asyncio.to_thread(st.report_store.save_messages, sid, sa.messages)
             except Exception as e:
                 log.error("chat: save messages (session %s): %s", sid, e)
 
-        # Actualización de estado y fan-out van juntos en sa.publish para que
-        # los snapshots de suscripción no dupliquen ni pierdan eventos. Los
-        # closures update corren dentro de publish (sección síncrona).
+        # State update and fan-out go together in sa.publish so subscription
+        # snapshots neither duplicate nor lose events. The update closures
+        # run inside publish (synchronous section).
         def process_event(ev: dict) -> None:
             update = None
             t = ev["type"]
@@ -246,13 +245,13 @@ async def _run_agent(
         }
 
         if st.rag is not None and st.rag.error is None:
-            doc_cfg = subagent_cfgs.get("documentalista")
+            doc_cfg = subagent_cfgs.get("documentalist")
             doc_model = (doc_cfg.model if doc_cfg else "") or DEFAULT_MODEL
             doc_reasoning = doc_cfg.reasoning if doc_cfg else ""
             doc_max_steps = doc_cfg.max_steps if doc_cfg else 0
             if doc_max_steps <= 0:
                 doc_max_steps = DEFAULT_RESEARCHER_MAX_STEPS
-            subagent_map["documentalista"] = documentalista_config(
+            subagent_map["documentalist"] = documentalist_config(
                 doc_model,
                 doc_reasoning,
                 doc_max_steps,
@@ -291,13 +290,13 @@ async def _run_agent(
         try:
             await ag.run(llm_messages, process_event)
         except asyncio.CancelledError:
-            # La cancelación del usuario no es un error de cara al chat.
+            # User cancellation is not an error as far as the chat goes.
             log.info("chat: agent run cancelled (session %s)", sid)
         except Exception as e:
             log.error("chat: agent run (session %s): %s", sid, e)
             sa.publish({"type": "error", "data": str(e)})
     finally:
-        # Bloque 100% síncrono: persistir el parcial, desregistrar y cerrar.
+        # 100% synchronous block: persist the partial, deregister, close.
         content = acc["content"]
         reasoning_text = acc["reasoning"]
         assistant_row = None
@@ -316,10 +315,10 @@ async def _run_agent(
         sa.live_report_title = ""
         sa.tool_status = ""
 
-        # El historial ya se persistió al arrancar el run; solo falta añadir la
-        # respuesta (también el parcial, si el run se canceló a mitad). Llamada
-        # sqlite directa (ms) en vez de to_thread: un await aquí podría ser
-        # interrumpido por una segunda cancelación y saltarse el resto.
+        # The history was already persisted when the run started; only the
+        # response remains (the partial too, if the run was cancelled). Direct
+        # sqlite call (ms) instead of to_thread: an await here could be
+        # interrupted by a second cancellation and skip the rest.
         if assistant_row is not None and st.report_store is not None:
             try:
                 st.report_store.append_message(sid, assistant_row)
@@ -329,7 +328,7 @@ async def _run_agent(
         st.active_agents.pop(sid, None)
         sa.close()
 
-        # Cierre de clientes HTTP sin await (fire-and-forget en el loop).
+        # Close HTTP clients without awaiting (fire-and-forget on the loop).
         for client in (llm_client, tf_client):
             with contextlib.suppress(Exception):
                 asyncio.get_running_loop().create_task(client.aclose())

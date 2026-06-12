@@ -112,8 +112,8 @@ function SplitView(props: { id: ViewportId }) {
 
   const onResizerDown = (e: MouseEvent) => {
     e.preventDefault()
-    // Capturar el contenedor aquí: durante el drag el puntero puede salirse
-    // de este split y ev.target apuntaría a otro contenedor.
+    // Capture the container here: during the drag the pointer can leave
+    // this split and ev.target would point to another container.
     const gridRef = (e.currentTarget as HTMLElement).closest("[data-split]") as HTMLElement | null
     if (!gridRef) return
     setDragging(true)

@@ -1,8 +1,8 @@
-"""Port de internal/storage/storage.go: sesiones JSON, config global y cifrado.
+"""Port of internal/storage/storage.go: JSON sessions, global config, crypto.
 
-El formato cifrado es bit-compatible con el del backend Go
-(base64std(nonce_12B || ciphertext || tag_GCM)) y la clave se reutiliza tal
-cual desde la ubicación que usaba Go.
+The encrypted format is bit-compatible with the Go backend's
+(base64std(nonce_12B || ciphertext || tag_GCM)) and the key is reused as-is
+from the location Go used.
 """
 
 from __future__ import annotations
@@ -22,8 +22,8 @@ NONCE_SIZE = 12
 
 
 def write_file_atomic(path: Path, data: bytes) -> None:
-    # Escribir en temporal y renombrar: un crash a mitad de escritura no puede
-    # dejar el fichero destino truncado o corrupto.
+    # Write to a temp file and rename: a crash mid-write cannot leave the
+    # destination file truncated or corrupted.
     tmp = path.with_name(path.name + ".tmp")
     try:
         tmp.write_bytes(data)
@@ -153,7 +153,7 @@ class Store:
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
 
-    # --- sesiones ---
+    # --- sessions ---
 
     def _sessions_dir(self) -> Path:
         return self.base_path / "sessions"
@@ -201,7 +201,7 @@ class Store:
     def delete_session(self, session_id: str) -> None:
         self._session_path(session_id).unlink(missing_ok=True)
 
-    # --- config + cifrado ---
+    # --- config + crypto ---
 
     def _config_path(self) -> Path:
         return self.base_path / "config.json"
@@ -222,9 +222,9 @@ class Store:
         except OSError:
             pass
 
-        # Migración desde la clave del backend Go (~/.config/learnit/): se
-        # copia sin borrar el original para que el Go legado siga funcionando
-        # durante la transición.
+        # Migration from the Go backend's key (~/.config/learnit/): copied
+        # without deleting the original so the legacy Go binary keeps working
+        # during the transition.
         go_key = paths.go_encryption_key_path()
         if go_key.is_file():
             key = go_key.read_bytes()
@@ -232,7 +232,7 @@ class Store:
             os.chmod(key_path, 0o600)
             return key
 
-        # Migración desde la ubicación antigua dentro del proyecto (pre-Go).
+        # Migration from the old in-project location (pre-Go).
         legacy = self._legacy_encryption_key_path()
         if legacy.is_file():
             key = legacy.read_bytes()
@@ -270,7 +270,7 @@ class Store:
 
     def save_config(self, cfg: Config) -> None:
         self.base_path.mkdir(parents=True, exist_ok=True)
-        # No mutar el objeto del caller: la copia cifrada es solo para el disco.
+        # Do not mutate the caller's object: the encrypted copy is disk-only.
         on_disk = Config.from_json(cfg.to_json())
         if on_disk.llm_api_key:
             on_disk.llm_api_key = self.encrypt_api_key(on_disk.llm_api_key)

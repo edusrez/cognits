@@ -36,7 +36,7 @@ export default function ReportView(props: { viewportId?: string; tabId?: string 
     >
       <Show
         when={report()}
-        fallback={<div class="text-[#8b949e]">Cargando informe...</div>}
+        fallback={<div class="text-[#8b949e]">Loading report...</div>}
       >
         {(r) => (
           <MarkdownView content={r().content} />
@@ -51,7 +51,7 @@ export default function ReportView(props: { viewportId?: string; tabId?: string 
             onClose={() => setCtxMenu(null)}
             items={[
               {
-                label: "Copiar en Markdown",
+                label: "Copy in Markdown",
                 onClick: () => {
                   const text = m().content
                   setCtxMenu(null)

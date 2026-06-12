@@ -1,8 +1,8 @@
-"""Port de registerDevProxy (frontend.go) ampliado con WebSocket.
+"""Port of registerDevProxy (frontend.go) extended with WebSocket.
 
-En ENV=dev el catch-all proxéa a Vite (HMR incluido); las rutas /api/* ya
-están registradas antes y ganan. Reemplaza al auto-rebuild de rebuild.go:
-con `uvicorn --reload` + Vite dev no hace falta recompilar nada.
+In ENV=dev the catch-all proxies to Vite (HMR included); the /api/* routes
+are registered first and win. Replaces rebuild.go's auto-rebuild: with
+`uvicorn --reload` + Vite dev nothing needs recompiling.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ log = logging.getLogger("cognits.devproxy")
 
 VITE_PORT = 5174
 
-# Hop-by-hop: no se reenvían (h11 los gestiona por conexión).
+# Hop-by-hop headers: not forwarded (h11 manages them per connection).
 _SKIP_HEADERS = {
     "connection",
     "keep-alive",

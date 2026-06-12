@@ -1,11 +1,11 @@
-"""RAG in-process: fusión del sidecar Flask (sidecar.py) y su cliente Go.
+"""RAG in-process: fusion of the Flask sidecar (sidecar.py) and its Go client.
 
-ChromaDB y fastembed son síncronos y pesados: viven en un ThreadPoolExecutor
-de UN hilo que serializa todo el acceso (como el Flask single-threaded del
-sidecar) sin bloquear el event loop. La inicialización (carga del modelo
-ONNX, ~5-15s; primera vez descarga ~2,3 GB) corre en ese hilo en background:
-el servidor arranca al instante y las tools degradan con error claro hasta
-que ready se active.
+ChromaDB and fastembed are synchronous and heavy: they live in a
+ThreadPoolExecutor with ONE thread that serializes all access (like the
+Flask single-threaded sidecar) without blocking the event loop.
+Initialization (ONNX model load, ~5-15s; first time downloads ~2.3 GB)
+runs in that thread in the background: the server starts instantly and
+tools degrade with a clear error until ready is set.
 """
 
 from __future__ import annotations
@@ -53,18 +53,18 @@ class RagEngine:
         return engine
 
     def _load(self) -> None:
-        # Imports aquí: son pesados (onnxruntime) y opcionales — si faltan,
-        # el resto de la aplicación funciona sin RAG.
+        # Imports here: they're heavy (onnxruntime) and optional — if missing,
+        # the rest of the app works without RAG.
         import chromadb
         from chromadb.config import Settings
         from fastembed import TextEmbedding
         from fastembed.common.model_description import ModelSource, PoolingType
 
-        # BGE-M3: multilingüe (100+ idiomas), 1024 dims, hasta 8192 tokens y
-        # sin la asimetría de prefijos query:/passage:. No está soportado
-        # nativamente en fastembed 0.8.0: se registra como modelo custom con
-        # el ONNX de HuggingFace (idéntico al sidecar Go para reutilizar la
-        # caché del modelo ya descargado).
+        # BGE-M3: multilingual (100+ languages), 1024 dims, up to 8192 tokens,
+        # and no query:/passage: prefix asymmetry. Not natively supported in
+        # fastembed 0.8.0: registered as a custom model with the HuggingFace
+        # ONNX (identical to the Go sidecar to reuse the already downloaded
+        # model cache).
         TextEmbedding.add_custom_model(
             model="BAAI/bge-m3",
             pooling=PoolingType.CLS,
@@ -77,7 +77,7 @@ class RagEngine:
             size_in_gb=2.27,
             additional_files=["onnx/model.onnx_data", "onnx/sentencepiece.bpe.model"],
         )
-        log.info("rag: cargando BGE-M3 (la primera vez descarga ~2,3 GB)...")
+        log.info("rag: loading BGE-M3 (first time downloads ~2.3 GB)...")
         self._model = TextEmbedding(model_name="BAAI/bge-m3")
         client = chromadb.PersistentClient(
             path=str(self.storage_path),
@@ -88,7 +88,7 @@ class RagEngine:
             metadata={"hnsw:space": "cosine"},
         )
         log.info(
-            "rag: listo en %s (colección %s, %d docs)",
+            "rag: ready in %s (collection %s, %d docs)",
             self.storage_path,
             COLLECTION_NAME,
             self._collection.count(),
@@ -100,8 +100,8 @@ class RagEngine:
     def _require_ready(self) -> None:
         if not self.ready.is_set():
             if self.error:
-                raise RagNotReady(f"motor RAG no disponible: {self.error}")
-            raise RagNotReady("motor RAG todavía cargando, reintenta en unos segundos")
+                raise RagNotReady(f"RAG engine not available: {self.error}")
+            raise RagNotReady("RAG engine still loading, retry in a few seconds")
 
     async def _run(self, fn, *args):
         loop = asyncio.get_running_loop()
@@ -125,11 +125,11 @@ class RagEngine:
         self._require_ready()
         return await self._run(self._collection.count)
 
-    # --- implementación síncrona (solo en el hilo del executor) ---
+    # --- synchronous implementation (only on the executor thread) ---
 
     def _search_sync(self, query: str, max_results: int) -> list[dict]:
-        # query_embed devuelve un generador con UN embedding; envolver la
-        # lista entera en otra lista producía shape 1x1x1024 y fallaba.
+        # query_embed returns a generator with ONE embedding; wrapping the
+        # entire list in another list produced shape 1x1x1024 and broke.
         query_embedding = next(iter(self._model.query_embed(query)))
         results = self._collection.query(
             query_embeddings=[query_embedding.tolist()],

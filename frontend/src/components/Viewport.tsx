@@ -169,9 +169,9 @@ export default function Viewport(props: {
                       y={m().y}
                       onClose={() => setCtxMenu(null)}
                       items={[
-                        { label: "División horizontal", onClick: () => { setCtxMenu(null); splitViewport(props.id, "h") } },
-                        { label: "División vertical",   onClick: () => { setCtxMenu(null); splitViewport(props.id, "v") } },
-                        { label: "Eliminar viewport",   onClick: () => { setCtxMenu(null); deleteViewport(props.id) }, class: canDeleteViewport(props.id) ? "text-red-400" : "text-[#4a4a4a]" },
+                        { label: "Split horizontally",  onClick: () => { setCtxMenu(null); splitViewport(props.id, "h") } },
+                        { label: "Split vertically",    onClick: () => { setCtxMenu(null); splitViewport(props.id, "v") } },
+                        { label: "Delete viewport",     onClick: () => { setCtxMenu(null); deleteViewport(props.id) }, class: canDeleteViewport(props.id) ? "text-red-400" : "text-[#4a4a4a]" },
                       ]}
                     />
                   }
@@ -182,12 +182,12 @@ export default function Viewport(props: {
                     onClose={() => setCtxMenu(null)}
                     items={[
                       {
-                        label: `Abrir Ajustes (${(m() as any).tabLabel})`,
+                        label: `Open Settings (${(m() as any).tabLabel})`,
                         onClick: () => {
                           const tabMenu = m() as any
                           setCtxMenu(null)
                           const tabId = `settings:${tabMenu.tabId.startsWith("report:") ? "report" : tabMenu.tabId}`
-                          const label = `Ajustes (${tabMenu.tabLabel})`
+                          const label = `Settings (${tabMenu.tabLabel})`
                           import("../stores/viewport-tree-store").then((vts) => {
                             vts.addDynamicTab(props.id, { id: tabId, label, hidden: false })
                           })
@@ -203,8 +203,8 @@ export default function Viewport(props: {
                 y={m().y}
                 onClose={() => { setCtxMenu(null); textTarget = null }}
                 items={[
-                  { label: "Copiar", onClick: handleCopy },
-                  { label: "Pegar", onClick: handlePaste },
+                  { label: "Copy",  onClick: handleCopy },
+                  { label: "Paste", onClick: handlePaste },
                 ]}
               />
             </Show>

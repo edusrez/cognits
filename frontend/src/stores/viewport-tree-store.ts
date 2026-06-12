@@ -57,8 +57,8 @@ export function createDefaultTree(n: string) {
   setViewportMap(reconcile({
     [l]: {
       tabs: [
-        { id: "files", label: "Archivos", hidden: false },
-        { id: "sessions", label: "Sesiones", hidden: false },
+        { id: "files", label: "Files", hidden: false },
+        { id: "sessions", label: "Sessions", hidden: false },
       ],
       activeTabId: "files",
     },
@@ -66,7 +66,7 @@ export function createDefaultTree(n: string) {
     [rlr]: { tabs: [], activeTabId: null },
     [rr]: {
       tabs: [
-        { id: "settings", label: "Ajustes", hidden: false },
+        { id: "settings", label: "Settings", hidden: false },
         { id: "learnit", label: ".learnit", hidden: false },
       ],
       activeTabId: "settings",
@@ -99,7 +99,7 @@ export function createSettingsOnlyTree(n: string) {
   setRootId(n)
   setViewportMap(reconcile({
     [n]: {
-      tabs: [{ id: "settings", label: "Ajustes", hidden: false }],
+      tabs: [{ id: "settings", label: "Settings", hidden: false }],
       activeTabId: "settings",
     },
   }))
@@ -107,8 +107,8 @@ export function createSettingsOnlyTree(n: string) {
 }
 
 export function snapshotTree(): DesktopState {
-  // structuredClone es nativo y mucho más barato que el round-trip por JSON;
-  // unwrap saca el objeto plano de debajo del proxy del store.
+  // structuredClone is native and much cheaper than the JSON round-trip;
+  // unwrap extracts the plain object from beneath the store proxy.
   return structuredClone({
     viewports: unwrap(viewportMap),
     splits: unwrap(splitMap),
@@ -202,7 +202,7 @@ export function placeSessionTabs(chatVp: ViewportId, writeVp: ViewportId) {
         m[chatVp].activeTabId = "chat"
       }
       if (m[writeVp]) {
-        m[writeVp].tabs.push({ id: "write", label: "Escribir", hidden: false })
+        m[writeVp].tabs.push({ id: "write", label: "Write", hidden: false })
         m[writeVp].activeTabId = "write"
       }
     }),
@@ -231,8 +231,8 @@ export function splitViewport(vpId: ViewportId, direction: "h" | "v") {
   const existing = viewportMap[vpId]
   if (!existing) return
 
-  // El split nuevo hereda el id del viewport dividido, así que la referencia
-  // en el padre (si lo hay) sigue siendo válida sin tocarla.
+  // The new split inherits the split viewport's id, so the reference
+  // in the parent (if any) remains valid without touching it.
   setViewportMap(leftId, { tabs: [...existing.tabs], activeTabId: existing.activeTabId })
   setViewportMap(rightId, { tabs: [], activeTabId: null })
   setSplitMap(vpId, {

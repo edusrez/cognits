@@ -1,4 +1,4 @@
-"""Port de internal/agent/tools/deploy.go: la tool deploy_subagent."""
+"""Port of internal/agent/tools/deploy.go: the deploy_subagent tool."""
 
 from __future__ import annotations
 
@@ -102,16 +102,16 @@ class DeploySubagent(Tool):
                 return
             t = ev["type"]
             if t == "reasoning":
-                self.emit({"type": "tool_progress", "data": {"message": "Pensando..."}})
+                self.emit({"type": "tool_progress", "data": {"message": "Thinking..."}})
                 return
             if t == "token":
                 return
             if t == "tool_start":
                 data = ev.get("data")
                 tool = data.get("tool", "") if isinstance(data, dict) else ""
-                msg = "Buscando en la Web"
+                msg = "Searching the Web"
                 if tool == "tinyfish_fetch_content":
-                    msg = "Leyendo Resultados"
+                    msg = "Reading Results"
                 self.emit({"type": "tool_progress", "data": {"message": msg}})
                 return
             self.emit(ev)
@@ -119,12 +119,12 @@ class DeploySubagent(Tool):
         try:
             content = await subagent.run([Message(role=ROLE_USER, content=query)], emit)
         except asyncio.CancelledError:
-            # Cancelado: sin informe, sin indexado, sin subagent_end. El run
-            # padre corta limpio cuando la cancelación se propaga.
+            # Cancelled: no report, no indexing, no subagent_end. The parent
+            # run stops cleanly when the cancellation propagates.
             raise
         except Exception as e:
-            # Fallo real: limpiar el banner de estado y devolver el error al
-            # orquestador como resultado de tool, sin crear un informe basura.
+            # Real failure: clear the status banner and return the error to the
+            # orchestrator as a tool result, without creating a junk report.
             if self.emit is not None:
                 self.emit({"type": "tool_progress", "data": {"message": ""}})
             return tool_error(f"subagent failed: {e}")

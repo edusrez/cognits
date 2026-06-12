@@ -1,4 +1,4 @@
-"""Tests del bucle agéntico con un cliente LLM guionizado."""
+"""Tests of the agentic loop with a scripted LLM client."""
 
 import asyncio
 import json
@@ -10,8 +10,8 @@ from cognits.tools import Registry, Tool
 
 
 class ScriptedLLM:
-    """Reproduce streams guionizados: cada elemento es la lista de chunks de
-    una llamada a chat_completion_stream."""
+    """Replays scripted streams: each element is the chunk list for one
+    chat_completion_stream call."""
 
     def __init__(self, streams):
         self.streams = list(streams)
@@ -51,33 +51,33 @@ def _delta(content=None, reasoning=None, tool_calls=None, finish=None, usage=Non
 
 
 def test_run_simple_content():
-    llm = ScriptedLLM([[_delta(content="Hola"), _delta(content=" mundo", finish="stop")]])
+    llm = ScriptedLLM([[_delta(content="Hello"), _delta(content=" world", finish="stop")]])
     events = []
     agent = Agent(AgentConfig(model="m", system_prompt="sp"), llm)
 
     from cognits.llm.types import Message
 
-    result = asyncio.run(agent.run([Message(role="user", content="hola")], events.append))
-    assert result == "Hola mundo"
-    assert [e["data"] for e in events if e["type"] == "token"] == ["Hola", " mundo"]
-    # El system prompt se antepone.
+    result = asyncio.run(agent.run([Message(role="user", content="hi")], events.append))
+    assert result == "Hello world"
+    assert [e["data"] for e in events if e["type"] == "token"] == ["Hello", " world"]
+    # The system prompt is prepended.
     assert llm.calls[0][0] == {"role": "system", "content": "sp"}
 
 
-def test_run_tool_call_con_indices_dispersos_y_args_fragmentados():
+def test_run_tool_call_with_scattered_indices_and_fragmented_args():
     tool = EchoTool()
     registry = Registry()
     registry.register(tool)
 
     streams = [
         [
-            # Args fragmentados en varios deltas y con índice no-cero.
+            # Fragmented args in multiple deltas and non-zero index.
             _delta(tool_calls=[{"index": 2, "id": "call_1", "type": "function",
                                 "function": {"name": "echo", "arguments": '{"a"'}}]),
             _delta(tool_calls=[{"index": 2, "function": {"arguments": ': 1}'}}]),
             _delta(finish="tool_calls"),
         ],
-        [_delta(content="listo", finish="stop", usage={"prompt_tokens": 5})],
+        [_delta(content="done", finish="stop", usage={"prompt_tokens": 5})],
     ]
     llm = ScriptedLLM(streams)
     events = []
@@ -86,13 +86,13 @@ def test_run_tool_call_con_indices_dispersos_y_args_fragmentados():
     from cognits.llm.types import Message
 
     result = asyncio.run(agent.run([Message(role="user", content="x")], events.append))
-    assert result == "listo"
+    assert result == "done"
     assert tool.received == ['{"a": 1}']
 
     types = [e["type"] for e in events]
     assert types == ["tool_start", "tool_end", "token", "usage"]
 
-    # La segunda llamada lleva el assistant con tool_calls y el resultado tool.
+    # The second call carries the assistant with tool_calls and the tool result.
     second = llm.calls[1]
     assert second[-2]["tool_calls"][0]["function"]["arguments"] == '{"a": 1}'
     assert second[-1]["role"] == "tool"
@@ -116,7 +116,7 @@ def test_run_max_steps():
         asyncio.run(agent.run([Message(role="user", content="x")], lambda e: None))
 
 
-def test_tool_desconocida():
+def test_unknown_tool():
     tc = [{"index": 0, "id": "c1", "type": "function",
            "function": {"name": "nope", "arguments": "{}"}}]
     llm = ScriptedLLM([[_delta(tool_calls=tc, finish="tool_calls")]])

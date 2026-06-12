@@ -1,7 +1,7 @@
-"""Port de internal/llm/llm.go: tipos de mensaje del protocolo OpenAI-compatible.
+"""Port of internal/llm/llm.go: OpenAI-compatible message types.
 
-Los chunks del stream se manejan como dicts JSON crudos; solo el mensaje
-tiene tipo propio porque construye el payload con semántica omitempty.
+Stream chunks are handled as raw JSON dicts; only the message has its own
+type because it builds the payload with omitempty semantics.
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ class Message:
     name: str = ""
 
     def to_payload(self) -> dict:
-        # Paridad con los tags omitempty de Go: el assistant con tool_calls y
-        # sin contenido no lleva "content".
+        # Parity with Go's omitempty tags: an assistant with tool_calls and
+        # no content doesn't include "content".
         payload: dict = {"role": self.role}
         if self.content:
             payload["content"] = self.content

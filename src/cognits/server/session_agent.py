@@ -1,13 +1,13 @@
-"""Port del SessionAgent de internal/server/server.go.
+"""Port of the SessionAgent from internal/server/server.go.
 
-INVARIANTE: todos los métodos de esta clase son síncronos y se llaman solo
-desde el event loop. En asyncio una sección sin await es atómica, así que la
-pareja "actualizar estado + fan-out" de publish() y la pareja "snapshot +
-suscripción" de subscribe_with_snapshot() no pueden intercalarse: un evento o
-bien precede a un snapshot (está en él y no en la cola) o bien lo sigue (está
-en la cola y no en él) — nunca en ambos, que era la carrera que duplicaba
-tokens al suscribirse a mitad de stream. Si algún día hiciera falta publicar
-desde un hilo, usar loop.call_soon_threadsafe.
+INVARIANT: every method of this class is synchronous and called only from
+the event loop. In asyncio a section without an await is atomic, so the
+"update state + fan-out" pair in publish() and the "snapshot + subscribe"
+pair in subscribe_with_snapshot() cannot interleave: an event either
+precedes a snapshot (it is in it and not in the queue) or follows it (it is
+in the queue and not in it) — never both, which was the race that duplicated
+tokens when subscribing mid-stream. If publishing from a thread is ever
+needed, use loop.call_soon_threadsafe.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class SessionAgent:
     def __init__(self, session_id: str, messages: list[MessageRow]):
         self.session_id = session_id
         self.task: asyncio.Task | None = None
-        # done_event se activa cuando el run termina; señala fin a los suscriptores.
+        # done_event is set when the run finishes; signals the end to subscribers.
         self.done_event = asyncio.Event()
 
         self.messages = messages
@@ -49,9 +49,9 @@ class SessionAgent:
     def publish(self, event: dict, update: Callable[[], None] | None = None) -> None:
         if update is not None:
             update()
-        # El envío dropea eventos si el buffer está lleno (no puede bloquear
-        # al agente); un buffer amplio hace los drops improbables y la recarga
-        # de DB en "done" sigue siendo la red de seguridad.
+        # The send drops events if the buffer is full (it cannot block the
+        # agent); a large buffer makes drops unlikely and the DB reload on
+        # "done" remains the safety net.
         for q in self.subscribers:
             try:
                 q.put_nowait(event)
@@ -75,8 +75,8 @@ class SessionAgent:
         self.subscribers.pop(q, None)
 
     def close(self) -> None:
-        """Marca el fin del run y despierta a los lectores bloqueados con un
-        sentinela None (equivalente al close(sa.Done) de Go)."""
+        """Marks the end of the run and wakes blocked readers with a None
+        sentinel (equivalent to Go's close(sa.Done))."""
         self.done_event.set()
         for q in self.subscribers:
             try:

@@ -16,11 +16,11 @@ export interface TabDef {
 }
 
 export const tabs: TabDef[] = [
-  { id: "files",    label: "Archivos", component: FileTreeWrapper },
-  { id: "sessions", label: "Sesiones", component: Sessions },
-  { id: "chat",     label: "Chat",     component: Chat, sessionScoped: true },
-  { id: "write",    label: "Escribir", component: Write, sessionScoped: true },
-  { id: "settings", label: "Ajustes",  component: Settings },
-  { id: "report",   label: "Informe Web",  component: ReportView },
-  { id: "learnit",  label: ".learnit",  component: LearnitView },
+  { id: "files",    label: "Files",      component: FileTreeWrapper },
+  { id: "sessions", label: "Sessions",   component: Sessions },
+  { id: "chat",     label: "Chat",       component: Chat, sessionScoped: true },
+  { id: "write",    label: "Write",      component: Write, sessionScoped: true },
+  { id: "settings", label: "Settings",   component: Settings },
+  { id: "report",   label: "Web Report", component: ReportView },
+  { id: "learnit",  label: ".learnit",   component: LearnitView },
 ]

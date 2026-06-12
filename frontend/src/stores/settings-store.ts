@@ -29,7 +29,7 @@ export const [defaultLearnitViewport, setDefaultLearnitViewport] =
 
 export const [llmProvider, setLLMProvider] =
   createSignal<LLMConfig["llmProvider"]>("deepseek")
-export const [llmAgentId, setLLMAgentId] = createSignal("orquestador")
+export const [llmAgentId, setLLMAgentId] = createSignal("orchestrator")
 export const [llmApiKey, setLLMApiKey] = createSignal("")
 export const [llmModel, setLLMModel] =
   createSignal<LLMConfig["llmModel"]>("deepseek-v4-pro")

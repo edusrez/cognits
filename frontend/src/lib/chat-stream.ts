@@ -37,7 +37,7 @@ export interface StreamCallbacks {
   onHistory: (snapshot: HistorySnapshot) => void
   onDone: () => void
   onError: (error: Error) => void
-  /** Error emitido por el agente en el servidor (run fallido). */
+  /** Error emitted by the agent on the server (failed run). */
   onServerError?: (message: string) => void
   onToolStart?: (data: any) => void
   onToolProgress?: (data: any) => void
@@ -59,9 +59,9 @@ export async function startChat(sessionId: string, messages: ChatMessage[]): Pro
   }
 }
 
-// Resuelve {completed: true} si el servidor cerró el stream con su evento
-// "done" (o tras un error HTTP ya notificado); {completed: false} si la
-// conexión se cortó a mitad — el caller puede reintentar la suscripción.
+// Resolves {completed: true} if the server closed the stream with its
+// "done" event (or after a previously notified HTTP error); {completed: false}
+// if the connection was cut mid-stream — the caller can retry the subscription.
 export async function streamSession(
   sessionId: string,
   callbacks: StreamCallbacks,
@@ -126,7 +126,7 @@ export async function streamSession(
               callbacks.onReasoning(json.content || "")
               break
             case "error":
-              callbacks.onServerError?.(json.message || "Error desconocido")
+              callbacks.onServerError?.(json.message || "Unknown error")
               break
             case "tool_start":
               callbacks.onToolStart?.(json)
@@ -159,7 +159,7 @@ export async function streamSession(
     }
   }
 
-  // La conexión terminó sin "done": no finalizar aquí; el caller decide si
-  // reintenta (el agente puede seguir vivo en el servidor).
+  // Connection ended without "done": don't finalize here; the caller decides
+  // whether to retry (the agent may still be alive on the server).
   return { completed: false }
 }

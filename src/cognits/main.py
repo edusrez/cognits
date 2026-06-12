@@ -1,8 +1,8 @@
-"""Punto de entrada: port de cmd/learnit/main.go.
+"""Entry point: port of cmd/learnit/main.go.
 
-Arranca el servidor HTTP local, abre el navegador y gestiona el shutdown:
-la primera señal drena los agentes activos (sus finally persisten respuestas
-parciales) y la segunda mata el proceso en seco.
+Starts the local HTTP server, opens the browser and manages shutdown: the
+first signal drains active agents (their finally blocks persist partial
+responses) and the second one hard-kills the process.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ DRAIN_TIMEOUT = 5.0
 
 class _Server(uvicorn.Server):
     def install_signal_handlers(self) -> None:
-        # Las señales las gestiona _install_signal_handlers: uvicorn no debe
-        # cortar antes de que el drenaje persista las respuestas parciales.
+        # Signals are handled by _install_signal_handlers: uvicorn must not
+        # shut down before the drain persists the partial responses.
         pass
 
 
@@ -39,7 +39,7 @@ def main() -> None:
     try:
         port = int(port_env) if port_env else DEFAULT_PORT
     except ValueError:
-        print(f"PORT inválido: {port_env!r}", file=sys.stderr)
+        print(f"invalid PORT: {port_env!r}", file=sys.stderr)
         raise SystemExit(1)
 
     try:
@@ -49,8 +49,8 @@ def main() -> None:
 
 
 def _cleanup_legacy_sidecar() -> None:
-    """El backend Go gestionaba el RAG como sidecar con venv propio; ahora es
-    in-process. Borra los restos (conservando chroma_db, que se reutiliza)."""
+    """The Go backend ran RAG as a sidecar with its own venv; it is now
+    in-process. Removes the leftovers (keeping chroma_db, which is reused)."""
     rag_dir = paths.data_dir(create=False) / "rag"
     shutil.rmtree(rag_dir / "venv", ignore_errors=True)
     for name in ("sidecar.py", "requirements.txt"):
@@ -82,7 +82,7 @@ async def _run(port: int) -> None:
     while not server.started and not serve_task.done():
         await asyncio.sleep(0.05)
     if serve_task.done():
-        await serve_task  # propaga el error de arranque (p.ej. puerto ocupado)
+        await serve_task  # propagates the startup error (e.g. port in use)
         return
 
     url = f"http://localhost:{port}"
@@ -100,7 +100,7 @@ def _install_signal_handlers(state: AppState, server: uvicorn.Server) -> None:
     def on_signal() -> None:
         nonlocal shutting_down
         if shutting_down:
-            # Un segundo Ctrl+C durante el drenaje mata el proceso en seco.
+            # A second Ctrl+C during the drain hard-kills the process.
             os._exit(1)
         shutting_down = True
         asyncio.ensure_future(_shutdown(state, server))
@@ -109,16 +109,16 @@ def _install_signal_handlers(state: AppState, server: uvicorn.Server) -> None:
         loop.add_signal_handler(signal.SIGINT, on_signal)
         loop.add_signal_handler(signal.SIGTERM, on_signal)
     except NotImplementedError:
-        # Windows: sin add_signal_handler; el handler salta en el hilo
-        # principal y reencola en el loop.
+        # Windows: no add_signal_handler; the handler fires on the main
+        # thread and re-enqueues onto the loop.
         signal.signal(signal.SIGINT, lambda *_: loop.call_soon_threadsafe(on_signal))
 
 
 async def _shutdown(state: AppState, server: uvicorn.Server) -> None:
-    # Drenar ANTES de pedir el cierre a uvicorn: uvicorn espera a las
-    # conexiones en vuelo (los SSE), que solo terminan cuando el drenaje
-    # cierra sus done_event — el orden inverso sería un interbloqueo. El RAG
-    # lo apaga el lifespan de la app tras el cierre HTTP.
+    # Drain BEFORE asking uvicorn to shut down: uvicorn waits for in-flight
+    # connections (the SSE streams), which only end when the drain sets
+    # their done_event — the reverse order would deadlock. The RAG engine is
+    # shut down by the app lifespan after the HTTP close.
     await state.drain_agents(DRAIN_TIMEOUT)
     server.should_exit = True
 

@@ -57,18 +57,18 @@ hljs.registerLanguage("php", php)
 hljs.registerLanguage("swift", swift)
 hljs.registerLanguage("kotlin", kotlin)
 
-// Configuración única de Markdown para toda la app: highlight + remend
-// (cierre de markdown incompleto durante streaming) + sanitizado DOMPurify.
-// Todo HTML derivado de la web o del LLM debe pasar por aquí.
+// Single Markdown configuration for the whole app: highlight + remend
+// (incomplete markdown closure during streaming) + DOMPurify sanitization.
+// All HTML derived from the web or LLM must go through here.
 const marked = new Marked(
   markedHighlight({
     highlight(code, lang) {
       if (lang && hljs.getLanguage(lang)) {
         return hljs.highlight(code, { language: lang }).value
       }
-      // Sin lenguaje declarado no se resalta: highlightAuto prueba ~20
-      // lexers por bloque y en streaming se ejecutaba en cada re-parseo.
-      // marked-highlight inserta el retorno tal cual, así que hay que escapar.
+      // Without a declared language, don't highlight: highlightAuto tests ~20
+      // lexers per block and in streaming it would run on every re-parse.
+      // marked-highlight inserts the return as-is, so escape it.
       return escapeHtml(code)
     },
   }),
@@ -78,8 +78,8 @@ function escapeHtml(code: string): string {
   return code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
 
-// Los enlaces del chat/informes abren fuera de la app sin perder el estado
-// (es una SPA) y sin ceder window.opener a la página destino.
+// Chat/report links open outside the app without losing state
+// (it's an SPA) and without exposing window.opener to the target page.
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node.tagName === "A" && node.hasAttribute("href")) {
     node.setAttribute("target", "_blank")
@@ -87,8 +87,8 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   }
 })
 
-// El virtualizador re-evalúa el markdown de todas las filas visibles en cada
-// actualización del store: sin caché, cada token re-parseaba todo el chat.
+// The virtualizer re-evaluates the markdown of all visible rows on every
+// store update: without cache, each token would re-parse the entire chat.
 const mdCache = new Map<string, string>()
 const MD_CACHE_MAX = 300
 
@@ -107,11 +107,11 @@ export function renderMarkdown(text: string): string {
   return html
 }
 
-// Para el mensaje que está creciendo: separa un prefijo estable (que acierta
-// siempre en la caché) de la cola volátil, cortando por el último párrafo que
-// no caiga dentro de un code fence. Coste por flush: O(último bloque).
-// Al terminar el stream se hace un render completo normal y la diferencia
-// (p.ej. una lista partida en dos) desaparece.
+// For the message that's growing: split off a stable prefix (always hits the
+// cache) from the volatile tail, cutting at the last paragraph that doesn't
+// fall inside a code fence. Cost per flush: O(last block).
+// When the stream ends, a normal full render runs and the difference
+// (e.g. a list split in two) disappears.
 export function renderMarkdownStreaming(text: string): string {
   let idx = text.lastIndexOf("\n\n")
   while (idx > 0) {
@@ -125,8 +125,8 @@ export function renderMarkdownStreaming(text: string): string {
   return renderMarkdown(text)
 }
 
-// Para los títulos resaltados de la búsqueda FTS: solo se permite el marcado
-// del highlight (<b>/<mark>), el resto se elimina.
+// For FTS search highlighted titles: only highlight markup (<b>/<mark>) is
+// allowed; everything else is stripped.
 export function sanitizeHighlight(html: string): string {
   return DOMPurify.sanitize(html, { ALLOWED_TAGS: ["b", "mark"], ALLOWED_ATTR: [] })
 }
