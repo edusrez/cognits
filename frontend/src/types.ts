@@ -40,6 +40,7 @@ export interface LLMConfig {
   llmReasoning: "disabled" | "high" | "max" | ""
   agentOverrides: Record<string, string>
   chatFontSize: number
+  typewriterSpeed: number
   tinyfishApiKey: string
   tinyfishTier: string
   subagentConfig: Record<string, SubagentConfig>

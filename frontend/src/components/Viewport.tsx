@@ -1,7 +1,7 @@
 import { createMemo, Show, Switch, Match } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import type { ViewportData } from "../stores/viewport-tree-store"
-import { activateTab, splitViewport, deleteViewport, canDeleteViewport, ctxMenu, setCtxMenu, removeDynamicTab } from "../stores/viewport-tree-store"
+import { activateTab, splitViewport, deleteViewport, canDeleteViewport, ctxMenu, setCtxMenu, removeDynamicTab, setFocusedViewportId, focusedViewportId, shiftHeld } from "../stores/viewport-tree-store"
 import { tabs, type ViewportId } from "../tabs"
 import { dragState, initiateTabDrag } from "../drag/drag-state"
 import { activeSessionId } from "../stores/session-store"
@@ -101,9 +101,10 @@ export default function Viewport(props: {
     <div
       data-viewport-id={props.id}
       class="flex flex-col h-full"
-      classList={{ "viewport-linking": linkingMode() }}
+      classList={{ "viewport-linking": linkingMode(), "viewport-keyboard-active": (shiftHeld() || linkingMode()) && focusedViewportId() === props.id }}
       style={props.style}
       onContextMenu={onContextMenu}
+      onClick={() => setFocusedViewportId(props.id)}
     >
       <Show when={visibleTabs().length > 0 || isDragTarget()}>
         <TabBar
@@ -129,7 +130,7 @@ export default function Viewport(props: {
           dragInsertIndex={ds().insertIndex}
         />
       </Show>
-      <div class="flex-1 overflow-auto relative">
+      <div data-scrollable class="flex-1 overflow-auto relative">
         <Switch fallback={props.children}>
           <Match when={isDragTarget() && draggedTabDef()}>
             <div class="viewport-dimmed-content">

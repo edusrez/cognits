@@ -1,6 +1,7 @@
 import { For, createMemo } from "solid-js"
 import type { Tab } from "../stores/viewport-tree-store"
 import { setCtxMenu } from "../stores/viewport-tree-store"
+import { currentToolStatus, isThinking, isStreaming, mainSessionPromptTokens } from "../stores/chat-store"
 
 export default function TabBar(props: {
   tabs: Tab[]
@@ -72,17 +73,34 @@ export default function TabBar(props: {
                 })
               }}
             >
-              {tab.label}
-              {!isGhost && (tab.id.startsWith("report:") || tab.id.startsWith("settings:")) && (
-                <span
-                  class="absolute right-1 hover:text-[#e0e0e0] cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    props.onCloseTab?.(tab.id)
-                  }}
-                >
-                  ×
-                </span>
+              {tab.id === "chat" ? (
+                <div class="grid grid-cols-[1fr_auto_1fr] items-center w-full gap-1 min-w-0">
+                  <span class="truncate text-[10px] text-[#5a5a5a]">
+                    {currentToolStatus() || (isThinking() ? "Thinking..." : isStreaming() ? "Writing..." : "Ready")}
+                  </span>
+                  <span class="text-[11px] whitespace-nowrap">{tab.label}</span>
+                  <div class="w-10 h-1.5 border border-white/15 justify-self-end">
+                    <div
+                      class="h-full bg-white/20 transition-[width] duration-300"
+                      style={{ width: `${Math.min((mainSessionPromptTokens() / 1_000_000) * 100, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {tab.label}
+                  {!isGhost && (tab.id.startsWith("report:") || tab.id.startsWith("settings:")) && (
+                    <span
+                      class="absolute right-1 hover:text-[#e0e0e0] cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        props.onCloseTab?.(tab.id)
+                      }}
+                    >
+                      ×
+                    </span>
+                  )}
+                </>
               )}
             </div>
           )

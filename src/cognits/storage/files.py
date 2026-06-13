@@ -78,6 +78,7 @@ class Config:
     llm_reasoning: str = ""
     agent_overrides: dict[str, str] = field(default_factory=dict)
     chat_font_size: int = 0
+    typewriter_speed: float = 5.0
     tinyfish_api_key: str = ""
     tinyfish_tier: str = ""
     subagent_config: dict[str, SubagentConfig] = field(default_factory=dict)
@@ -95,6 +96,7 @@ class Config:
             "llmReasoning": self.llm_reasoning,
             "agentOverrides": self.agent_overrides,
             "chatFontSize": self.chat_font_size,
+            "typewriterSpeed": self.typewriter_speed,
             "tinyfishApiKey": self.tinyfish_api_key,
             "tinyfishTier": self.tinyfish_tier,
             "subagentConfig": {k: v.to_json() for k, v in self.subagent_config.items()},
@@ -114,6 +116,7 @@ class Config:
             llm_reasoning=d.get("llmReasoning") or "",
             agent_overrides=d.get("agentOverrides") or {},
             chat_font_size=int(d.get("chatFontSize", 0) or 0),
+            typewriter_speed=float(d.get("typewriterSpeed", 5.0) or 5.0),
             tinyfish_api_key=d.get("tinyfishApiKey") or "",
             tinyfish_tier=d.get("tinyfishTier") or "",
             subagent_config={

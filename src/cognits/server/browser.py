@@ -38,7 +38,7 @@ def is_wsl() -> bool:
 
 
 def open_browser(base_url: str) -> None:
-    url = f"{base_url}?v={int(time.time())}"
+    url = base_url
 
     if is_wsl():
         for args in (

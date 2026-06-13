@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import multiprocessing
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -52,43 +54,95 @@ class RagEngine:
         engine._executor.submit(_init)
         return engine
 
+    @staticmethod
+    def _warm_cache(error_queue: multiprocessing.Queue | None = None) -> None:
+        """Download BGE-M3 model files in a child process so ONNX Runtime
+        graph optimisation (which holds the GIL for seconds) never blocks
+        the parent's event loop.  The child has its own GIL."""
+        try:
+            import chromadb
+            from chromadb.config import Settings
+            from fastembed import TextEmbedding
+            from fastembed.common.model_description import ModelSource, PoolingType
+
+            import onnxruntime as _ort
+            _ort.set_default_logger_severity(4)
+
+            TextEmbedding.add_custom_model(
+                model="BAAI/bge-m3",
+                pooling=PoolingType.CLS,
+                normalization=True,
+                sources=ModelSource(hf="BAAI/bge-m3"),
+                dim=1024,
+                model_file="onnx/model.onnx",
+                description="Text embeddings, Unimodal, Multilingual (100+ languages), 8192 tokens",
+                license="mit",
+                size_in_gb=2.27,
+                additional_files=["onnx/model.onnx_data",
+                                   "onnx/sentencepiece.bpe.model"],
+            )
+            # Download + ONNX load → child GIL, parent unaffected.
+            _ = TextEmbedding(model_name="BAAI/bge-m3")
+        except Exception as e:
+            if error_queue is not None:
+                error_queue.put(f"{type(e).__name__}: {e}")
+            raise
+
     def _load(self) -> None:
-        # Imports here: they're heavy (onnxruntime) and optional — if missing,
-        # the rest of the app works without RAG.
         import chromadb
         from chromadb.config import Settings
-        from fastembed import TextEmbedding
-        from fastembed.common.model_description import ModelSource, PoolingType
 
-        # BGE-M3: multilingual (100+ languages), 1024 dims, up to 8192 tokens,
-        # and no query:/passage: prefix asymmetry. Not natively supported in
-        # fastembed 0.8.0: registered as a custom model with the HuggingFace
-        # ONNX (identical to the Go sidecar to reuse the already downloaded
-        # model cache).
-        TextEmbedding.add_custom_model(
-            model="BAAI/bge-m3",
-            pooling=PoolingType.CLS,
-            normalization=True,
-            sources=ModelSource(hf="BAAI/bge-m3"),
-            dim=1024,
-            model_file="onnx/model.onnx",
-            description="Text embeddings, Unimodal, Multilingual (100+ languages), 8192 tokens",
-            license="mit",
-            size_in_gb=2.27,
-            additional_files=["onnx/model.onnx_data", "onnx/sentencepiece.bpe.model"],
-        )
-        log.info("rag: loading BGE-M3 (first time downloads ~2.3 GB)...")
-        self._model = TextEmbedding(model_name="BAAI/bge-m3")
-        client = chromadb.PersistentClient(
-            path=str(self.storage_path),
-            settings=Settings(anonymized_telemetry=False),
-        )
-        self._collection = client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},
-        )
-        log.info(
-            "rag: ready in %s (collection %s, %d docs)",
+        log.debug("rag: loading BGE-M3 (first time downloads ~2.3 GB)...")
+        # Phase 1: warm cache in subprocess — ONNX holds the GIL for seconds
+        # during graph optimisation; a child process has its own GIL so the
+        # parent's spinner stays smooth.
+        try:
+            error_queue: multiprocessing.Queue[str] = multiprocessing.Queue()
+            proc = multiprocessing.Process(
+                target=RagEngine._warm_cache, args=(error_queue,)
+            )
+            proc.start()
+            proc.join(timeout=300)
+            if proc.is_alive():
+                proc.kill()
+                proc.join()
+                log.warning("rag: warm-cache subprocess timed out")
+            elif proc.exitcode != 0:
+                detail = ""
+                try:
+                    detail = f": {error_queue.get_nowait()}"
+                except Exception:
+                    pass
+                log.warning(
+                    "rag: warm-cache subprocess failed (exit %d%s), "
+                    "loading on first use instead",
+                    proc.exitcode,
+                    detail,
+                )
+        except Exception as e:
+            log.warning("rag: warm-cache subprocess error: %s", e)
+
+        # Phase 2: init ChromaDB only (lightweight, no ONNX GIL).
+        # Model loading is deferred to _ensure_model() so the spinner
+        # stays smooth during startup.
+        saved = os.dup(2)
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, 2)
+        os.close(devnull)
+        try:
+            client = chromadb.PersistentClient(
+                path=str(self.storage_path),
+                settings=Settings(anonymized_telemetry=False),
+            )
+            self._collection = client.get_or_create_collection(
+                name=COLLECTION_NAME,
+                metadata={"hnsw:space": "cosine"},
+            )
+        finally:
+            os.dup2(saved, 2)
+            os.close(saved)
+        log.debug(
+            "rag: ready in %s (collection %s, %d docs; model on demand)",
             self.storage_path,
             COLLECTION_NAME,
             self._collection.count(),
@@ -102,6 +156,38 @@ class RagEngine:
             if self.error:
                 raise RagNotReady(f"RAG engine not available: {self.error}")
             raise RagNotReady("RAG engine still loading, retry in a few seconds")
+
+    def _ensure_model(self) -> None:
+        """Load BGE-M3 on first use — deferred so startup spinner stays smooth.
+        Called from the executor thread; blocks briefly during ONNX init
+        (~200-500 ms) but has no impact on the TUI spinner."""
+        if self._model is not None:
+            return
+        from fastembed import TextEmbedding
+        from fastembed.common.model_description import ModelSource, PoolingType
+
+        path = os.dup(2)
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, 2)
+        os.close(devnull)
+        try:
+            TextEmbedding.add_custom_model(
+                model="BAAI/bge-m3",
+                pooling=PoolingType.CLS,
+                normalization=True,
+                sources=ModelSource(hf="BAAI/bge-m3"),
+                dim=1024,
+                model_file="onnx/model.onnx",
+                description="Text embeddings, Unimodal, Multilingual (100+ languages), 8192 tokens",
+                license="mit",
+                size_in_gb=2.27,
+                additional_files=["onnx/model.onnx_data",
+                                   "onnx/sentencepiece.bpe.model"],
+            )
+            self._model = TextEmbedding(model_name="BAAI/bge-m3")
+        finally:
+            os.dup2(path, 2)
+            os.close(path)
 
     async def _run(self, fn, *args):
         loop = asyncio.get_running_loop()
@@ -128,6 +214,7 @@ class RagEngine:
     # --- synchronous implementation (only on the executor thread) ---
 
     def _search_sync(self, query: str, max_results: int) -> list[dict]:
+        self._ensure_model()
         # query_embed returns a generator with ONE embedding; wrapping the
         # entire list in another list produced shape 1x1x1024 and broke.
         query_embedding = next(iter(self._model.query_embed(query)))
@@ -155,6 +242,7 @@ class RagEngine:
         return chunks
 
     def _index_sync(self, chunks: list[dict]) -> int:
+        self._ensure_model()
         texts = [c["text"] for c in chunks]
         ids = [c["id"] for c in chunks]
         metadatas = [

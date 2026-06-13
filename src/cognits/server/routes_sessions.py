@@ -28,7 +28,7 @@ def register(app: FastAPI, st) -> None:
             return err
 
         now = datetime.now().astimezone()
-        sid = now.strftime("%Y-%m-%dT%H-%M")
+        sid = now.strftime("%Y-%m-%dT%H-%M-%S")
         session = Session(id=sid, name=sid, created_at=now.isoformat(timespec="seconds"))
 
         try:

@@ -16,30 +16,37 @@ RESEARCHER_SYSTEM_PROMPT = """# Web Researcher — Cognits Subagent
 You are an autonomous web researcher within Cognits. Your job is to receive a research
 task and produce a complete, verified, and well-structured report in Markdown.
 
-**Never use your internal knowledge.** Every claim must come from web search tools.
-If your knowledge suggests something, verify it with searches before including it.
+**Never use your internal knowledge.** Every claim must be verified with web searches
+or the internal knowledge base.
 
 ## Available Tools
+- rag_search(query, max_results?): Search the internal knowledge base (indexed reports
+  from past sessions). Check this first before going to the web.
 - tinyfish_search(query): Web search. Use short, specific phrases.
 - tinyfish_fetch_content(urls): Read the full content of 1-10 URLs.
 
 ## Research Methodology
 
-### 1. Plan
-Before searching, think: what aspects should I cover? What angles are missing?
+### 1. Check internal knowledge base
+Before searching the web, use rag_search to see if the topic was already researched
+in a previous session. If a relevant report exists, cite it and complement with
+fresh web searches if needed.
+
+### 2. Plan
+If no prior reports exist, think: what aspects should I cover? What angles are missing?
 Prioritize official sources (documentation, GitHub, papers) over blogs.
 
-### 2. Search → Read → Reflect
+### 3. Search → Read → Reflect
 - Start with broad searches to map the landscape
 - Refine queries based on what you find
 - Read multiple sources in parallel with tinyfish_fetch_content
 - After each read: is it credible? does it add something new? what's missing?
 
-### 3. Cross-check sources
+### 4. Cross-check sources
 If two sources say opposite things, dig deeper. A good report notes
 both consensus and controversy.
 
-### 4. Decide when to stop
+### 5. Decide when to stop
 Stop the research when ANY of these conditions is met:
 
 | Condition | Signal |
@@ -52,7 +59,7 @@ Stop the research when ANY of these conditions is met:
 **Golden rule**: Stop researching when you can answer with confidence.
 Don't pursue perfection.
 
-### 5. Write the report
+### 6. Write the report
 
 Structure your final report in Markdown:
 
@@ -190,15 +197,18 @@ class FetchTool(Tool):
         return json.dumps(resp, ensure_ascii=False)
 
 
-def new_researcher_tools(tf_client: TinyfishClient) -> Registry:
+def new_researcher_tools(tf_client: TinyfishClient, rag_engine=None) -> Registry:
     reg = Registry()
     reg.register(SearchTool(tf_client))
     reg.register(FetchTool(tf_client))
+    if rag_engine is not None:
+        reg.register(RagSearch(rag_engine))
     return reg
 
 
 def researcher_config(
-    model: str, reasoning: str, max_steps: int, tf_client: TinyfishClient
+    model: str, reasoning: str, max_steps: int, tf_client: TinyfishClient,
+    rag_engine=None,
 ) -> AgentConfig:
     return AgentConfig(
         name="web_researcher",
@@ -206,7 +216,7 @@ def researcher_config(
         reasoning=reasoning,
         max_steps=max_steps,
         system_prompt=RESEARCHER_SYSTEM_PROMPT,
-        tools=new_researcher_tools(tf_client),
+        tools=new_researcher_tools(tf_client, rag_engine),
     )
 
 
@@ -233,7 +243,7 @@ def documentalist_config(
             reasoning=reasoning,
             max_steps=max_steps,
             system_prompt=RESEARCHER_SYSTEM_PROMPT,
-            tools=new_researcher_tools(tf_client),
+            tools=new_researcher_tools(tf_client, rag_engine),
         )
     }
 

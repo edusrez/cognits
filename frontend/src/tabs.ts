@@ -22,5 +22,5 @@ export const tabs: TabDef[] = [
   { id: "write",    label: "Write",      component: Write, sessionScoped: true },
   { id: "settings", label: "Settings",   component: Settings },
   { id: "report",   label: "Web Report", component: ReportView },
-  { id: "learnit",  label: ".learnit",   component: LearnitView },
+  { id: "learnit",  label: ".cognits",  component: LearnitView },
 ]

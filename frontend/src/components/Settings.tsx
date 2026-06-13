@@ -24,6 +24,8 @@ import {
   setAgentOverrides,
   chatFontSize,
   setChatFontSize,
+  typewriterSpeed,
+  setTypewriterSpeed,
   tinyfishApiKey,
   setTinyfishApiKey,
   tinyfishTier,
@@ -80,7 +82,7 @@ function tabDisplayName(tabId: string | null): string | null {
     chat: "Chat",
     sessions: "Sessions",
     write: "Write",
-    learnit: ".learnit",
+    learnit: ".cognits",
   }
   return tabId ? names[tabId] ?? null : null
 }
@@ -612,7 +614,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                 <input
                   type="number"
                   min="0"
-                  max="50"
+                   max="200"
                   value={subagentConfig()["web_researcher"]?.maxSteps ?? 0}
                   onInput={(e) => {
                     setSubagentConfig((prev) => ({
@@ -624,7 +626,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                   class="no-spinner bg-transparent border border-white/20 px-2 py-1 text-[13px] text-[#e0e0e0] outline-hidden focus:border-white/40 w-20 disabled:opacity-40 disabled:cursor-not-allowed"
                   disabled={conversationStarted()}
                 />
-                <span class="text-[#6a6a6a] text-[13px]">(0 = default: 15)</span>
+                <span class="text-[#6a6a6a] text-[13px]">(0 = default: 100)</span>
               </div>
             </div>
           </div>
@@ -682,6 +684,39 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
               <div class="flex justify-between text-[11px] text-[#6a6a6a]">
                 <span>11</span>
                 <span>24</span>
+              </div>
+            </div>
+            <div class="flex flex-col gap-1 mt-1">
+              <div class="flex items-center justify-between text-[#9a9a9a]">
+                <span>Typewriter speed</span>
+                <span>{typewriterSpeed().toFixed(2)}ms</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={(() => {
+                  const v = typewriterSpeed()
+                  if (v <= 0.01) return 0
+                  if (v >= 10) return 100
+                  if (v <= 5) return Math.round(50 * (Math.log10(v) - Math.log10(0.01)) / (Math.log10(5) - Math.log10(0.01)))
+                  return Math.round(50 + 50 * (Math.log10(v) - Math.log10(5)) / (Math.log10(10) - Math.log10(5)))
+                })()}
+                onInput={(e) => {
+                  const p = parseInt(e.currentTarget.value)
+                  let v: number
+                  if (p <= 0) v = 0.01
+                  else if (p >= 100) v = 10
+                  else if (p <= 50) v = Math.pow(10, Math.log10(0.01) + (p / 50) * (Math.log10(5) - Math.log10(0.01)))
+                  else v = Math.pow(10, Math.log10(5) + ((p - 50) / 50) * (Math.log10(10) - Math.log10(5)))
+                  setTypewriterSpeed(v)
+                  saveConfig()
+                }}
+                class="chat-font-slider"
+              />
+              <div class="flex justify-between text-[11px] text-[#6a6a6a]">
+                <span>Faster</span>
+                <span>Slower</span>
               </div>
             </div>
           </div>

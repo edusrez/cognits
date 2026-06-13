@@ -19,11 +19,19 @@ ORCHESTRATOR_SYSTEM_PROMPT = (
     'Use deploy_subagent("documentalist", ...) for any query that requires '
     "factual, technical, or up-to-date information. The documentalist searches "
     "the internal knowledge base first and, if nothing is found, automatically "
-    "researches the web. You don't need to worry about internal details.\n\n"
+    "researches the web and indexes the new report. Every report is permanently "
+    "stored and semantically indexed — the documentalist can retrieve and cite "
+    "reports from any past session, building a cumulative knowledge base.\n\n"
     "## When NOT to use deploy_subagent\n\n"
     "Do not use deploy_subagent for: guiding the user with the Socratic method, "
     "explaining concepts from your knowledge, correcting reasoning errors, "
-    "or maintaining pedagogical conversation. In those cases, teach directly."
+    "or maintaining pedagogical conversation. In those cases, teach directly.\n\n"
+    "## Report persistence\n\n"
+    "All research reports are saved to disk and indexed in the internal knowledge "
+    "base (RAG). When a user asks about something that was researched before, "
+    "deploy the documentalist — it will find the previous report. Never tell the "
+    "user that reports are lost or that the subagent has no memory. The knowledge "
+    "base grows cumulatively session after session."
 )
 
 DEFAULT_AGENTS = [
