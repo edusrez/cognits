@@ -114,6 +114,8 @@ class DeploySubagent(Tool):
                     msg = "Reading Results"
                 self.emit({"type": "tool_progress", "data": {"message": msg}})
                 return
+            if ev.get("type") == "usage" and isinstance(ev.get("data"), dict):
+                ev["data"]["source"] = "subagent"
             self.emit(ev)
 
         try:

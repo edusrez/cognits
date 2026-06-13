@@ -2,16 +2,26 @@ import { createEffect, createMemo, Show, createSignal, onCleanup, onMount } from
 import {
   rootId,
   getViewportData,
+  getViewportIds,
   getSplitData,
   setFraction,
   moveTab,
   placeSessionTabs,
   removeSessionTabs,
+  activateTab,
+  swapAdjacentTabs,
+  removeDynamicTab,
+  focusedViewportId,
+  setFocusedViewportId,
+  shiftHeld,
+  setShiftHeld,
+  computeViewportPositions,
+  findSpatialNeighbor,
   type ViewportId,
 } from "./stores/viewport-tree-store"
 import { dragState, endDrag } from "./drag/drag-state"
-import { activeSessionId } from "./stores/session-store"
-import { loadConfig, defaultChatViewport, defaultWriteViewport, loadSessionConfig } from "./stores/settings-store"
+import { activeSessionId, deleteSession } from "./stores/session-store"
+import { loadConfig, defaultChatViewport, defaultWriteViewport, loadSessionConfig, linkingMode, confirmLinkViewport, cancelLinking } from "./stores/settings-store"
 import { loadSessionMessages } from "./stores/chat-store"
 import { initDesktops, createDesktop, switchDesktop, closeDesktop, desktopCount, activeDesktopIndex } from "./stores/desktop-store"
 import Viewport from "./components/Viewport"
@@ -19,7 +29,33 @@ import DragOverlay from "./components/DragOverlay"
 
 initDesktops()
 
+const [ragReady, setRagReady] = createSignal(false)
+const [ragError, setRagError] = createSignal<string | null>(null)
+
+async function pollHealth() {
+  try {
+    const res = await fetch("/api/health")
+    if (!res.ok) return
+    const data = await res.json()
+    if (data.rag_error) {
+      setRagError(data.rag_error)
+      return
+    }
+    if (data.rag_ready) {
+      setRagReady(true)
+      return
+    }
+  } catch {
+    // Server not ready yet — retry
+  }
+  setTimeout(pollHealth, 500)
+}
+
+pollHealth()
+
 export default function App() {
+  const [spaceHeld, setSpaceHeld] = createSignal(false)
+
   createEffect(() => {
     const sid = activeSessionId()
     if (sid) {
@@ -45,11 +81,203 @@ export default function App() {
 
   onMount(() => {
     loadConfig()
+
+    let _selectedEl: HTMLElement | null = null
+    function setSelection(el: HTMLElement | null) {
+      if (_selectedEl) _selectedEl.classList.remove("keyboard-selected")
+      _selectedEl = el
+      if (el) el.classList.add("keyboard-selected")
+    }
     const handler = (e: KeyboardEvent) => {
+      // Space tracking — held while pressing an arrow to reorder tabs.
+      if (e.key === " " && !e.repeat) {
+        const tag = (e.target as HTMLElement).tagName
+        if (tag !== "INPUT" && tag !== "TEXTAREA") {
+          e.preventDefault()
+          setSpaceHeld(true)
+          return
+        }
+      }
+      // Shift tracking — shows viewport highlight while held.
+      if (e.key === "Shift" && !e.repeat) {
+        const tag = (e.target as HTMLElement).tagName
+        if (tag !== "INPUT" && tag !== "TEXTAREA") {
+          setShiftHeld(true)
+          return
+        }
+      }
+
+      // Application-level shortcuts — fire regardless of focus.
+      if (!e.ctrlKey && !e.shiftKey && !e.altKey) {
+        if (e.key === "Enter" && spaceHeld() && _selectedEl && !e.repeat) {
+          const tag = (e.target as HTMLElement).tagName
+          if (tag !== "INPUT" && tag !== "TEXTAREA") {
+            e.preventDefault()
+            const el = _selectedEl
+            setSelection(null)
+            if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+              el.focus?.({ focusVisible: true } as FocusOptions)
+            } else {
+              el.click?.()
+            }
+          }
+          return
+        }
+      }
+      // Link-viewport mode — Space+Arrow moves viewport highlight, Enter confirms.
+      if (!e.ctrlKey && !e.shiftKey && !e.altKey && linkingMode() && spaceHeld()) {
+        if (e.key === "Enter") {
+          const cur = focusedViewportId()
+          if (cur) { e.preventDefault(); confirmLinkViewport(cur) }
+          return
+        }
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown") {
+          const cur = focusedViewportId()
+          if (cur) {
+            const dir = e.key === "ArrowLeft" ? "left"
+              : e.key === "ArrowRight" ? "right"
+              : e.key === "ArrowUp" ? "up" : "down"
+            const neighbor = findSpatialNeighbor(cur, dir, computeViewportPositions())
+            if (neighbor) { e.preventDefault(); setFocusedViewportId(neighbor) }
+          }
+          return
+        }
+      }
+      // Space shortcuts — fire regardless of focus.
+      if (spaceHeld() && !e.repeat) {
+        if (e.key === "d" && _selectedEl) {
+          const sid = _selectedEl.getAttribute("data-session-id")
+          if (sid) { e.preventDefault(); setSelection(null); deleteSession(sid); return }
+          const rid = _selectedEl.getAttribute("data-report-id")
+          if (rid) {
+            e.preventDefault(); setSelection(null)
+            fetch(`/api/reports/${rid}`, { method: "DELETE" })
+              .then(() => import("./stores/learnit-store").then((m) => m.refetchReports()))
+            return
+          }
+        }
+        if (e.key === "c") {
+          const vpId = focusedViewportId()
+          if (vpId) {
+            const vp = getViewportData(vpId)
+            const tabId = vp?.activeTabId
+            if (tabId && (tabId.startsWith("report:") || tabId.startsWith("settings:"))) {
+              e.preventDefault()
+              removeDynamicTab(vpId, tabId)
+            }
+          }
+          return
+        }
+      }
+      if (!e.ctrlKey && e.shiftKey && !e.altKey) {
+        if (e.key === "Enter") {
+          const tag = (e.target as HTMLElement).tagName
+          if (tag === "INPUT" || tag === "TEXTAREA") {
+            e.preventDefault()
+            const el = e.target as HTMLElement
+            el.blur()
+            setSelection(el)
+          }
+          return
+        }
+        if (
+          e.key === "ArrowLeft" ||
+          e.key === "ArrowRight" ||
+          e.key === "ArrowUp" ||
+          e.key === "ArrowDown"
+        ) {
+          const current = focusedViewportId()
+          if (current) {
+            const positions = computeViewportPositions()
+            const dir = e.key === "ArrowLeft" ? "left"
+              : e.key === "ArrowRight" ? "right"
+              : e.key === "ArrowUp" ? "up" : "down"
+            const neighbor = findSpatialNeighbor(current, dir, positions)
+            if (neighbor) {
+              e.preventDefault()
+              setFocusedViewportId(neighbor)
+            }
+          }
+          return
+        }
+        if (e.key === "N") {
+          e.preventDefault()
+          closeDesktop(activeDesktopIndex())
+          return
+        }
+      }
+
+      // Bare-key shortcuts — blocked on form elements.
       const tag = (e.target as HTMLElement).tagName
-      if (tag === "INPUT" || tag === "TEXTAREA") return
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
 
       if (!e.ctrlKey && !e.shiftKey && !e.altKey) {
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          const vpId = focusedViewportId()
+          if (vpId) {
+            if (spaceHeld()) {
+              e.preventDefault()
+              const vpEl = document.querySelector(`[data-viewport-id="${vpId}"]`)
+              if (vpEl) {
+                const items = getFocusableElements(vpEl as HTMLElement)
+                if (items.length > 0) {
+                  const cur = _selectedEl || (document.activeElement as HTMLElement)
+                  let idx = items.indexOf(cur)
+                  if (idx < 0) idx = e.key === "ArrowDown" ? -1 : items.length
+                  const next = e.key === "ArrowDown"
+                    ? (idx + 1) % items.length
+                    : (idx - 1 + items.length) % items.length
+                  setSelection(items[next])
+                  items[next].scrollIntoView?.({ block: "nearest" })
+                }
+              }
+              return
+            }
+            const el = document.querySelector(`[data-viewport-id="${vpId}"]`)
+            if (el) {
+              let scrollable: HTMLElement | null = el.querySelector("[data-scrollable]")
+              if (!scrollable || (scrollable as HTMLElement).scrollHeight <= (scrollable as HTMLElement).clientHeight) {
+                scrollable = null
+                const candidates = el.querySelectorAll(".overflow-auto, .overflow-y-auto")
+                for (const c of candidates) {
+                  const h = c as HTMLElement
+                  if (h.scrollHeight > h.clientHeight) { scrollable = h; break }
+                }
+              }
+              if (scrollable) {
+                e.preventDefault()
+                scrollable.scrollBy({
+                  top: e.key === "ArrowDown" ? 60 : -60,
+                  behavior: "smooth",
+                })
+              }
+            }
+          }
+        }
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          const vpId = focusedViewportId()
+          if (vpId) {
+            if (spaceHeld()) {
+              const vp = getViewportData(vpId)
+              if (vp && vp.activeTabId) {
+                e.preventDefault()
+                swapAdjacentTabs(vpId, vp.activeTabId, e.key === "ArrowRight")
+              }
+              return
+            }
+            const vp = getViewportData(vpId)
+            if (vp) {
+              const vis = vp.tabs.filter((t) => !t.hidden || activeSessionId() !== null)
+              if (vis.length === 0) return
+              const idx = vis.findIndex((t) => t.id === vp.activeTabId)
+              const next = e.key === "ArrowRight"
+                ? (idx + 1) % vis.length
+                : (idx - 1 + vis.length) % vis.length
+              e.preventDefault()
+              activateTab(vpId, vis[next].id)
+            }
+          }
+        }
         if (e.key === "n") {
           e.preventDefault()
           createDesktop()
@@ -61,15 +289,17 @@ export default function App() {
           switchDesktop(num - 1)
         }
       }
-      if (!e.ctrlKey && e.shiftKey && !e.altKey) {
-        if (e.key === "N") {
-          e.preventDefault()
-          closeDesktop(activeDesktopIndex())
-        }
-      }
     }
     document.addEventListener("keydown", handler)
-    onCleanup(() => document.removeEventListener("keydown", handler))
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === " ") { setSpaceHeld(false); setSelection(null); if (linkingMode()) cancelLinking() }
+      if (e.key === "Shift") { setShiftHeld(false) }
+    }
+    document.addEventListener("keyup", onKeyUp)
+    onCleanup(() => {
+      document.removeEventListener("keydown", handler)
+      document.removeEventListener("keyup", onKeyUp)
+    })
   })
 
   return (
@@ -77,8 +307,26 @@ export default function App() {
       class="h-screen w-screen bg-black text-[#e0e0e0] select-none"
       onContextMenu={(e) => e.preventDefault()}
     >
-      <GridNode id={rootId()} />
-      <DragOverlay onDrop={handleDrop} />
+      <Show
+        when={ragReady()}
+        fallback={
+          <div class="h-full w-full flex items-center justify-center">
+            <div class="flex flex-col items-center gap-3">
+              <div class="text-[#6a6a6a]">
+                {ragError() ? `RAG error: ${ragError()}` : "Loading BGE-M3 model..."}
+              </div>
+              <Show when={!ragError()}>
+                <div class="w-48 h-1 border border-white/20">
+                  <div class="h-full bg-white/20 animate-pulse" style={{ width: "60%" }} />
+                </div>
+              </Show>
+            </div>
+          </div>
+        }
+      >
+        <GridNode id={rootId()} />
+        <DragOverlay onDrop={handleDrop} />
+      </Show>
     </div>
   )
 }
@@ -177,4 +425,23 @@ function SplitView(props: { id: ViewportId }) {
       <GridNode id={children()[1]} />
     </div>
   )
+}
+
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  const selector = [
+    "button:not([disabled])",
+    "[href]",
+    "input:not([disabled]):not([type=\"hidden\"])",
+    "textarea:not([disabled])",
+    "[tabindex]:not([tabindex=\"-1\"])",
+    "select:not([disabled])",
+    "[contenteditable=\"true\"]",
+    "[class~=\"cursor-pointer\"]",
+  ].join(", ")
+  return Array.from(container.querySelectorAll(selector)).filter(
+    (el) => {
+      const s = getComputedStyle(el as HTMLElement)
+      return s.display !== "none" && s.visibility !== "hidden"
+    },
+  ) as HTMLElement[]
 }

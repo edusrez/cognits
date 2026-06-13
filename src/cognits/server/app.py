@@ -86,7 +86,10 @@ def create_app(state: AppState | None = None) -> FastAPI:
             from cognits.rag.engine import RagEngine
 
             state.rag = RagEngine.start_background()
-        yield
+        try:
+            yield
+        except asyncio.CancelledError:
+            pass
         if state.rag is not None:
             state.rag.shutdown()
 

@@ -38,6 +38,8 @@ export const [llmReasoning, setLLMReasoning] =
 export const [agentOverrides, setAgentOverrides] =
   createSignal<Record<string, string>>({})
 export const [chatFontSize, setChatFontSize] = createSignal(13)
+export const [typewriterSpeed, setTypewriterSpeed] = createSignal(5)
+// kept as number; slider uses parseFloat, store/backend use float
 export const [tinyfishApiKey, setTinyfishApiKey] = createSignal("")
 export const [tinyfishTier, setTinyfishTier] = createSignal("payg")
 export const [subagentConfig, setSubagentConfig] = createSignal<
@@ -109,6 +111,7 @@ export async function loadConfig() {
     if (cfg.llmReasoning) setLLMReasoning(cfg.llmReasoning)
     if (cfg.agentOverrides) setAgentOverrides(cfg.agentOverrides)
     if (cfg.chatFontSize) setChatFontSize(cfg.chatFontSize)
+    if (cfg.typewriterSpeed) setTypewriterSpeed(cfg.typewriterSpeed)
     if (cfg.tinyfishApiKey) setTinyfishApiKey(cfg.tinyfishApiKey)
     if (cfg.tinyfishTier) setTinyfishTier(cfg.tinyfishTier)
     if (cfg.subagentConfig) setSubagentConfig(cfg.subagentConfig)
@@ -134,6 +137,7 @@ export function saveConfig() {
           llmReasoning: llmReasoning(),
           agentOverrides: agentOverrides(),
           chatFontSize: chatFontSize(),
+          typewriterSpeed: typewriterSpeed(),
           tinyfishApiKey: tinyfishApiKey(),
           tinyfishTier: tinyfishTier(),
           subagentConfig: subagentConfig(),
@@ -147,4 +151,13 @@ export function saveConfig() {
       console.error("save config:", err)
     }
   }, 500)
+}
+
+export function confirmLinkViewport(vpId: ViewportId) {
+  const el = document.querySelector(`[data-viewport-id="${vpId}"]`)
+  if (el) el.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+}
+
+export function cancelLinking() {
+  document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }))
 }

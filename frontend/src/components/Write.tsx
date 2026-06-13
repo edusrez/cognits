@@ -7,13 +7,22 @@ export default function Write() {
   const spellcheck = createMemo(() => writeLangs().length > 0)
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault()
-      const target = e.currentTarget as HTMLTextAreaElement
-      const content = target.value.trim()
-      if (content && !isStreaming()) {
-        sendMessage(content)
-        target.value = ""
+    if (e.key === "Enter") {
+      if (!e.ctrlKey && !e.shiftKey) {
+        e.preventDefault()
+        const target = e.currentTarget as HTMLTextAreaElement
+        const content = target.value.trim()
+        if (content && !isStreaming()) {
+          sendMessage(content)
+          target.value = ""
+        }
+      } else if (e.ctrlKey) {
+        e.preventDefault()
+        const target = e.currentTarget as HTMLTextAreaElement
+        const start = target.selectionStart
+        const end = target.selectionEnd
+        target.value = target.value.substring(0, start) + "\n" + target.value.substring(end)
+        target.selectionStart = target.selectionEnd = start + 1
       }
     }
   }
@@ -25,7 +34,7 @@ export default function Write() {
         spellcheck={spellcheck()}
         lang={lang()}
         class="border border-white/20 px-3 py-3 text-[13px] bg-transparent text-[#e0e0e0] w-full h-full resize-none outline-none"
-        placeholder={isStreaming() ? "AI is responding..." : "Type your message... (Ctrl+Enter to send)"}
+        placeholder={isStreaming() ? "AI is responding..." : "Type your message... (Enter to send, Ctrl+Enter for new line)"}
         disabled={isStreaming()}
       />
     </div>

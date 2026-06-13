@@ -32,6 +32,11 @@ export const [usageBySession, setUsageBySession] = createSignal<
   Record<string, ChatUsage>
 >({})
 
+// Main-agent prompt tokens only (source === "orchestrator"), excluding subagents.
+export const [mainPromptTokensBySession, setMainPromptTokensBySession] = createSignal<
+  Record<string, number>
+>({})
+
 export const [toolStatusBySession, setToolStatusBySession] = createSignal<
   Record<string, string | null>
 >({})
@@ -63,6 +68,12 @@ export const sessionUsage = createMemo(() => {
   const sid = activeSessionId()
   if (!sid) return null
   return usageBySession()[sid] ?? null
+})
+
+export const mainSessionPromptTokens = createMemo(() => {
+  const sid = activeSessionId()
+  if (!sid) return 0
+  return mainPromptTokensBySession()[sid] ?? 0
 })
 
 export const currentToolStatus = createMemo(() => {
@@ -204,6 +215,13 @@ function createStreamCallbacks(sid: string, controller: AbortController): Stream
           },
         }
       })
+      // Accumulate prompt tokens for the main agent only (exclude subagents).
+      if ((usage as any).source === "orchestrator" && usage.prompt_tokens) {
+        setMainPromptTokensBySession((prev) => ({
+          ...prev,
+          [sid]: (prev[sid] ?? 0) + usage.prompt_tokens,
+        }))
+      }
     },
     onToolProgress(data: any) {
       // The server sends an empty message to clear the banner (failed subagent).
@@ -249,11 +267,23 @@ async function finalizeStream(sid: string, controller: AbortController) {
   flushPendingTokens()
   setToolStatusBySession((prev) => ({ ...prev, [sid]: null }))
   try {
-    // Reconciliation: the server persisted the full response; reloading
-    // absorbs any tokens lost by non-blocking pub/sub.
-    const msgs = await loadFromDB(sid)
-    if (msgs.length > 0) {
-      setMessagesBySession((prev) => ({ ...prev, [sid]: capMessages(msgs) }))
+    // Reconciliation: the server persisted the full response to DB;
+    // reloading absorbs any tokens lost by non-blocking pub/sub.
+    // Only replace messages where the DB has MORE content than the
+    // frontend — never overwrite recently flushed tokens with a
+    // stale DB snapshot.
+    const dbMsgs = await loadFromDB(sid)
+    if (dbMsgs.length > 0) {
+      setMessagesBySession((prev) => {
+        const current = prev[sid] ?? []
+        const reconciled = dbMsgs.map((dbMsg, i) => {
+          const cur = current[i]
+          if (!cur) return dbMsg
+          if (dbMsg.content.length > cur.content.length) return dbMsg
+          return cur
+        })
+        return { ...prev, [sid]: capMessages(reconciled) }
+      })
     }
   } finally {
     setStreamState(sid, { active: false, thinking: false })

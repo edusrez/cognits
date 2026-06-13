@@ -31,6 +31,23 @@ body.drag-grabbing * {
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.3);
 }
 
+.viewport-keyboard-active {
+  background: #1a1a1a;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25);
+  transition: all 0.15s ease;
+}
+
+.keyboard-selected {
+  background: #1a1a1a;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25);
+}
+
+/* Focus ring for keyboard navigation */
+*:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.25);
+  outline-offset: 1px;
+}
+
 .resizer {
   z-index: 10;
   transition: background-color 0.15s;
@@ -199,16 +216,17 @@ mark { background: transparent; color: inherit; }
   appearance: none;
   width: 12px;
   height: 12px;
-  background: #e0e0e0;
-  border-radius: 50%;
+  background: #666;
+  border: 1px solid #888;
+  border-radius: 0;
   cursor: pointer;
 }
 
 .chat-font-slider::-moz-range-thumb {
   width: 12px;
   height: 12px;
-  background: #e0e0e0;
-  border: none;
-  border-radius: 50%;
+  background: #666;
+  border: 1px solid #888;
+  border-radius: 0;
   cursor: pointer;
 }

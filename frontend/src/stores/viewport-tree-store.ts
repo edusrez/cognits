@@ -31,6 +31,8 @@ const [viewportMap, setViewportMap] = createStore<Record<ViewportId, ViewportDat
 const [splitMap, setSplitMap] = createStore<Record<ViewportId, SplitData>>({})
 
 const [rootIdSignal, setRootId] = createSignal<ViewportId>("1")
+export const [focusedViewportId, setFocusedViewportId] = createSignal<string | null>(null)
+export const [shiftHeld, setShiftHeld] = createSignal(false)
 
 export function rootId(): ViewportId {
   return rootIdSignal()
@@ -67,7 +69,7 @@ export function createDefaultTree(n: string) {
     [rr]: {
       tabs: [
         { id: "settings", label: "Settings", hidden: false },
-        { id: "learnit", label: ".learnit", hidden: false },
+        { id: "learnit", label: ".cognits", hidden: false },
       ],
       activeTabId: "settings",
     },
@@ -198,11 +200,11 @@ export function placeSessionTabs(chatVp: ViewportId, writeVp: ViewportId) {
         }
       }
       if (m[chatVp]) {
-        m[chatVp].tabs.push({ id: "chat", label: "Chat", hidden: false })
+        m[chatVp].tabs.push({ id: "chat", label: "Chat", hidden: true })
         m[chatVp].activeTabId = "chat"
       }
       if (m[writeVp]) {
-        m[writeVp].tabs.push({ id: "write", label: "Write", hidden: false })
+        m[writeVp].tabs.push({ id: "write", label: "Write", hidden: true })
         m[writeVp].activeTabId = "write"
       }
     }),
@@ -213,7 +215,9 @@ export function removeSessionTabs() {
   setViewportMap(
     produce((m) => {
       for (const vp of Object.values(m)) {
-        vp.tabs = vp.tabs.filter((t) => !sessionTabIds.includes(t.id))
+        vp.tabs = vp.tabs.filter(
+          (t) => !sessionTabIds.includes(t.id) && !t.id.startsWith("report:")
+        )
         if (
           vp.activeTabId &&
           sessionTabIds.includes(vp.activeTabId)
@@ -250,6 +254,10 @@ export function splitViewport(vpId: ViewportId, direction: "h" | "v") {
 
 export function countViewports(): number {
   return Object.keys(viewportMap).length
+}
+
+export function getViewportIds(): ViewportId[] {
+  return Object.keys(viewportMap).sort()
 }
 
 export function canDeleteViewport(id: ViewportId): boolean {
@@ -359,4 +367,98 @@ export function removeDynamicTab(vpId: ViewportId, tabId: string) {
       }
     }),
   )
+}
+
+export function swapAdjacentTabs(vpId: ViewportId, tabId: string, right: boolean) {
+  setViewportMap(
+    produce((m) => {
+      const vp = m[vpId]
+      if (!vp) return
+      const idx = vp.tabs.findIndex((t) => t.id === tabId)
+      if (idx < 0) return
+      const target = right ? idx + 1 : idx - 1
+      if (target < 0 || target >= vp.tabs.length) return
+      const tmp = vp.tabs[idx]
+      vp.tabs[idx] = vp.tabs[target]
+      vp.tabs[target] = tmp
+      vp.activeTabId = tabId
+    }),
+  )
+}
+
+export function computeViewportPositions(): Record<string, { x: number; y: number; w: number; h: number }> {
+  const positions: Record<string, { x: number; y: number; w: number; h: number }> = {}
+
+  function walk(id: string, x: number, y: number, w: number, h: number) {
+    const split = splitMap[id]
+    if (!split) {
+      positions[id] = { x, y, w, h }
+      return
+    }
+    const [f0, f1] = split.fractions
+    const t = f0 + f1
+    if (split.direction === "h") {
+      walk(split.children[0], x, y, (w * f0) / t, h)
+      walk(split.children[1], x + (w * f0) / t, y, (w * f1) / t, h)
+    } else {
+      walk(split.children[0], x, y, w, (h * f0) / t)
+      walk(split.children[1], x, y + (h * f0) / t, w, (h * f1) / t)
+    }
+  }
+
+  walk(rootIdSignal(), 0, 0, 1, 1)
+  return positions
+}
+
+export function findSpatialNeighbor(
+  currentId: string,
+  direction: "left" | "right" | "up" | "down",
+  rects: Record<string, { x: number; y: number; w: number; h: number }>,
+): string | null {
+  const cur = rects[currentId]
+  if (!cur) return null
+
+  let best: { id: string; dist: number; overlap: number } | null = null
+
+  for (const [id, r] of Object.entries(rects)) {
+    if (id === currentId) continue
+
+    let dist = 0
+    let overlap = 0
+    let candidate = false
+
+    if (direction === "right") {
+      // must be to the right AND vertically overlap
+      if (r.x >= cur.x + cur.w && r.y < cur.y + cur.h && r.y + r.h > cur.y) {
+        dist = r.x - (cur.x + cur.w)
+        overlap = Math.min(r.y + r.h, cur.y + cur.h) - Math.max(r.y, cur.y)
+        candidate = true
+      }
+    } else if (direction === "left") {
+      if (r.x + r.w <= cur.x && r.y < cur.y + cur.h && r.y + r.h > cur.y) {
+        dist = cur.x - (r.x + r.w)
+        overlap = Math.min(r.y + r.h, cur.y + cur.h) - Math.max(r.y, cur.y)
+        candidate = true
+      }
+    } else if (direction === "down") {
+      // must be below AND horizontally overlap
+      if (r.y >= cur.y + cur.h && r.x < cur.x + cur.w && r.x + r.w > cur.x) {
+        dist = r.y - (cur.y + cur.h)
+        overlap = Math.min(r.x + r.w, cur.x + cur.w) - Math.max(r.x, cur.x)
+        candidate = true
+      }
+    } else if (direction === "up") {
+      if (r.y + r.h <= cur.y && r.x < cur.x + cur.w && r.x + r.w > cur.x) {
+        dist = cur.y - (r.y + r.h)
+        overlap = Math.min(r.x + r.w, cur.x + cur.w) - Math.max(r.x, cur.x)
+        candidate = true
+      }
+    }
+
+    if (candidate && (!best || dist < best.dist || (dist === best.dist && overlap > best.overlap))) {
+      best = { id, dist, overlap }
+    }
+  }
+
+  return best?.id ?? null
 }

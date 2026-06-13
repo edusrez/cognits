@@ -5,6 +5,7 @@ import {
   setActiveSessionId,
   loadSessions,
   createNewSession,
+  isCreatingSession,
   renameSession,
   deleteSession,
   type Session,
@@ -72,7 +73,8 @@ export default function Sessions() {
   return (
     <div class="p-2 flex flex-col gap-2">
       <button
-        class="border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors w-full text-left cursor-pointer"
+        class="border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors w-full text-left cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        disabled={isCreatingSession()}
         onClick={(e) => {
           e.stopPropagation()
           createNewSession()
@@ -87,6 +89,7 @@ export default function Sessions() {
             when={renaming() === session.id}
             fallback={
               <button
+                data-session-id={session.id}
                 class="border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors w-full text-left whitespace-pre-wrap cursor-pointer"
                 classList={{
                   "bg-white/10": activeSessionId() === session.id,

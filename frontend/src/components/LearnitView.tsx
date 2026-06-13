@@ -71,6 +71,7 @@ export default function LearnitView() {
             <For each={displayReports()}>
               {(report: any) => (
                 <div
+                  data-report-id={report.id}
                   class="border border-white/20 px-3 py-1.5 cursor-pointer hover:bg-white/5"
                   onClick={() => {
                     import("../stores/report-store").then((m) =>

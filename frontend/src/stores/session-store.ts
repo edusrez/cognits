@@ -38,13 +38,24 @@ export async function loadSessions() {
   }
 }
 
+export const [isCreatingSession, setIsCreatingSession] = createSignal(false)
+
 export async function createNewSession(): Promise<Session> {
-  const res = await fetch("/api/sessions", { method: "POST" })
-  const session: Session = await res.json()
-  setSessions((prev) => [...prev, session])
-  setActiveSessionId(session.id)
-  broadcastSessionChange()
-  return session
+  if (isCreatingSession()) throw new Error("Already creating")
+  setIsCreatingSession(true)
+  try {
+    const res = await fetch("/api/sessions", { method: "POST" })
+    const session: Session = await res.json()
+    setSessions((prev) => {
+      if (prev.some((s) => s.id === session.id)) return prev
+      return [...prev, session]
+    })
+    setActiveSessionId(session.id)
+    broadcastSessionChange()
+    return session
+  } finally {
+    setIsCreatingSession(false)
+  }
 }
 
 export async function renameSession(id: string, name: string) {

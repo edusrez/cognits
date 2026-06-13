@@ -60,7 +60,12 @@ def build_tree(dir_path: str, max_depth: int, budget: list[int]) -> dict:
 def register(app: FastAPI, st) -> None:
     @app.get("/api/health")
     async def health():
-        return JSONResponse({"status": "ok"})
+        rag_ready = False
+        rag_error = None
+        if st.rag is not None:
+            rag_ready = st.rag.ready.is_set()
+            rag_error = st.rag.error
+        return JSONResponse({"status": "ok", "rag_ready": rag_ready, "rag_error": rag_error})
 
     @app.get("/api/tree")
     async def tree():

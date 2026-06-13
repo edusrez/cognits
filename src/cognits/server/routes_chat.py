@@ -31,7 +31,7 @@ from cognits.tools import Registry
 log = logging.getLogger("cognits.chat")
 
 DEFAULT_MODEL = "deepseek-v4-pro"
-DEFAULT_RESEARCHER_MAX_STEPS = 15
+DEFAULT_RESEARCHER_MAX_STEPS = 100
 ORCHESTRATOR_MAX_STEPS = 25
 
 # Explicit lists instead of strftime %A/%B: those are locale-dependent.
@@ -240,7 +240,8 @@ async def _run_agent(
 
         subagent_map: dict[str, AgentConfig] = {
             "web_researcher": researcher_config(
-                web_model, web_reasoning, web_max_steps, tf_client
+                web_model, web_reasoning, web_max_steps, tf_client,
+                rag_engine=st.rag if st.rag is not None and st.rag.error is None else None,
             )
         }
 
@@ -271,6 +272,7 @@ async def _run_agent(
                 subagents=subagent_map,
                 session_id=lambda: sid,
                 emit=process_event,
+                rag_engine=st.rag if st.rag is not None and st.rag.error is None else None,
             )
         )
 
@@ -288,7 +290,14 @@ async def _run_agent(
         )
 
         try:
-            await ag.run(llm_messages, process_event)
+            # Tag usage events so the frontend can distinguish main-agent
+            # context usage from subagent usage.
+            def _orchestrator_emit(ev: dict) -> None:
+                if ev.get("type") == "usage" and isinstance(ev.get("data"), dict):
+                    ev["data"]["source"] = "orchestrator"
+                process_event(ev)
+
+            await ag.run(llm_messages, _orchestrator_emit)
         except asyncio.CancelledError:
             # User cancellation is not an error as far as the chat goes.
             log.info("chat: agent run cancelled (session %s)", sid)

@@ -82,6 +82,8 @@ export async function initDesktops() {
     createDefaultTree("1")
     setDesktops([snapshotTree()])
     persistDesktops()
+  } else if (!activeSessionId()) {
+    removeSessionTabs()
   }
 }
 

@@ -15,6 +15,13 @@ LEGACY_DATA_DIR_NAME = ".learnit"
 
 
 def data_dir(create: bool = True) -> Path:
+    env = os.environ.get("COGNITS_DATA_DIR")
+    if env:
+        target = Path(env)
+        if create:
+            target.mkdir(parents=True, exist_ok=True)
+        return target
+
     cwd = Path.cwd()
     target = cwd / DATA_DIR_NAME
     legacy = cwd / LEGACY_DATA_DIR_NAME
