@@ -4,6 +4,10 @@ import {
   updateDragPosition,
   setDragTarget,
   endDrag,
+  listDragState,
+  updateListDragPosition,
+  setListDragInsert,
+  endListDrag,
 } from "../drag/drag-state"
 import type { ViewportId } from "../tabs"
 
@@ -96,6 +100,93 @@ export default function DragOverlay(props: { onDrop: () => void }) {
           style={`position:fixed;left:${ds().mouseX + 12}px;top:${ds().mouseY + 12}px`}
         >
           {ds().tabLabel}
+        </div>
+      </div>
+    </Show>
+  )
+}
+
+// --- list drag overlay ---
+
+function calcListInsertIndex(listEl: Element, y: number): number {
+  const items = listEl.querySelectorAll(
+    "[data-drag-item]:not([data-drag-ghost])",
+  )
+  let insertIdx = 0
+  items.forEach((item, idx) => {
+    const rect = item.getBoundingClientRect()
+    if (y > rect.top + rect.height / 2) {
+      insertIdx = idx + 1
+    }
+  })
+  return insertIdx
+}
+
+function hitTestList(x: number, y: number): { listId: string | null; insertIndex: number } {
+  const lists = document.querySelectorAll("[data-list-id]")
+  for (const el of lists) {
+    const rect = el.getBoundingClientRect()
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+      return {
+        listId: el.getAttribute("data-list-id"),
+        insertIndex: calcListInsertIndex(el, y),
+      }
+    }
+  }
+  return { listId: null, insertIndex: -1 }
+}
+
+export function ListDragOverlay(props: { onDrop: (listId: string, insertIndex: number) => void }) {
+  const ds = () => listDragState()
+
+  const handleMouseMove = (e: MouseEvent) => {
+    updateListDragPosition(e.clientX, e.clientY)
+    const { listId, insertIndex } = hitTestList(e.clientX, e.clientY)
+    if (listId === ds().listId) {
+      setListDragInsert(insertIndex)
+    }
+  }
+
+  const handleMouseUp = (e: MouseEvent) => {
+    updateListDragPosition(e.clientX, e.clientY)
+    const { listId, insertIndex } = hitTestList(e.clientX, e.clientY)
+    if (listId === ds().listId) {
+      setListDragInsert(insertIndex)
+      props.onDrop(ds().listId, insertIndex >= 0 ? insertIndex : 0)
+    } else {
+      endListDrag()
+    }
+  }
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      endListDrag()
+    }
+  }
+
+  createEffect(() => {
+    if (ds().isDragging) {
+      document.body.classList.add("drag-grabbing")
+      document.addEventListener("keydown", handleKeyDown)
+      onCleanup(() => {
+        document.body.classList.remove("drag-grabbing")
+        document.removeEventListener("keydown", handleKeyDown)
+      })
+    }
+  })
+
+  return (
+    <Show when={ds().isDragging}>
+      <div
+        class="fixed inset-0 z-[9999]"
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+      >
+        <div
+          class="bg-[#1a1a1a] border border-[#3a3a3a] rounded px-2 py-0.5 text-[13px] text-[#e0e0e0] whitespace-nowrap pointer-events-none"
+          style={`position:fixed;left:${ds().mouseX + 12}px;top:${ds().mouseY + 12}px`}
+        >
+          {ds().itemLabel}
         </div>
       </div>
     </Show>

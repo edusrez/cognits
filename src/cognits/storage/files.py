@@ -56,9 +56,19 @@ class SubagentConfig:
     model: str = ""
     reasoning: str = ""
     max_steps: int = 0
+    max_tokens: int = 0
+    temperature: float = 0.0
+    top_p: float = 0.0
 
     def to_json(self) -> dict:
-        return {"model": self.model, "reasoning": self.reasoning, "maxSteps": self.max_steps}
+        return {
+            "model": self.model,
+            "reasoning": self.reasoning,
+            "maxSteps": self.max_steps,
+            "maxTokens": self.max_tokens,
+            "temperature": self.temperature,
+            "topP": self.top_p,
+        }
 
     @classmethod
     def from_json(cls, d: dict) -> "SubagentConfig":
@@ -66,6 +76,9 @@ class SubagentConfig:
             model=d.get("model", ""),
             reasoning=d.get("reasoning", ""),
             max_steps=int(d.get("maxSteps", 0) or 0),
+            max_tokens=int(d.get("maxTokens", 0) or 0),
+            temperature=float(d.get("temperature", 0.0) or 0.0),
+            top_p=float(d.get("topP", 0.0) or 0.0),
         )
 
 
@@ -86,6 +99,12 @@ class Config:
     user_location: str = ""
     default_learnit_viewport: str = ""
     write_langs: list[str] = field(default_factory=list)
+    note_mode: str = ""
+    max_tokens: int = 0
+    temperature: float = 0.0
+    top_p: float = 0.0
+    max_steps: int = 0
+    display_thinking: bool = True
 
     def to_json(self) -> dict:
         return {
@@ -104,6 +123,12 @@ class Config:
             "userLocation": self.user_location,
             "defaultLearnitViewport": self.default_learnit_viewport,
             "writeLangs": self.write_langs,
+            "noteMode": self.note_mode,
+            "maxTokens": self.max_tokens,
+            "temperature": self.temperature,
+            "topP": self.top_p,
+            "maxSteps": self.max_steps,
+            "displayThinking": self.display_thinking,
         }
 
     @classmethod
@@ -127,6 +152,12 @@ class Config:
             user_location=d.get("userLocation") or "",
             default_learnit_viewport=d.get("defaultLearnitViewport") or "",
             write_langs=d.get("writeLangs") or [],
+            note_mode=d.get("noteMode") or "",
+            max_tokens=int(d.get("maxTokens", 0) or 0),
+            temperature=float(d.get("temperature", 0.0) or 0.0),
+            top_p=float(d.get("topP", 0.0) or 0.0),
+            max_steps=int(d.get("maxSteps", 0) or 0),
+            display_thinking=bool(d.get("displayThinking", True)),
         )
 
 
@@ -184,7 +215,17 @@ class Store:
                 sessions.append(Session.from_json(json.loads(p.read_text(encoding="utf-8"))))
             except (OSError, json.JSONDecodeError):
                 continue
-        sessions.sort(key=_session_sort_key)
+        order = self._load_order()
+        if order:
+            by_id = {s.id: s for s in sessions}
+            ordered: list[Session] = []
+            for sid in order:
+                if sid in by_id:
+                    ordered.append(by_id.pop(sid))
+            ordered.extend(by_id.values())
+            sessions = ordered
+        else:
+            sessions.sort(key=_session_sort_key)
         return sessions
 
     def get_session(self, session_id: str) -> Session | None:
@@ -203,6 +244,19 @@ class Store:
 
     def delete_session(self, session_id: str) -> None:
         self._session_path(session_id).unlink(missing_ok=True)
+
+    def _order_path(self) -> Path:
+        return self.base_path / "session_order.json"
+
+    def reorder_sessions(self, ordered_ids: list[str]) -> None:
+        self._order_path().write_text(json.dumps(ordered_ids), encoding="utf-8")
+
+    def _load_order(self) -> list[str]:
+        try:
+            data = json.loads(self._order_path().read_text(encoding="utf-8"))
+            return data if isinstance(data, list) else []
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
 
     # --- config + crypto ---
 

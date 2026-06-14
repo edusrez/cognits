@@ -47,6 +47,15 @@ BASE_SCHEMA = """
     CREATE INDEX IF NOT EXISTS idx_messages_session
         ON messages(session_id, created_at);
 
+    CREATE TABLE IF NOT EXISTS notes (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL DEFAULT '',
+        sort_order REAL NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS session_config (
         session_id TEXT PRIMARY KEY,
         provider TEXT NOT NULL DEFAULT 'deepseek',
@@ -155,8 +164,30 @@ class SessionConfigRow:
         )
 
 
+@dataclass
+class Note:
+    id: str = ""
+    title: str = ""
+    content: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_json(self) -> dict:
+        return {
+            "id": self.id,
+            "title": self.title,
+            "content": self.content,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at,
+        }
+
+
 def new_report_id() -> str:
     return "r_" + secrets.token_hex(8)
+
+
+def new_note_id() -> str:
+    return "n_" + secrets.token_hex(8)
 
 
 def escape_like(s: str) -> str:
@@ -465,3 +496,65 @@ class ReportStore:
     def delete_messages_by_session(self, session_id: str) -> None:
         with self._lock:
             self._conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+
+    # --- notes ---
+
+    def create_note(self, title: str) -> Note:
+        note = Note(
+            id=new_note_id(),
+            title=title,
+            content="",
+            created_at="",
+            updated_at="",
+        )
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO notes (id, title) VALUES (?, ?)",
+                (note.id, note.title),
+            )
+            row = self._conn.execute(
+                "SELECT id, title, content, created_at, updated_at FROM notes WHERE id = ?",
+                (note.id,),
+            ).fetchone()
+        return Note(*row)
+
+    def list_notes(self) -> list[Note]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, title, content, created_at, updated_at FROM notes ORDER BY sort_order, created_at DESC"
+            ).fetchall()
+        return [Note(*row) for row in rows]
+
+    def get_note(self, note_id: str) -> Note | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, title, content, created_at, updated_at FROM notes WHERE id = ?",
+                (note_id,),
+            ).fetchone()
+        return Note(*row) if row else None
+
+    def rename_note(self, note_id: str, title: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE notes SET title = ?, updated_at = datetime('now') WHERE id = ?",
+                (title, note_id),
+            )
+
+    def delete_note(self, note_id: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+
+    def save_note_content(self, note_id: str, content: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE notes SET content = ?, updated_at = datetime('now') WHERE id = ?",
+                (content, note_id),
+            )
+
+    def reorder_notes(self, ordered_ids: list[str]) -> None:
+        with self._lock:
+            for i, nid in enumerate(ordered_ids):
+                self._conn.execute(
+                    "UPDATE notes SET sort_order = ? WHERE id = ?",
+                    (float(i), nid),
+                )

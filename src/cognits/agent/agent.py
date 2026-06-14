@@ -33,6 +33,9 @@ class AgentConfig:
     system_prompt: str = ""
     tools: Registry | None = None
     subagents: dict[str, "AgentConfig"] = field(default_factory=dict)
+    max_tokens: int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
 
 
 class Agent:
@@ -93,7 +96,10 @@ class Agent:
 
             try:
                 await self.llm.chat_completion_stream(
-                    messages, tool_defs, cfg.model, cfg.reasoning, on_chunk
+                    messages, tool_defs, cfg.model, cfg.reasoning, on_chunk,
+                    max_tokens=cfg.max_tokens,
+                    temperature=cfg.temperature,
+                    top_p=cfg.top_p,
                 )
             except asyncio.CancelledError:
                 raise
@@ -126,7 +132,7 @@ class Agent:
                 emit(
                     {
                         "type": "tool_start",
-                        "data": {"tool": tc.name, "args": tc.arguments, "id": tc.id},
+                        "data": {"tool": tc.name, "args": tc.arguments, "id": tc.id, "agent": cfg.name},
                     }
                 )
 

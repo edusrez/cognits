@@ -17,7 +17,7 @@ class ScriptedLLM:
         self.streams = list(streams)
         self.calls = []
 
-    async def chat_completion_stream(self, messages, tools, model, reasoning, on_chunk):
+    async def chat_completion_stream(self, messages, tools, model, reasoning, on_chunk, **kwargs):
         self.calls.append([m.to_payload() for m in messages])
         for chunk in self.streams.pop(0):
             on_chunk(chunk)

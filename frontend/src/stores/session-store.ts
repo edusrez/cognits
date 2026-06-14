@@ -78,3 +78,22 @@ export async function deleteSession(id: string) {
   }
   broadcastSessionChange()
 }
+
+export async function moveSession(itemId: string, insertIndex: number) {
+  setSessions((prev) => {
+    const fromIdx = prev.findIndex((s) => s.id === itemId)
+    if (fromIdx < 0) return prev
+    const item = prev[fromIdx]
+    const rest = [...prev.slice(0, fromIdx), ...prev.slice(fromIdx + 1)]
+    const clamped = Math.min(insertIndex, rest.length)
+    return [...rest.slice(0, clamped), item, ...rest.slice(clamped)]
+  })
+
+  const order = sessions().map((s) => s.id)
+  await fetch("/api/sessions/reorder", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ order }),
+  })
+  broadcastSessionChange()
+}

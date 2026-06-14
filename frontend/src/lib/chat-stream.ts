@@ -23,6 +23,7 @@ export interface SubagentEndData {
 export interface HistorySnapshot {
   messages: ChatMessage[]
   toolStatus: string | null
+  toolFavicons?: string[]
   liveContent: string
   liveReasoning: string
   liveReportId: string
@@ -43,6 +44,7 @@ export interface StreamCallbacks {
   onToolProgress?: (data: any) => void
   onToolEnd?: (data: any) => void
   onSubagentEnd?: (data: SubagentEndData) => void
+  onSessionRenamed?: (data: { name: string }) => void
 }
 
 export async function startChat(sessionId: string, messages: ChatMessage[]): Promise<void> {
@@ -139,6 +141,9 @@ export async function streamSession(
               break
             case "subagent_end":
               callbacks.onSubagentEnd?.(json)
+              break
+            case "session_renamed":
+              callbacks.onSessionRenamed?.(json)
               break
             case "usage":
               callbacks.onUsage(json)

@@ -1,6 +1,6 @@
 import { createSignal, createMemo } from "solid-js"
 import type { ViewportId } from "../tabs"
-import type { LLMConfig, SessionConfig } from "../types"
+import type { LLMConfig, SessionConfig, SubagentConfig } from "../types"
 import { activeSessionId } from "./session-store"
 
 export const [linkingMode, setLinkingMode] = createSignal(false)
@@ -43,11 +43,17 @@ export const [typewriterSpeed, setTypewriterSpeed] = createSignal(5)
 export const [tinyfishApiKey, setTinyfishApiKey] = createSignal("")
 export const [tinyfishTier, setTinyfishTier] = createSignal("payg")
 export const [subagentConfig, setSubagentConfig] = createSignal<
-  Record<string, { model: string; reasoning: string; maxSteps: number }>
+  Record<string, SubagentConfig>
 >({})
 export const [userName, setUserName] = createSignal("")
 export const [userLocation, setUserLocation] = createSignal("")
 export const [writeLangs, setWriteLangs] = createSignal<string[]>(["es"])
+export const [noteMode, setNoteMode] = createSignal("edit")
+export const [maxTokens, setMaxTokens] = createSignal(0)
+export const [temperature, setTemperature] = createSignal(0)
+export const [topP, setTopP] = createSignal(0)
+export const [maxSteps, setMaxSteps] = createSignal(0)
+export const [displayThinking, setDisplayThinking] = createSignal(true)
 
 export const [sessionProvider, setSessionProvider] = createSignal("")
 export const [sessionModel, setSessionModel] = createSignal("")
@@ -119,6 +125,12 @@ export async function loadConfig() {
     if (cfg.userLocation) setUserLocation(cfg.userLocation)
     if (cfg.defaultLearnitViewport) setDefaultLearnitViewport(cfg.defaultLearnitViewport)
     if (cfg.writeLangs) setWriteLangs(cfg.writeLangs)
+    if (cfg.noteMode) setNoteMode(cfg.noteMode)
+    if (cfg.maxTokens) setMaxTokens(cfg.maxTokens)
+    if (cfg.temperature) setTemperature(cfg.temperature)
+    if (cfg.topP) setTopP(cfg.topP)
+    if (cfg.maxSteps) setMaxSteps(cfg.maxSteps)
+    if (cfg.displayThinking !== undefined) setDisplayThinking(cfg.displayThinking)
   }
 }
 
@@ -145,6 +157,12 @@ export function saveConfig() {
           userLocation: userLocation(),
           defaultLearnitViewport: defaultLearnitViewport(),
           writeLangs: writeLangs(),
+          noteMode: noteMode(),
+          maxTokens: maxTokens(),
+          temperature: temperature(),
+          topP: topP(),
+          maxSteps: maxSteps(),
+          displayThinking: displayThinking(),
         }),
       })
     } catch (err) {

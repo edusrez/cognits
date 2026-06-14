@@ -3,12 +3,24 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import urlparse
 
 from cognits.agent.agent import AgentConfig, Emit
 from cognits.agent.tool_rag import RagSearch
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.tinyfish import TinyfishClient, TinyfishError
 from cognits.tools import Registry, Tool, tool_error
+
+
+def _extract_domain(url: str) -> str:
+    try:
+        return urlparse(url).netloc
+    except Exception:
+        return ""
+
+
+def _favicon_url(domain: str) -> str:
+    return f"https://icons.duckduckgo.com/ip3/{domain}.ico"
 
 RESEARCHER_SYSTEM_PROMPT = """# Web Researcher — Cognits Subagent
 
@@ -138,10 +150,50 @@ answer for the Orchestrator. Include:
 - Do NOT include Markdown text from fragments verbatim. Synthesize in your own words.
 - Respond in the same language the user is using."""
 
+SESSION_ANALYZER_SYSTEM_PROMPT = """# Session Analyzer — Cognits Subagent
+
+## Identity and Role
+You are the Session Analyzer of Cognits. Your task is to generate a short,
+descriptive session name based on the user's first message and context.
+
+## Input
+You receive two messages:
+1. A context message with user info, today's date, and project directory.
+2. The user's first message to the tutor.
+
+## Rules
+- Read the user message and context carefully.
+- Generate a session name that captures the main topic or learning goal.
+- The name must be 80 characters or fewer.
+- Return ONLY the name — no quotes, no prefixes, no explanation, no markdown.
+- Use the same language as the user's message.
+- If ambiguous, use the message itself (truncated if needed).
+- Use Title Case for the name.
+- The name will be used as the session title in a sidebar, so make it scannable."""
+
+def session_analyzer_config(
+    model: str = "deepseek-v4-flash",
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+) -> AgentConfig:
+    return AgentConfig(
+        name="session_analyzer",
+        model=model,
+        reasoning="disabled",
+        max_steps=1,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        system_prompt=SESSION_ANALYZER_SYSTEM_PROMPT,
+        tools=None,
+    )
+
 
 class SearchTool(Tool):
-    def __init__(self, client: TinyfishClient):
+    def __init__(self, client: TinyfishClient, emit=None):
         self.client = client
+        self.emit = emit
 
     name = "tinyfish_search"
     description = "Search the web. Returns URLs with titles and snippets."
@@ -163,12 +215,24 @@ class SearchTool(Tool):
             resp = await self.client.search(query)
         except TinyfishError as e:
             return tool_error(str(e))
+
+        favicons = []
+        results = resp.get("results", []) if isinstance(resp, dict) else []
+        for r in results[:3]:
+            url = r.get("url", "") if isinstance(r, dict) else ""
+            domain = _extract_domain(url)
+            if domain:
+                favicons.append(_favicon_url(domain))
+        if favicons and self.emit is not None:
+            self.emit({"type": "tool_progress", "data": {"favicons": favicons}})
+
         return json.dumps(resp, ensure_ascii=False)
 
 
 class FetchTool(Tool):
-    def __init__(self, client: TinyfishClient):
+    def __init__(self, client: TinyfishClient, emit=None):
         self.client = client
+        self.emit = emit
 
     name = "tinyfish_fetch_content"
     description = "Read full content from 1-10 URLs. Returns clean markdown."
@@ -190,6 +254,15 @@ class FetchTool(Tool):
             urls = args["urls"]
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             return tool_error(f"invalid args: {e}")
+
+        favicons = []
+        for u in urls[:3]:
+            domain = _extract_domain(u)
+            if domain:
+                favicons.append(_favicon_url(domain))
+        if favicons and self.emit is not None:
+            self.emit({"type": "tool_progress", "data": {"favicons": favicons}})
+
         try:
             resp = await self.client.fetch_content(urls)
         except TinyfishError as e:
@@ -197,10 +270,10 @@ class FetchTool(Tool):
         return json.dumps(resp, ensure_ascii=False)
 
 
-def new_researcher_tools(tf_client: TinyfishClient, rag_engine=None) -> Registry:
+def new_researcher_tools(tf_client: TinyfishClient, rag_engine=None, emit=None) -> Registry:
     reg = Registry()
-    reg.register(SearchTool(tf_client))
-    reg.register(FetchTool(tf_client))
+    reg.register(SearchTool(tf_client, emit=emit))
+    reg.register(FetchTool(tf_client, emit=emit))
     if rag_engine is not None:
         reg.register(RagSearch(rag_engine))
     return reg
@@ -209,14 +282,22 @@ def new_researcher_tools(tf_client: TinyfishClient, rag_engine=None) -> Registry
 def researcher_config(
     model: str, reasoning: str, max_steps: int, tf_client: TinyfishClient,
     rag_engine=None,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    system_prompt_override: str | None = None,
+    tool_emit=None,
 ) -> AgentConfig:
     return AgentConfig(
         name="web_researcher",
         model=model,
         reasoning=reasoning,
         max_steps=max_steps,
-        system_prompt=RESEARCHER_SYSTEM_PROMPT,
-        tools=new_researcher_tools(tf_client, rag_engine),
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        system_prompt=system_prompt_override or RESEARCHER_SYSTEM_PROMPT,
+        tools=new_researcher_tools(tf_client, rag_engine, emit=tool_emit),
     )
 
 
@@ -230,6 +311,10 @@ def documentalist_config(
     report_store,
     session_id,
     emit: Emit,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    system_prompt_override: str | None = None,
 ) -> AgentConfig:
     from cognits.agent.tool_deploy import DeploySubagent
 
@@ -248,13 +333,6 @@ def documentalist_config(
     }
 
     def wrapped_emit(ev: dict) -> None:
-        if ev["type"] == "tool_progress":
-            data = ev.get("data")
-            if isinstance(data, dict):
-                msg = data.get("message")
-                # Empty message clears the status banner: don't prefix it.
-                if isinstance(msg, str) and msg != "":
-                    data["message"] = "Documentalist: " + msg
         emit(ev)
 
     registry.register(
@@ -273,6 +351,9 @@ def documentalist_config(
         model=model,
         reasoning=reasoning,
         max_steps=max_steps,
-        system_prompt=DOCUMENTALIST_SYSTEM_PROMPT,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        system_prompt=system_prompt_override or DOCUMENTALIST_SYSTEM_PROMPT,
         tools=registry,
     )
