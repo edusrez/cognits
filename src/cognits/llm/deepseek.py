@@ -45,6 +45,9 @@ class DeepSeekClient:
         model: str,
         reasoning: str,
         on_chunk: Callable[[dict], None],
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
     ) -> None:
         # The thinking API is binary: "high"/"max" → enabled. With tools, omit
         # the parameter (the API rejects that combination).
@@ -59,6 +62,12 @@ class DeepSeekClient:
             body["thinking"] = {
                 "type": "disabled" if reasoning == "disabled" else "enabled"
             }
+        if max_tokens is not None and max_tokens > 0:
+            body["max_tokens"] = max_tokens
+        if temperature is not None:
+            body["temperature"] = temperature
+        if top_p is not None:
+            body["top_p"] = top_p
 
         try:
             async with self._client.stream(

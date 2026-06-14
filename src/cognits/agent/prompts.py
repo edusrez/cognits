@@ -1,5 +1,11 @@
 """Port of internal/agent/prompts.go."""
 
+from cognits.agent.subagents import (
+    DOCUMENTALIST_SYSTEM_PROMPT,
+    RESEARCHER_SYSTEM_PROMPT,
+    SESSION_ANALYZER_SYSTEM_PROMPT,
+)
+
 DEFAULT_AGENT_ID = "orchestrator"
 
 ORCHESTRATOR_SYSTEM_PROMPT = (
@@ -39,7 +45,22 @@ DEFAULT_AGENTS = [
         "id": "orchestrator",
         "name": "Orchestrator",
         "systemPrompt": ORCHESTRATOR_SYSTEM_PROMPT,
-    }
+    },
+    {
+        "id": "web_researcher",
+        "name": "Web Researcher",
+        "systemPrompt": RESEARCHER_SYSTEM_PROMPT,
+    },
+    {
+        "id": "documentalist",
+        "name": "Documentalist",
+        "systemPrompt": DOCUMENTALIST_SYSTEM_PROMPT,
+    },
+    {
+        "id": "session_analyzer",
+        "name": "Session Analyzer",
+        "systemPrompt": SESSION_ANALYZER_SYSTEM_PROMPT,
+    },
 ]
 
 

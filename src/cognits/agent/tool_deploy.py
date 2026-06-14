@@ -97,26 +97,38 @@ class DeploySubagent(Tool):
 
         subagent = Agent(cfg, self.llm_client)
 
+        emitted_first = False
+
         def emit(ev: dict) -> None:
+            nonlocal emitted_first
             if self.emit is None:
                 return
             t = ev["type"]
             if t == "reasoning":
-                self.emit({"type": "tool_progress", "data": {"message": "Thinking..."}})
+                emitted_first = False
+                self.emit({"type": "tool_progress", "data": {"message": "Thinking...", "agent": cfg.name}})
                 return
             if t == "token":
+                if not emitted_first:
+                    emitted_first = True
+                    self.emit({"type": "tool_progress", "data": {"message": "Writing...", "agent": cfg.name}})
                 return
             if t == "tool_start":
+                emitted_first = False
                 data = ev.get("data")
                 tool = data.get("tool", "") if isinstance(data, dict) else ""
-                msg = "Searching the Web"
+                msg = "Searching the Web..."
                 if tool == "tinyfish_fetch_content":
-                    msg = "Reading Results"
-                self.emit({"type": "tool_progress", "data": {"message": msg}})
+                    msg = "Reading Results..."
+                agent = data.get("agent", cfg.name) if isinstance(data, dict) else cfg.name
+                self.emit({"type": "tool_progress", "data": {"message": msg, "agent": agent}})
                 return
             if ev.get("type") == "usage" and isinstance(ev.get("data"), dict):
                 ev["data"]["source"] = "subagent"
             self.emit(ev)
+
+        if cfg.tools is not None:
+            cfg.tools.set_emit(emit)
 
         try:
             content = await subagent.run([Message(role=ROLE_USER, content=query)], emit)
@@ -128,7 +140,7 @@ class DeploySubagent(Tool):
             # Real failure: clear the status banner and return the error to the
             # orchestrator as a tool result, without creating a junk report.
             if self.emit is not None:
-                self.emit({"type": "tool_progress", "data": {"message": ""}})
+                self.emit({"type": "tool_progress", "data": {"message": "", "agent": ""}})
             return tool_error(f"subagent failed: {e}")
 
         title = extract_title(content, query)

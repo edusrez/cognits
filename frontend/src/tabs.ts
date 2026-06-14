@@ -6,6 +6,8 @@ import Settings from "./components/Settings"
 import ReportView from "./components/ReportView"
 import LearnitView from "./components/LearnitView"
 
+import NoteView from "./components/NoteView"
+
 export type ViewportId = string
 
 export interface TabDef {
@@ -22,5 +24,6 @@ export const tabs: TabDef[] = [
   { id: "write",    label: "Write",      component: Write, sessionScoped: true },
   { id: "settings", label: "Settings",   component: Settings },
   { id: "report",   label: "Web Report", component: ReportView },
+  { id: "note",     label: "Note",       component: NoteView },
   { id: "learnit",  label: ".cognits",  component: LearnitView },
 ]

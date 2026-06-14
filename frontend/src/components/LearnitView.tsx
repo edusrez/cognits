@@ -1,10 +1,12 @@
-import { For, Show, createMemo, createSignal, createEffect } from "solid-js"
+import { For, Show, createMemo, createSignal, createEffect, onMount } from "solid-js"
 import {
   reports, searchResults, totalPages, totalResults, currentPage,
   setSearch, setSort, sortBy, goToPage, refetchReports,
 } from "../stores/learnit-store"
+import { notes, loadNotes, createNote, renameNote, deleteNote, type Note } from "../stores/notebook-store"
 import { defaultLearnitViewport } from "../stores/settings-store"
 import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
+import { listDragState, initiateListDrag, moveHint } from "../drag/drag-state"
 import ContextMenu from "./ContextMenu"
 import CollapsibleSection from "./CollapsibleSection"
 import Dropdown from "./Dropdown"
@@ -40,9 +42,180 @@ export default function LearnitView() {
     { value: "title_desc" as const, label: "Title (Z-A)" },
   ]
 
+  onMount(() => {
+    loadNotes()
+  })
+
+  const handleCreateSheet = () => {
+    const n = notes().length + 1
+    createNote(`Note ${n}`)
+  }
+
+  const ds = () => listDragState()
+
+  const displayNotes = createMemo(() => {
+    const all = notes()
+    const mh = moveHint()
+    if (mh && mh.listId === "notebook") {
+      const filtered = all.filter((n) => n.id !== mh.itemId)
+      const idx = Math.min(mh.targetIndex, filtered.length)
+      const item = all.find((n) => n.id === mh.itemId)
+      const ghost: Note = { id: "__ghost__", title: item?.title ?? "", content: "", createdAt: "", updatedAt: "" }
+      return [...filtered.slice(0, idx), ghost, ...filtered.slice(idx)]
+    }
+    if (!ds().isDragging || ds().listId !== "notebook") return all
+    const filtered = all.filter((n) => n.id !== ds().itemId)
+    const idx = Math.min(ds().insertIndex >= 0 ? ds().insertIndex : filtered.length, filtered.length)
+    const ghost: Note = { id: "__ghost__", title: ds().itemLabel, content: "", createdAt: "", updatedAt: "" }
+    return [...filtered.slice(0, idx), ghost, ...filtered.slice(idx)]
+  })
+
+  const onNoteMouseDown = (note: Note, e: MouseEvent) => {
+    initiateListDrag(note.id, note.title, "notebook", e)
+  }
+
+  const [renaming, setRenaming] = createSignal<string | null>(null)
+
+  const noteMenu = createMemo(() => {
+    const m = ctxMenu()
+    if (m?.kind === "note") return m
+    return null
+  })
+
+  const onNoteContextMenu = (e: MouseEvent, noteId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setCtxMenu({ kind: "note", noteId, x: e.clientX, y: e.clientY })
+  }
+
+  const startRenaming = () => {
+    const m = ctxMenu()
+    if (m?.kind === "note") {
+      setRenaming(m.noteId)
+      setCtxMenu(null)
+    }
+  }
+
+  const handleDeleteNote = () => {
+    const m = ctxMenu()
+    if (m?.kind === "note") {
+      deleteNote(m.noteId)
+      setCtxMenu(null)
+    }
+  }
+
+  const onRenameKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      ;(e.currentTarget as HTMLTextAreaElement).blur()
+    }
+  }
+
+  const onRenameBlur = (e: FocusEvent, id: string) => {
+    const target = e.currentTarget as HTMLTextAreaElement
+    const name = target.value.trim()
+    if (name) {
+      renameNote(id, name)
+    }
+    setRenaming(null)
+  }
+
+  const adjustHeight = (el: HTMLTextAreaElement) => {
+    el.style.height = "auto"
+    el.style.height = el.scrollHeight + "px"
+  }
+
   return (
-    <div class="h-full overflow-y-auto px-3 py-2 text-[13px]">
-      <CollapsibleSection title="Reports" defaultOpen={true}>
+    <div class="h-full overflow-y-auto p-3 text-[13px] flex flex-col gap-3">
+      <CollapsibleSection title="Notebook">
+        <div class="flex flex-col gap-2" data-list-id="notebook">
+          <button
+            class="border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors w-full text-left cursor-pointer"
+            onClick={handleCreateSheet}
+          >
+            + Create Sheet
+          </button>
+
+          <For each={displayNotes()}>
+            {(item) => (
+              <Show
+                when={item.id === "__ghost__"}
+                fallback={
+                  <Show
+                    when={renaming() === item.id}
+                    fallback={
+                      <button
+                        data-note-id={item.id}
+                        data-drag-item=""
+                        class="border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors w-full text-left whitespace-pre-wrap cursor-pointer"
+                        classList={{
+                          "list-drag-dimmed": ds().isDragging && ds().listId === "notebook" && item.id !== ds().itemId,
+                        }}
+                        onMouseDown={(e) => onNoteMouseDown(item, e)}
+                        onClick={() => {
+                          if (ds().isDragging) return
+                          import("../stores/notebook-store").then((m) =>
+                            m.openNoteInViewport(defaultLearnitViewport(), item.id),
+                          )
+                        }}
+                        onContextMenu={(e) => onNoteContextMenu(e, item.id)}
+                      >
+                        {item.title}
+                      </button>
+                    }
+                  >
+                    <textarea
+                      data-drag-item=""
+                      class="border border-white/20 px-3 py-1.5 text-[13px] bg-transparent text-[#e0e0e0] w-full resize-none outline-none overflow-hidden"
+                      classList={{
+                        "list-drag-dimmed": ds().isDragging && ds().listId === "notebook" && item.id !== ds().itemId,
+                      }}
+                      rows={1}
+                      maxLength={120}
+                      onKeyDown={onRenameKeyDown}
+                      onBlur={(e) => onRenameBlur(e, item.id)}
+                      onInput={(e) => adjustHeight(e.currentTarget)}
+                      ref={(el) => {
+                        if (el instanceof HTMLTextAreaElement) {
+                          el.value = item.title
+                          requestAnimationFrame(() => {
+                            el.focus()
+                            el.setSelectionRange(el.value.length, el.value.length)
+                            adjustHeight(el)
+                          })
+                        }
+                      }}
+                    />
+                  </Show>
+                }
+              >
+                <div
+                  data-drag-ghost=""
+                  class="border border-white/20 px-3 py-1.5 text-[13px] list-drag-ghost w-full text-left whitespace-pre-wrap"
+                >
+                  {item.title}
+                </div>
+              </Show>
+            )}
+          </For>
+        </div>
+      </CollapsibleSection>
+
+      <Show when={noteMenu()}>
+        {(m) => (
+          <ContextMenu
+            x={m().x}
+            y={m().y}
+            onClose={() => setCtxMenu(null)}
+            items={[
+              { label: "Rename", onClick: startRenaming },
+              { label: "Delete", onClick: handleDeleteNote, class: "text-red-400" },
+            ]}
+          />
+        )}
+      </Show>
+
+      <CollapsibleSection title="Reports">
         <div class="flex flex-col gap-2">
           <input
             type="text"

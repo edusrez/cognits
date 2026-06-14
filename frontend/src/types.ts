@@ -23,6 +23,9 @@ export interface SubagentConfig {
   model: string
   reasoning: string
   maxSteps: number
+  maxTokens: number
+  temperature: number
+  topP: number
 }
 
 export interface SessionConfig {
@@ -48,4 +51,18 @@ export interface LLMConfig {
   userLocation: string
   defaultLearnitViewport: string
   writeLangs: string[]
+  noteMode: string
+  maxTokens: number
+  temperature: number
+  topP: number
+  maxSteps: number
+  displayThinking: boolean
+}
+
+export interface NoteData {
+  id: string
+  title: string
+  content: string
+  createdAt: string
+  updatedAt: string
 }

@@ -40,6 +40,11 @@ class Registry:
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)
 
+    def set_emit(self, emit) -> None:
+        for t in self._tools.values():
+            if hasattr(t, "emit"):
+                t.emit = emit
+
     def definitions(self) -> list[dict]:
         # Stable order (by name): a variable order would change the prompt
         # between requests and break DeepSeek's prefix-cache.

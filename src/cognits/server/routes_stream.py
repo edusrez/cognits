@@ -52,7 +52,7 @@ def _format_event(ev: dict) -> str:
         return f"event: reasoning\ndata: {_dumps({'content': data})}\n\n"
     if t == "error":
         return f"event: error\ndata: {_dumps({'message': data})}\n\n"
-    if t in ("tool_start", "tool_end", "tool_progress", "subagent_end", "usage"):
+    if t in ("tool_start", "tool_end", "tool_progress", "subagent_end", "usage", "session_renamed"):
         return f"event: {t}\ndata: {_dumps(data)}\n\n"
     return ""
 
@@ -72,6 +72,7 @@ def register(app: FastAPI, st) -> None:
         history = {
             "messages": [_message_dict(m) for m in snap.messages],
             "toolStatus": snap.tool_status,
+            "toolFavicons": snap.tool_favicons,
             "liveContent": snap.live_content,
             "liveReasoning": snap.live_reasoning,
             "liveReportId": snap.live_report_id,

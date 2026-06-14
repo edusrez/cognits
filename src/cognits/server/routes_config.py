@@ -13,6 +13,7 @@ from cognits.storage.files import Config
 
 VALID_MODELS = ("deepseek-v4-pro", "deepseek-v4-flash")
 VALID_REASONING = ("disabled", "high", "max")
+MAX_TOKENS_LIMIT = 384000
 
 
 def _config_response(cfg: Config) -> dict:
@@ -54,6 +55,14 @@ def register(app: FastAPI, st) -> None:
             return text_error("invalid model", 400)
         if cfg.llm_reasoning and cfg.llm_reasoning not in VALID_REASONING:
             return text_error("invalid reasoning value", 400)
+        if cfg.max_tokens and not (0 < cfg.max_tokens <= MAX_TOKENS_LIMIT):
+            return text_error("invalid maxTokens", 400)
+        if cfg.temperature and not (0 <= cfg.temperature <= 2.0):
+            return text_error("invalid temperature", 400)
+        if cfg.top_p and not (0 <= cfg.top_p <= 1.0):
+            return text_error("invalid topP", 400)
+        if cfg.max_steps and not (0 <= cfg.max_steps <= 100):
+            return text_error("invalid maxSteps", 400)
 
         current = st.cached_config
         if current is not None:

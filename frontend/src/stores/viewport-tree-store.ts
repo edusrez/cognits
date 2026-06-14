@@ -128,6 +128,7 @@ export type CtxMenu =
   | { kind: "viewport"; vpId: ViewportId; x: number; y: number }
   | { kind: "text-input"; vpId: ViewportId; x: number; y: number }
   | { kind: "session"; sessionId: string; x: number; y: number }
+  | { kind: "note"; noteId: string; x: number; y: number }
   | { kind: "report"; reportId: string; reportTitle: string; x: number; y: number }
   | { kind: "tab"; vpId: ViewportId; tabId: string; tabLabel: string; x: number; y: number }
   | { kind: "chat-message"; content: string; x: number; y: number }

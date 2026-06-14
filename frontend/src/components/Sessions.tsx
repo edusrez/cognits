@@ -11,6 +11,7 @@ import {
   type Session,
 } from "../stores/session-store"
 import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
+import { listDragState, initiateListDrag, moveHint } from "../drag/drag-state"
 import ContextMenu from "./ContextMenu"
 
 export default function Sessions() {
@@ -70,8 +71,31 @@ export default function Sessions() {
     el.style.height = el.scrollHeight + "px"
   }
 
+  const ds = () => listDragState()
+
+  const displaySessions = createMemo(() => {
+    const all = sessions()
+    const mh = moveHint()
+    if (mh && mh.listId === "sessions") {
+      const filtered = all.filter((s) => s.id !== mh.itemId)
+      const idx = Math.min(mh.targetIndex, filtered.length)
+      const item = all.find((s) => s.id === mh.itemId)
+      const ghost: Session = { id: "__ghost__", name: item?.name ?? "", createdAt: "" }
+      return [...filtered.slice(0, idx), ghost, ...filtered.slice(idx)]
+    }
+    if (!ds().isDragging || ds().listId !== "sessions") return all
+    const filtered = all.filter((s) => s.id !== ds().itemId)
+    const idx = Math.min(ds().insertIndex >= 0 ? ds().insertIndex : filtered.length, filtered.length)
+    const ghost: Session = { id: "__ghost__", name: ds().itemLabel, createdAt: "" }
+    return [...filtered.slice(0, idx), ghost, ...filtered.slice(idx)]
+  })
+
+  const onSessionMouseDown = (session: Session, e: MouseEvent) => {
+    initiateListDrag(session.id, session.name, "sessions", e)
+  }
+
   return (
-    <div class="p-2 flex flex-col gap-2">
+    <div class="p-2 flex flex-col gap-2" data-list-id="sessions">
       <button
         class="border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors w-full text-left cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         disabled={isCreatingSession()}
@@ -83,45 +107,64 @@ export default function Sessions() {
         + Create Session
       </button>
 
-      <For each={sessions()}>
-        {(session) => (
+      <For each={displaySessions()}>
+        {(item) => (
           <Show
-            when={renaming() === session.id}
+            when={item.id === "__ghost__"}
             fallback={
-              <button
-                data-session-id={session.id}
-                class="border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors w-full text-left whitespace-pre-wrap cursor-pointer"
-                classList={{
-                  "bg-white/10": activeSessionId() === session.id,
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setActiveSessionId(session.id)
-                }}
-                onContextMenu={(e) => onContextMenu(e, session)}
+              <Show
+                when={renaming() === item.id}
+                fallback={
+                  <button
+                    data-session-id={item.id}
+                    data-drag-item=""
+                    class="border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors w-full text-left whitespace-pre-wrap cursor-pointer"
+                    classList={{
+                      "bg-white/10": activeSessionId() === item.id && item.id !== "__ghost__",
+                      "list-drag-dimmed": ds().isDragging && ds().listId === "sessions" && item.id !== ds().itemId,
+                    }}
+                    onMouseDown={(e) => onSessionMouseDown(item, e)}
+                    onClick={() => {
+                      if (ds().isDragging) return
+                      setActiveSessionId(activeSessionId() === item.id ? null : item.id)
+                    }}
+                    onContextMenu={(e) => onContextMenu(e, item)}
+                  >
+                    {item.name}
+                  </button>
+                }
               >
-                {session.name}
-              </button>
+                <textarea
+                  data-drag-item=""
+                  class="border border-white/20 px-3 py-1.5 text-[13px] bg-transparent text-[#e0e0e0] w-full resize-none outline-none overflow-hidden"
+                  classList={{
+                    "list-drag-dimmed": ds().isDragging && ds().listId === "sessions" && item.id !== ds().itemId,
+                  }}
+                  rows={1}
+                  maxLength={120}
+                  onKeyDown={onRenameKeyDown}
+                  onBlur={(e) => onRenameBlur(e, item.id)}
+                  onInput={(e) => adjustHeight(e.currentTarget)}
+                  ref={(el) => {
+                    if (el instanceof HTMLTextAreaElement) {
+                      el.value = item.name
+                      requestAnimationFrame(() => {
+                        el.focus()
+                        el.setSelectionRange(el.value.length, el.value.length)
+                        adjustHeight(el)
+                      })
+                    }
+                  }}
+                />
+              </Show>
             }
           >
-            <textarea
-              class="border border-white/20 px-3 py-1.5 text-[13px] bg-transparent text-[#e0e0e0] w-full resize-none outline-none overflow-hidden"
-              rows={1}
-              maxLength={120}
-              onKeyDown={onRenameKeyDown}
-              onBlur={(e) => onRenameBlur(e, session.id)}
-              onInput={(e) => adjustHeight(e.currentTarget)}
-              ref={(el) => {
-                if (el instanceof HTMLTextAreaElement) {
-                  el.value = session.name
-                  requestAnimationFrame(() => {
-                    el.focus()
-                    el.setSelectionRange(el.value.length, el.value.length)
-                    adjustHeight(el)
-                  })
-                }
-              }}
-            />
+            <div
+              data-drag-ghost=""
+              class="border border-white/20 px-3 py-1.5 text-[13px] list-drag-ghost w-full text-left whitespace-pre-wrap"
+            >
+              {item.name}
+            </div>
           </Show>
         )}
       </For>

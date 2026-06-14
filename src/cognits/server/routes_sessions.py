@@ -80,7 +80,6 @@ def register(app: FastAPI, st) -> None:
         except OSError as e:
             return text_error(str(e), 500)
 
-        # Reports are kept: they are a cross-session library in the reports view.
         if st.report_store is not None:
             try:
                 await asyncio.to_thread(st.report_store.delete_messages_by_session, session_id)
@@ -90,5 +89,25 @@ def register(app: FastAPI, st) -> None:
                 await asyncio.to_thread(st.report_store.delete_session_config, session_id)
             except Exception as e:
                 log.error("sessions: delete session config (session %s): %s", session_id, e)
+
+        return Response(status_code=204)
+
+    @app.put("/api/sessions/reorder")
+    async def reorder_sessions(request: Request):
+        if (err := ensure_sessions()) is not None:
+            return err
+
+        try:
+            body = await request.json()
+            order = body.get("order", []) if isinstance(body, dict) else []
+            if not isinstance(order, list) or not all(isinstance(x, str) for x in order):
+                raise ValueError("order")
+        except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
+            return text_error("invalid body", 400)
+
+        try:
+            await asyncio.to_thread(st.store.reorder_sessions, order)
+        except OSError as e:
+            return text_error(str(e), 500)
 
         return Response(status_code=204)

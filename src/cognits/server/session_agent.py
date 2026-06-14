@@ -25,6 +25,7 @@ SUBSCRIBER_BUFFER = 1024
 class AgentSnapshot:
     messages: list[MessageRow] = field(default_factory=list)
     tool_status: str = ""
+    tool_favicons: list[str] = field(default_factory=list)
     live_content: str = ""
     live_reasoning: str = ""
     live_report_id: str = ""
@@ -40,6 +41,7 @@ class SessionAgent:
 
         self.messages = messages
         self.tool_status = ""
+        self.tool_favicons: list[str] = []
         self.live_content = ""
         self.live_reasoning = ""
         self.live_report_id = ""
@@ -64,6 +66,7 @@ class SessionAgent:
         snap = AgentSnapshot(
             messages=list(self.messages),
             tool_status=self.tool_status,
+            tool_favicons=list(self.tool_favicons),
             live_content=self.live_content,
             live_reasoning=self.live_reasoning,
             live_report_id=self.live_report_id,

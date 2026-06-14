@@ -12,15 +12,20 @@ import contextlib
 import json
 import logging
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 
 from cognits.agent.agent import Agent, AgentConfig
 from cognits.agent.prompts import DEFAULT_AGENT_ID, default_agent_prompt
-from cognits.agent.subagents import documentalist_config, researcher_config
+from cognits.agent.subagents import (
+    documentalist_config,
+    researcher_config,
+    session_analyzer_config,
+)
 from cognits.agent.tool_deploy import DeploySubagent
 from cognits.llm.deepseek import DeepSeekClient
-from cognits.llm.types import ROLE_SYSTEM, Message
+from cognits.llm.types import ROLE_SYSTEM, ROLE_USER, Message
 from cognits.server.session_agent import SessionAgent
 from cognits.server.util import text_error
 from cognits.storage.db import MessageRow
@@ -32,7 +37,13 @@ log = logging.getLogger("cognits.chat")
 
 DEFAULT_MODEL = "deepseek-v4-pro"
 DEFAULT_RESEARCHER_MAX_STEPS = 100
-ORCHESTRATOR_MAX_STEPS = 25
+DEFAULT_ORCHESTRATOR_MAX_STEPS = 999
+
+AGENT_LABELS = {
+    "web_researcher": "Web Researcher",
+    "documentalist": "Documentalist",
+    "session_analyzer": "Session Analyzer",
+}
 
 # Explicit lists instead of strftime %A/%B: those are locale-dependent.
 MONTHS = [
@@ -158,7 +169,7 @@ def register(app: FastAPI, st) -> None:
         sa = SessionAgent(sid, storage_messages)
         st.active_agents[sid] = sa
         sa.task = asyncio.create_task(
-            _run_agent(st, sa, cfg, sid, model, reasoning, system_prompt, llm_messages)
+            _run_agent(st, sa, cfg, sid, model, reasoning, system_prompt, llm_messages, incoming)
         )
 
         return Response(status_code=202)
@@ -173,6 +184,73 @@ def register(app: FastAPI, st) -> None:
         return Response(status_code=204)
 
 
+async def _run_session_analyzer(
+    st,
+    sa: SessionAgent,
+    cfg: Config,
+    sid: str,
+    incoming: list[dict],
+) -> None:
+    """Fire-and-forget: generates a session name from the first user message."""
+    logger = logging.getLogger("cognits.session_analyzer")
+    try:
+        user_msgs = [m for m in incoming if m.get("role") == "user"]
+        if not user_msgs:
+            return
+        first_msg = user_msgs[0].get("content", "").strip()
+        if not first_msg:
+            return
+
+        now = datetime.now().astimezone()
+        tz = now.strftime("%Z") or now.strftime("%z")
+        date_stamp = (
+            f"{WEEKDAYS[now.weekday()]}, {now.day} {MONTHS[now.month - 1]} "
+            f"{now.year}, {now.strftime('%H:%M')} {tz}"
+        )
+        context = f"Today is {date_stamp}. "
+        if cfg.user_name:
+            context += f"The user's name is {cfg.user_name}. "
+        if cfg.user_location:
+            context += f"Their location is set to {cfg.user_location}. "
+        context += f"The project directory is '{Path.cwd().name}'."
+
+        model = "deepseek-v4-flash"
+        ag_cfg = session_analyzer_config(
+            model=model,
+            max_tokens=20,
+            temperature=0.3,
+        )
+        llm_client = DeepSeekClient(cfg.llm_api_key)
+        ag = Agent(ag_cfg, llm_client)
+
+        messages = [
+            Message(role=ROLE_SYSTEM, content=context),
+            Message(role=ROLE_USER, content=first_msg),
+        ]
+        try:
+            content = await ag.run(messages, emit=lambda _ev: None)
+        except Exception as e:
+            logger.error("session_analyzer: agent run: %s", e)
+            return
+
+        name = content.strip().strip('"\'').strip()
+        if not name:
+            return
+        if len(name) > 80:
+            name = name[:77] + "..."
+
+        logger.info("session_analyzer: renaming %s -> %s", sid, name)
+        await asyncio.to_thread(st.store.rename_session, sid, name)
+        sa.publish({"type": "session_renamed", "data": {"name": name}})
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        logger.exception("session_analyzer: failed")
+    finally:
+        with contextlib.suppress(Exception):
+            asyncio.get_running_loop().create_task(llm_client.aclose())
+
+
 async def _run_agent(
     st,
     sa: SessionAgent,
@@ -182,12 +260,19 @@ async def _run_agent(
     reasoning: str,
     system_prompt: str,
     llm_messages: list[Message],
+    incoming: list[dict],
 ) -> None:
     acc = {"content": "", "reasoning": ""}
     llm_client = DeepSeekClient(cfg.llm_api_key)
     tf_client = TinyfishClient(cfg.tinyfish_api_key)
 
     try:
+        # Session Analyzer: fire-and-forget on the first user message.
+        if sum(1 for m in incoming if m.get("role") == "user") == 1:
+            asyncio.create_task(
+                _run_session_analyzer(st, sa, cfg, sid, incoming)
+            )
+
         # The server is the source of truth: it stores history + new message
         # right at the start. Here and not in the handler: the POST responds
         # immediately even if SQLite is busy, and immediate subscribers read
@@ -215,12 +300,72 @@ async def _run_agent(
                     sa.live_reasoning = acc["reasoning"]
             elif t == "tool_progress" and isinstance(data, dict):
                 msg = data.get("message")
+                favicons = data.get("favicons", [])
+                is_clearing = False
+                is_action = False
+
                 if isinstance(msg, str):
+                    if msg:
+                        agent = data.get("agent", "") if isinstance(data, dict) else ""
+                        label = AGENT_LABELS.get(agent, agent) if agent else ""
+                        status = f"{label}: {msg}" if label else msg
+                        # "Thinking..." and "Writing..." clear favicons but
+                        # only update the visible status when no icons are
+                        # still animating on the frontend.
+                        if msg.endswith("Thinking...") or msg.endswith("Writing..."):
+                            is_clearing = True
+                            data["favicons"] = []
+                            if len(sa.tool_favicons) == 0:
+                                data["message"] = status
+                                is_action = True
+                            else:
+                                data["message"] = sa.tool_status
+                        # else: keep the previous status visible
+                        else:
+                            data["message"] = status
+                            is_clearing = False
+                            is_action = True
+                    else:
+                        status = ""
+                        is_clearing = True
+                        data["favicons"] = []
+                        is_action = True
+                    has_favicons = favicons and isinstance(favicons, list)
                     def update():
-                        sa.tool_status = msg
+                        if is_action:
+                            sa.tool_status = status
+                        if is_clearing:
+                            sa.tool_favicons = []
+                        if has_favicons:
+                            sa.tool_favicons = list(favicons)
+                elif favicons and isinstance(favicons, list):
+                    def update():
+                        sa.tool_favicons = list(favicons)
+                    data["message"] = sa.tool_status
+            elif t == "tool_start":
+                if acc["content"] or acc["reasoning"]:
+                    partial = MessageRow(
+                        role="assistant",
+                        content=acc["content"],
+                        reasoning=acc["reasoning"],
+                    )
+                    last = sa.messages[-1] if sa.messages else None
+                    if last is None or last.role != "assistant" or last.content != acc["content"]:
+                        def update():
+                            sa.messages.append(partial)
+                            acc["content"] = ""
+                            acc["reasoning"] = ""
+                            sa.live_content = ""
+                            sa.live_reasoning = ""
+                            if st.report_store is not None:
+                                try:
+                                    st.report_store.append_message(sid, partial)
+                                except Exception:
+                                    pass
             elif t == "subagent_end":
                 def update():
                     sa.tool_status = ""
+                    sa.tool_favicons = []
                     if isinstance(data, dict):
                         rid = data.get("reportId")
                         if isinstance(rid, str):
@@ -237,11 +382,19 @@ async def _run_agent(
         web_max_steps = web_cfg.max_steps if web_cfg else 0
         if web_max_steps <= 0:
             web_max_steps = DEFAULT_RESEARCHER_MAX_STEPS
+        web_max_tokens = web_cfg.max_tokens if web_cfg else 0
+        web_temperature = web_cfg.temperature if web_cfg else 0.0
+        web_top_p = web_cfg.top_p if web_cfg else 0.0
+        web_prompt = cfg.agent_overrides.get("web_researcher") or None
 
         subagent_map: dict[str, AgentConfig] = {
             "web_researcher": researcher_config(
                 web_model, web_reasoning, web_max_steps, tf_client,
                 rag_engine=st.rag if st.rag is not None and st.rag.error is None else None,
+                max_tokens=web_max_tokens or None,
+                temperature=web_temperature or None,
+                top_p=web_top_p or None,
+                system_prompt_override=web_prompt,
             )
         }
 
@@ -252,6 +405,10 @@ async def _run_agent(
             doc_max_steps = doc_cfg.max_steps if doc_cfg else 0
             if doc_max_steps <= 0:
                 doc_max_steps = DEFAULT_RESEARCHER_MAX_STEPS
+            doc_max_tokens = doc_cfg.max_tokens if doc_cfg else 0
+            doc_temperature = doc_cfg.temperature if doc_cfg else 0.0
+            doc_top_p = doc_cfg.top_p if doc_cfg else 0.0
+            doc_prompt = cfg.agent_overrides.get("documentalist") or None
             subagent_map["documentalist"] = documentalist_config(
                 doc_model,
                 doc_reasoning,
@@ -262,6 +419,10 @@ async def _run_agent(
                 st.report_store,
                 lambda: sid,
                 process_event,
+                max_tokens=doc_max_tokens or None,
+                temperature=doc_temperature or None,
+                top_p=doc_top_p or None,
+                system_prompt_override=doc_prompt,
             )
 
         registry = Registry()
@@ -276,12 +437,16 @@ async def _run_agent(
             )
         )
 
+        max_steps = cfg.max_steps or DEFAULT_ORCHESTRATOR_MAX_STEPS
         ag = Agent(
             AgentConfig(
                 name="orchestrator",
                 model=model,
                 reasoning=reasoning,
-                max_steps=ORCHESTRATOR_MAX_STEPS,
+                max_steps=max_steps,
+                max_tokens=cfg.max_tokens or None,
+                temperature=cfg.temperature or None,
+                top_p=cfg.top_p or None,
                 system_prompt=system_prompt,
                 tools=registry,
                 subagents=subagent_map,

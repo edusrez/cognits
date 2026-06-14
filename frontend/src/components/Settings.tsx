@@ -54,15 +54,28 @@ import {
   setDefaultLearnitViewport,
   writeLangs,
   setWriteLangs,
+  noteMode,
+  setNoteMode,
+  maxTokens,
+  setMaxTokens,
+  temperature,
+  setTemperature,
+  topP,
+  setTopP,
+  maxSteps,
+  setMaxSteps,
+  displayThinking,
+  setDisplayThinking,
   saveConfig,
 } from "../stores/settings-store"
 import { getViewportData, resetTree, setTabLabel } from "../stores/viewport-tree-store"
 import { currentMessages, sessionUsage } from "../stores/chat-store"
 import { activeSessionId } from "../stores/session-store"
 import type { ViewportId } from "../tabs"
-import type { AgentDef, ChatUsage } from "../types"
+import type { AgentDef, ChatUsage, SubagentConfig } from "../types"
 import Dropdown from "./Dropdown"
 import CollapsibleSection from "./CollapsibleSection"
+import SliderField from "./SliderField"
 
 const PRICES: Record<string, { inputCacheHit: number; inputCacheMiss: number; output: number }> = {
   "deepseek-v4-flash": { inputCacheHit: 0.0028, inputCacheMiss: 0.14, output: 0.28 },
@@ -78,13 +91,15 @@ function formatNumber(n: number): string {
 }
 
 function tabDisplayName(tabId: string | null): string | null {
+  if (!tabId) return null
+  if (tabId.startsWith("note:")) return "Note"
   const names: Record<string, string> = {
     chat: "Chat",
     sessions: "Sessions",
     write: "Write",
     learnit: ".cognits",
   }
-  return tabId ? names[tabId] ?? null : null
+  return names[tabId] ?? null
 }
 
 // Default agents live in the backend (internal/agent/prompts.go);
@@ -150,11 +165,92 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
     defaultAgents().map((a) => ({
       value: a.id,
       label: llmAgentId() === a.id
-        ? `${a.name} (${isAgentModified() ? "mod" : "def"})`
+        ? `${a.name}${isAgentModified() ? "*" : ""}`
         : a.name,
     })))
 
   const [showKey, setShowKey] = createSignal(false)
+
+  const [subagentSelector, setSubagentSelector] = createSignal("web_researcher")
+
+  function subagentSelectorDefaults(): SubagentConfig {
+    const prev = subagentConfig()[subagentSelector()]
+    return {
+      model: prev?.model || "deepseek-v4-flash",
+      reasoning: prev?.reasoning || "high",
+      maxSteps: prev?.maxSteps ?? 0,
+      maxTokens: prev?.maxTokens ?? 0,
+      temperature: prev?.temperature ?? 0,
+      topP: prev?.topP ?? 0,
+    }
+  }
+
+  function updateSelectedSubagent(patch: Partial<SubagentConfig>) {
+    setSubagentConfig((prev) => ({
+      ...prev,
+      [subagentSelector()]: { ...subagentSelectorDefaults(), ...patch },
+    }))
+    saveConfig()
+  }
+
+  const subagentDefaults = createMemo(() => {
+    const map: Record<string, AgentDef> = {}
+    for (const a of defaultAgents()) {
+      map[a.id] = a
+    }
+    return map
+  })
+
+  const isSubagentPromptModified = createMemo(() => {
+    const key = subagentSelector()
+    const def = subagentDefaults()[key]
+    const override = agentOverrides()[key]
+    return def && override !== undefined && override !== def.systemPrompt
+  })
+
+  const subagentOptions = createMemo(() =>
+    defaultAgents()
+      .filter((a) => a.id !== "orchestrator")
+      .map((a) => {
+        const modified =
+          subagentSelector() === a.id && isSubagentPromptModified()
+        return {
+          value: a.id,
+          label: a.name + (modified ? "*" : ""),
+        }
+      }),
+  )
+
+  function subagentPrompt(): string {
+    const key = subagentSelector()
+    const def = subagentDefaults()[key]
+    return agentOverrides()[key] ?? def?.systemPrompt ?? ""
+  }
+
+  function updateSubagentPrompt(value: string) {
+    const key = subagentSelector()
+    const def = subagentDefaults()[key]
+    if (def && value === def.systemPrompt) {
+      setAgentOverrides((prev) => {
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
+    } else {
+      setAgentOverrides((prev) => ({ ...prev, [key]: value }))
+    }
+    saveConfig()
+  }
+
+  function resetSubagentPrompt() {
+    const key = subagentSelector()
+    setAgentOverrides((prev) => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+    saveConfig()
+  }
 
   const setAndSaveKey = (v: string) => {
     setLLMApiKey(v)
@@ -493,6 +589,52 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
               />
             </div>
 
+            <SliderField
+              label="Max Output Tokens"
+              value={maxTokens() || 4096}
+              onInput={(v) => { setMaxTokens(v); saveConfig() }}
+              min={256}
+              max={384000}
+              step={256}
+              disabled={conversationStarted()}
+            />
+
+            <SliderField
+              label="Temperature"
+              value={temperature() || 1.0}
+              onInput={(v) => { setTemperature(v); saveConfig() }}
+              min={0}
+              max={2}
+              step={0.05}
+              disabled={conversationStarted() || activeReasoning() !== "disabled"}
+              disabledHint="No effect in thinking mode"
+            />
+
+            <SliderField
+              label="Top P"
+              value={topP() || 1.0}
+              onInput={(v) => { setTopP(v); saveConfig() }}
+              min={0}
+              max={1}
+              step={0.05}
+              disabled={conversationStarted() || activeReasoning() !== "disabled"}
+              disabledHint="No effect in thinking mode"
+            />
+
+            <div class="flex flex-col gap-1">
+              <label class="text-[#9a9a9a]">Max Steps</label>
+              <div class="text-[11px] text-[#6a6a6a]">0 = default (999)</div>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={maxSteps() || 0}
+                onInput={(e) => { setMaxSteps(parseInt(e.currentTarget.value) || 0); saveConfig() }}
+                class="no-spinner bg-transparent border border-white/20 px-2 py-1 text-[13px] text-[#e0e0e0] outline-hidden focus:border-white/40 w-20 disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={conversationStarted()}
+              />
+            </div>
+
           </div>
         </CollapsibleSection>
 
@@ -501,15 +643,14 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
             <div class="flex flex-col gap-1">
               <label class="text-[#9a9a9a]">Subagent</label>
               <Dropdown
-                value={"web_researcher" as const}
-                options={[
-                  { value: "web_researcher" as const, label: "Web Researcher (def)" },
-                ]}
-                onChange={() => {}}
-                disabled={true}
+                value={subagentSelector()}
+                options={subagentOptions()}
+                onChange={(v) => setSubagentSelector(v)}
+                disabled={conversationStarted()}
               />
             </div>
 
+            <Show when={subagentSelector() === "web_researcher"}>
             <div class="flex flex-col gap-1">
               <label class="text-[#9a9a9a]">Service Provider</label>
               <Dropdown
@@ -556,6 +697,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                 disabled={conversationStarted()}
               />
             </div>
+            </Show>
 
             <div class="flex flex-col gap-1">
               <label class="text-[#9a9a9a]">AI Provider</label>
@@ -572,18 +714,12 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
             <div class="flex flex-col gap-1">
               <label class="text-[#9a9a9a]">Model</label>
               <Dropdown
-                value={(subagentConfig()["web_researcher"]?.model || "deepseek-v4-flash") as "deepseek-v4-flash" | "deepseek-v4-pro"}
+                value={(subagentConfig()[subagentSelector()]?.model || "deepseek-v4-flash") as "deepseek-v4-flash" | "deepseek-v4-pro"}
                 options={[
                   { value: "deepseek-v4-flash" as const, label: "V4 Flash" },
                   { value: "deepseek-v4-pro" as const, label: "V4 Pro" },
                 ]}
-                onChange={(v) => {
-                  setSubagentConfig((prev) => ({
-                    ...prev,
-                    web_researcher: { ...prev["web_researcher"], model: v, reasoning: prev["web_researcher"]?.reasoning || "high", maxSteps: prev["web_researcher"]?.maxSteps ?? 0 },
-                  }))
-                  saveConfig()
-                }}
+                onChange={(v) => updateSelectedSubagent({ model: v })}
                 disabled={conversationStarted()}
               />
             </div>
@@ -591,19 +727,13 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
             <div class="flex flex-col gap-1">
               <label class="text-[#9a9a9a]">Reasoning</label>
               <Dropdown
-                value={(subagentConfig()["web_researcher"]?.reasoning || "high") as "disabled" | "high" | "max"}
+                value={(subagentConfig()[subagentSelector()]?.reasoning || "high") as "disabled" | "high" | "max"}
                 options={[
                   { value: "disabled" as const, label: "Disabled" },
                   { value: "high" as const, label: "High" },
                   { value: "max" as const, label: "Maximum" },
                 ]}
-                onChange={(v) => {
-                  setSubagentConfig((prev) => ({
-                    ...prev,
-                    web_researcher: { ...prev["web_researcher"], model: prev["web_researcher"]?.model || "deepseek-v4-flash", reasoning: v, maxSteps: prev["web_researcher"]?.maxSteps ?? 0 },
-                  }))
-                  saveConfig()
-                }}
+                onChange={(v) => updateSelectedSubagent({ reasoning: v })}
                 disabled={conversationStarted()}
               />
             </div>
@@ -615,19 +745,72 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                   type="number"
                   min="0"
                    max="200"
-                  value={subagentConfig()["web_researcher"]?.maxSteps ?? 0}
+                  value={subagentConfig()[subagentSelector()]?.maxSteps ?? 0}
                   onInput={(e) => {
-                    setSubagentConfig((prev) => ({
-                      ...prev,
-                      web_researcher: { ...prev["web_researcher"], model: prev["web_researcher"]?.model || "deepseek-v4-flash", reasoning: prev["web_researcher"]?.reasoning || "high", maxSteps: parseInt(e.currentTarget.value) || 0 },
-                    }))
-                    saveConfig()
+                    updateSelectedSubagent({ maxSteps: parseInt(e.currentTarget.value) || 0 })
                   }}
                   class="no-spinner bg-transparent border border-white/20 px-2 py-1 text-[13px] text-[#e0e0e0] outline-hidden focus:border-white/40 w-20 disabled:opacity-40 disabled:cursor-not-allowed"
                   disabled={conversationStarted()}
                 />
                 <span class="text-[#6a6a6a] text-[13px]">(0 = default: 100)</span>
               </div>
+            </div>
+
+            <SliderField
+              label="Max Output Tokens"
+              value={subagentConfig()[subagentSelector()]?.maxTokens || 4096}
+              onInput={(v) => updateSelectedSubagent({ maxTokens: v })}
+              min={256}
+              max={384000}
+              step={256}
+              disabled={conversationStarted()}
+            />
+
+            <SliderField
+              label="Temperature"
+              value={subagentConfig()[subagentSelector()]?.temperature || 1.0}
+              onInput={(v) => updateSelectedSubagent({ temperature: v })}
+              min={0}
+              max={2}
+              step={0.05}
+              disabled={conversationStarted() || subagentConfig()[subagentSelector()]?.reasoning !== "disabled"}
+              disabledHint="No effect in thinking mode"
+            />
+
+            <SliderField
+              label="Top P"
+              value={subagentConfig()[subagentSelector()]?.topP || 1.0}
+              onInput={(v) => updateSelectedSubagent({ topP: v })}
+              min={0}
+              max={1}
+              step={0.05}
+              disabled={conversationStarted() || subagentConfig()[subagentSelector()]?.reasoning !== "disabled"}
+              disabledHint="No effect in thinking mode"
+            />
+
+            <div class="flex flex-col gap-1 mt-1">
+              <div class="flex items-center justify-between">
+                <label class="text-[#9a9a9a]">System Prompt</label>
+                <Show when={isSubagentPromptModified() && !conversationStarted()}>
+                  <button
+                    class="text-[#6a6a6a] hover:text-[#e0e0e0] transition-colors cursor-pointer"
+                    onClick={resetSubagentPrompt}
+                    title="Restore default prompt"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="23 4 23 10 17 10" />
+                      <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
+                    </svg>
+                  </button>
+                </Show>
+              </div>
+              <textarea
+                value={subagentPrompt()}
+                onInput={(e) => updateSubagentPrompt(e.currentTarget.value)}
+                class="bg-transparent border border-white/20 px-2 py-1 text-[13px] text-[#e0e0e0] outline-hidden focus:border-white/40 resize-none h-36 disabled:opacity-40 disabled:cursor-not-allowed"
+                readOnly={conversationStarted()}
+                disabled={conversationStarted()}
+              />
             </div>
           </div>
         </CollapsibleSection>
@@ -719,6 +902,52 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                 <span>Slower</span>
               </div>
             </div>
+
+            <div class="flex flex-col gap-1 mt-1">
+              <button
+                class="w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 transition-colors cursor-pointer"
+                onClick={() => {
+                  setDisplayThinking((p) => !p)
+                  saveConfig()
+                }}
+              >
+                <span
+                  class="inline-block w-3.5 h-3.5 border border-white/30 shrink-0"
+                  classList={{ "bg-white/20": displayThinking() }}
+                />
+                <span classList={{ "text-[#6a6a6a]": !displayThinking() }}>
+                  Show thinking
+                </span>
+              </button>
+            </div>
+          </div>
+        </CollapsibleSection>
+      </Show>
+
+      <Show when={linkedViewport() && linkedActiveTabId()?.startsWith("note:")}>
+        <CollapsibleSection title="Display">
+          <div class="flex flex-col gap-2">
+            <div class="text-[#9a9a9a]">Note mode</div>
+            {(["edit", "view"] as const).map((mode) => {
+              const active = () => noteMode() === mode
+              return (
+                <button
+                  class="w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 transition-colors cursor-pointer"
+                  onClick={() => {
+                    setNoteMode(mode)
+                    saveConfig()
+                  }}
+                >
+                  <span
+                    class="inline-block w-3.5 h-3.5 border border-white/30 shrink-0"
+                    classList={{ "bg-white/20": active() }}
+                  />
+                  <span classList={{ "text-[#6a6a6a]": !active() }}>
+                    {mode === "edit" ? "Edit" : "View (read-only)"}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </CollapsibleSection>
       </Show>

@@ -1,18 +1,32 @@
 import { createSignal, type ParentProps } from "solid-js"
 
+const _openMap: Record<string, boolean> = {}
+
+function resolveOpen(title: string, defaultOpen: boolean): boolean {
+  if (title in _openMap) return _openMap[title]
+  _openMap[title] = defaultOpen
+  return defaultOpen
+}
+
 interface CollapsibleSectionProps extends ParentProps {
   title: string
   defaultOpen?: boolean
 }
 
 export default function CollapsibleSection(props: CollapsibleSectionProps) {
-  const [open, setOpen] = createSignal(props.defaultOpen ?? false)
+  const [open, setOpen] = createSignal(resolveOpen(props.title, props.defaultOpen ?? false))
+
+  const toggle = () => {
+    const next = !open()
+    _openMap[props.title] = next
+    setOpen(next)
+  }
 
   return (
     <div>
       <button
         class="w-full text-left flex items-center justify-between text-[13px] text-[#6a6a6a] uppercase tracking-wider hover:text-[#9a9a9a] transition-colors cursor-pointer"
-        onClick={() => setOpen((p) => !p)}
+        onClick={toggle}
       >
         <span>{props.title}</span>
         <svg

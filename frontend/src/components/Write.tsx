@@ -16,7 +16,7 @@ export default function Write() {
           sendMessage(content)
           target.value = ""
         }
-      } else if (e.ctrlKey) {
+      } else if (e.shiftKey) {
         e.preventDefault()
         const target = e.currentTarget as HTMLTextAreaElement
         const start = target.selectionStart
@@ -34,7 +34,7 @@ export default function Write() {
         spellcheck={spellcheck()}
         lang={lang()}
         class="border border-white/20 px-3 py-3 text-[13px] bg-transparent text-[#e0e0e0] w-full h-full resize-none outline-none"
-        placeholder={isStreaming() ? "AI is responding..." : "Type your message... (Enter to send, Ctrl+Enter for new line)"}
+        placeholder={isStreaming() ? "AI is responding..." : "Type your message... (Enter to send, Shift+Enter for new line)"}
         disabled={isStreaming()}
       />
     </div>

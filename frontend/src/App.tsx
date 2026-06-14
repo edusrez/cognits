@@ -19,13 +19,13 @@ import {
   findSpatialNeighbor,
   type ViewportId,
 } from "./stores/viewport-tree-store"
-import { dragState, endDrag } from "./drag/drag-state"
-import { activeSessionId, deleteSession } from "./stores/session-store"
-import { loadConfig, defaultChatViewport, defaultWriteViewport, loadSessionConfig, linkingMode, confirmLinkViewport, cancelLinking } from "./stores/settings-store"
+import { dragState, endDrag, listDragState, endListDrag, moveHint, setMoveHint } from "./drag/drag-state"
+import { activeSessionId, setActiveSessionId, deleteSession } from "./stores/session-store"
+import { loadConfig, defaultChatViewport, defaultWriteViewport, defaultLearnitViewport, loadSessionConfig, linkingMode, confirmLinkViewport, cancelLinking } from "./stores/settings-store"
 import { loadSessionMessages } from "./stores/chat-store"
 import { initDesktops, createDesktop, switchDesktop, closeDesktop, desktopCount, activeDesktopIndex } from "./stores/desktop-store"
 import Viewport from "./components/Viewport"
-import DragOverlay from "./components/DragOverlay"
+import DragOverlay, { ListDragOverlay } from "./components/DragOverlay"
 
 initDesktops()
 
@@ -56,6 +56,16 @@ pollHealth()
 export default function App() {
   const [spaceHeld, setSpaceHeld] = createSignal(false)
 
+  interface MoveMode {
+    itemId: string
+    listId: "sessions" | "notebook"
+    originalIndex: number
+    offset: number
+    listLength: number
+  }
+  const [moveMode, setMoveMode] = createSignal<MoveMode | null>(null)
+  let _selectedEl: HTMLElement | null = null
+
   createEffect(() => {
     const sid = activeSessionId()
     if (sid) {
@@ -67,12 +77,52 @@ export default function App() {
     }
   })
 
+  const handleMoveKey = () => {
+    const mm = moveMode()
+    if (mm) {
+      const targetIndex = mm.originalIndex + mm.offset
+      setMoveMode(null)
+      setMoveHint(null)
+      if (mm.listId === "sessions") {
+        import("./stores/session-store").then((m) => m.moveSession(mm.itemId, targetIndex))
+      } else {
+        import("./stores/notebook-store").then((m) => m.moveNote(mm.itemId, targetIndex))
+      }
+      return
+    }
+    if (!_selectedEl) return
+    const sid = _selectedEl.getAttribute("data-session-id")
+    const nid = _selectedEl.getAttribute("data-note-id")
+    const id = sid || nid
+    if (!id) return
+    const listId: "sessions" | "notebook" = sid ? "sessions" : "notebook"
+    const listEl = _selectedEl.closest("[data-list-id]")
+    const items = listEl?.querySelectorAll("[data-drag-item]")
+    const allIds = Array.from(items ?? []).map(
+      (el) => el.getAttribute(sid ? "data-session-id" : "data-note-id") ?? "",
+    )
+    const idx = allIds.indexOf(id)
+    if (idx >= 0) {
+      setMoveMode({ itemId: id, listId, originalIndex: idx, offset: 0, listLength: allIds.length })
+      setMoveHint({ listId, itemId: id, targetIndex: idx })
+    }
+  }
+
   const handleDrop = () => {
     const ds = dragState()
     if (ds.targetViewport !== null) {
       moveTab(ds.tabId, ds.sourceViewport, ds.targetViewport, ds.insertIndex)
     }
     endDrag()
+  }
+
+  const handleListDrop = (listId: string, insertIndex: number) => {
+    const ds = listDragState()
+    if (listId === "sessions") {
+      import("./stores/session-store").then((m) => { m.moveSession(ds.itemId, insertIndex); endListDrag() })
+    } else if (listId === "notebook") {
+      import("./stores/notebook-store").then((m) => { m.moveNote(ds.itemId, insertIndex); endListDrag() })
+    }
   }
 
   onCleanup(() => {
@@ -82,7 +132,6 @@ export default function App() {
   onMount(() => {
     loadConfig()
 
-    let _selectedEl: HTMLElement | null = null
     function setSelection(el: HTMLElement | null) {
       if (_selectedEl) _selectedEl.classList.remove("keyboard-selected")
       _selectedEl = el
@@ -107,6 +156,12 @@ export default function App() {
         }
       }
 
+      // Cancel move mode on any key except arrows/m.
+      if (moveMode() && !e.repeat && e.key !== "ArrowUp" && e.key !== "ArrowDown" && e.key !== "m") {
+        setMoveMode(null)
+        setMoveHint(null)
+      }
+
       // Application-level shortcuts — fire regardless of focus.
       if (!e.ctrlKey && !e.shiftKey && !e.altKey) {
         if (e.key === "Enter" && spaceHeld() && _selectedEl && !e.repeat) {
@@ -118,7 +173,17 @@ export default function App() {
             if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
               el.focus?.({ focusVisible: true } as FocusOptions)
             } else {
-              el.click?.()
+              const sid = el.getAttribute("data-session-id")
+              const nid = el.getAttribute("data-note-id")
+              if (sid) {
+                setActiveSessionId(activeSessionId() === sid ? null : sid)
+              } else if (nid) {
+                import("./stores/notebook-store").then((m) =>
+                  m.openNoteInViewport(defaultLearnitViewport(), nid),
+                )
+              } else {
+                el.click?.()
+              }
             }
           }
           return
@@ -155,31 +220,43 @@ export default function App() {
               .then(() => import("./stores/learnit-store").then((m) => m.refetchReports()))
             return
           }
+          const nid = _selectedEl.getAttribute("data-note-id")
+          if (nid) {
+            e.preventDefault(); setSelection(null)
+            import("./stores/notebook-store").then((m) => m.deleteNote(nid))
+            return
+          }
         }
         if (e.key === "c") {
           const vpId = focusedViewportId()
           if (vpId) {
             const vp = getViewportData(vpId)
             const tabId = vp?.activeTabId
-            if (tabId && (tabId.startsWith("report:") || tabId.startsWith("settings:"))) {
+            if (tabId && (tabId.startsWith("report:") || tabId.startsWith("settings:") || tabId.startsWith("note:"))) {
               e.preventDefault()
               removeDynamicTab(vpId, tabId)
             }
           }
           return
         }
+        if (e.key === "m") {
+          handleMoveKey()
+          return
+        }
       }
-      if (!e.ctrlKey && e.shiftKey && !e.altKey) {
+      if (e.ctrlKey && !e.shiftKey && !e.altKey) {
         if (e.key === "Enter") {
           const tag = (e.target as HTMLElement).tagName
           if (tag === "INPUT" || tag === "TEXTAREA") {
             e.preventDefault()
             const el = e.target as HTMLElement
             el.blur()
-            setSelection(el)
+            setSelection(null)
           }
           return
         }
+      }
+      if (e.shiftKey && !e.ctrlKey && !e.altKey) {
         if (
           e.key === "ArrowLeft" ||
           e.key === "ArrowRight" ||
@@ -213,6 +290,18 @@ export default function App() {
 
       if (!e.ctrlKey && !e.shiftKey && !e.altKey) {
         if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          const mm = moveMode()
+          if (mm) {
+            e.preventDefault()
+            const delta = e.key === "ArrowUp" ? -1 : 1
+            const newOffset = mm.offset + delta
+            const targetIdx = mm.originalIndex + newOffset
+            if (targetIdx >= 0 && targetIdx < mm.listLength) {
+              setMoveMode({ ...mm, offset: newOffset })
+              setMoveHint({ listId: mm.listId, itemId: mm.itemId, targetIndex: targetIdx })
+            }
+            return
+          }
           const vpId = focusedViewportId()
           if (vpId) {
             if (spaceHeld()) {
@@ -292,13 +381,18 @@ export default function App() {
     }
     document.addEventListener("keydown", handler)
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === " ") { setSpaceHeld(false); setSelection(null); if (linkingMode()) cancelLinking() }
+      if (e.key === " ") { setSpaceHeld(false); setSelection(null); setMoveMode(null); setMoveHint(null); if (linkingMode()) cancelLinking() }
       if (e.key === "Shift") { setShiftHeld(false) }
     }
     document.addEventListener("keyup", onKeyUp)
+    const onMouseDown = () => {
+      if (moveMode()) { setMoveMode(null); setMoveHint(null) }
+    }
+    document.addEventListener("mousedown", onMouseDown)
     onCleanup(() => {
       document.removeEventListener("keydown", handler)
       document.removeEventListener("keyup", onKeyUp)
+      document.removeEventListener("mousedown", onMouseDown)
     })
   })
 
@@ -326,6 +420,7 @@ export default function App() {
       >
         <GridNode id={rootId()} />
         <DragOverlay onDrop={handleDrop} />
+        <ListDragOverlay onDrop={handleListDrop} />
       </Show>
     </div>
   )

@@ -41,6 +41,10 @@ export const [toolStatusBySession, setToolStatusBySession] = createSignal<
   Record<string, string | null>
 >({})
 
+export const [toolFaviconsBySession, setToolFaviconsBySession] = createSignal<
+  Record<string, string[]>
+>({})
+
 export const [errorBySession, setErrorBySession] = createSignal<
   Record<string, string | null>
 >({})
@@ -189,6 +193,8 @@ function createStreamCallbacks(sid: string, controller: AbortController): Stream
         thinking: snap.agentActive && !snap.liveContent,
       })
       setToolStatusBySession((prev) => ({ ...prev, [sid]: snap.toolStatus }))
+      if (snap.toolFavicons)
+        setToolFaviconsBySession((prev) => ({ ...prev, [sid]: snap.toolFavicons! }))
     },
     onReasoning(token: string) {
       pendingFor(sid).reasoning += token
@@ -224,13 +230,19 @@ function createStreamCallbacks(sid: string, controller: AbortController): Stream
       }
     },
     onToolProgress(data: any) {
-      // The server sends an empty message to clear the banner (failed subagent).
       setToolStatusBySession((prev) => ({ ...prev, [sid]: data?.message || null }))
+      if (data?.favicons) {
+        setToolFaviconsBySession((prev) => ({ ...prev, [sid]: data.favicons }))
+      }
     },
     onToolEnd(_data: any) {},
+    onSessionRenamed(_data: { name: string }) {
+      import("../stores/session-store").then((m) => m.loadSessions())
+    },
     onSubagentEnd(data) {
       flushPendingTokens()
       setToolStatusBySession((prev) => ({ ...prev, [sid]: null }))
+      setToolFaviconsBySession((prev) => ({ ...prev, [sid]: [] }))
       import("../stores/report-store").then((m) => m.loadReport(data.reportId))
       import("../stores/learnit-store").then((ls) => ls.refetchReports())
       setMessagesBySession((prev) => {
