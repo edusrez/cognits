@@ -358,12 +358,19 @@ function findParentSplit(childId: ViewportId): ViewportId | null {
 }
 
 export function addDynamicTab(vpId: ViewportId, tab: { id: string; label: string; hidden: boolean }) {
+  console.log("[addDynamicTab] called", { vpId, tabId: tab.id })
   setViewportMap(
     produce((m) => {
       const vp = m[vpId]
-      if (!vp) return
+      if (!vp) {
+        console.warn("[addDynamicTab] viewport not found in store", { vpId, availableIds: Object.keys(m) })
+        return
+      }
       if (!vp.tabs.some((t) => t.id === tab.id)) {
+        console.log("[addDynamicTab] adding tab to viewport", { vpId, tabId: tab.id, existingTabs: vp.tabs.map(t => t.id) })
         vp.tabs.push({ ...tab, label: tab.label })
+      } else {
+        console.log("[addDynamicTab] tab already exists, activating", { vpId, tabId: tab.id })
       }
       vp.activeTabId = tab.id
     }),

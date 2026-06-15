@@ -106,12 +106,8 @@ export default function PdfView(props: { viewportId?: string; tabId?: string }) 
   return (
     <div class="flex flex-col h-full">
       {/* Header with toggle */}
-      <div class="flex items-center justify-between px-3 py-1.5 border-b border-white/10 shrink-0"
-           style={{ "min-height": "28px" }}>
-        <div class="flex items-center gap-2 min-w-0">
-          <span class="text-[11px] text-[#6a6a6a] shrink-0">📄</span>
-          <span class="text-[12px] text-[#e0e0e0] truncate">{fileName()}</span>
-        </div>
+      <div class="flex items-center justify-between px-4 py-2 shrink-0">
+        <span class="text-[13px] text-[#9a9a9a] truncate">{fileName()}</span>
 
         <div class="flex items-center gap-2 shrink-0">
           <Show when={rawMeta()}>
@@ -136,7 +132,7 @@ export default function PdfView(props: { viewportId?: string; tabId?: string }) 
       </div>
 
       {/* Content area */}
-      <div class="flex-1 min-h-0 overflow-auto bg-[#0d0d0d]">
+      <div class="flex-1 min-h-0 p-2 overflow-auto bg-[#0d0d0d]">
         <Show when={mode() === "raw"} fallback={
           /* AI mode */
           <Show when={!aiContent.loading && !aiContent.error} fallback={

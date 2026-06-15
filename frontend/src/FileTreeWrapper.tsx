@@ -17,11 +17,17 @@ export default function FileTreeWrapper(props: { viewportId?: string; tabId?: st
   })
 
   function handleFileClick(path: string) {
-    if (!props.viewportId) return
+    console.log("[FileTreeWrapper] handleFileClick called", { path, viewportId: props.viewportId })
+    if (!props.viewportId) {
+      console.warn("[FileTreeWrapper] viewportId is undefined — tab not opened")
+      return
+    }
     const category = getFileCategory(path)
     const name = path.split("/").pop() ?? path
+    const tabId = `${category}:${path}`
+    console.log("[FileTreeWrapper] opening tab", { viewportId: props.viewportId, tabId, label: name })
     addDynamicTab(props.viewportId, {
-      id: `${category}:${path}`,
+      id: tabId,
       label: name,
       hidden: false,
     })

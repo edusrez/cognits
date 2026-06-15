@@ -45,18 +45,14 @@ export default function TextView(props: { viewportId?: string; tabId?: string })
 
   return (
     <div class="flex flex-col h-full">
-      <div class="flex items-center justify-between px-3 py-1.5 border-b border-white/10 shrink-0"
-           style={{ "min-height": "28px" }}>
-        <div class="flex items-center gap-2 min-w-0">
-          <span class="text-[11px] text-[#6a6a6a] shrink-0">📄</span>
-          <span class="text-[12px] text-[#e0e0e0] truncate">{fileName()}</span>
-        </div>
+      <div class="flex items-center justify-between px-4 py-2 shrink-0">
+        <span class="text-[13px] text-[#9a9a9a] truncate">{fileName()}</span>
         <Show when={data()}>
           <span class="text-[10px] text-[#5a5a5a] shrink-0">{formatSize(data()!.size)}</span>
         </Show>
       </div>
 
-      <div class="flex-1 min-h-0 overflow-auto">
+      <div class="flex-1 min-h-0 p-2 overflow-auto">
         <Show when={!error() && !data.loading} fallback={
           <Show when={data.loading} fallback={
             <div class="text-[#e74c3c] px-4 py-3 text-[13px]">{error() || "Failed to load file"}</div>
