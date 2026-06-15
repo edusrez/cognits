@@ -8,6 +8,8 @@ import {
   isCreatingSession,
   renameSession,
   deleteSession,
+  renamingSessionId,
+  setRenamingSessionId,
   type Session,
 } from "../stores/session-store"
 import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
@@ -18,8 +20,6 @@ export default function Sessions() {
   onMount(() => {
     loadSessions()
   })
-
-  const [renaming, setRenaming] = createSignal<string | null>(null)
 
   const onContextMenu = (e: MouseEvent, session: Session) => {
     e.preventDefault()
@@ -36,7 +36,7 @@ export default function Sessions() {
   const startRenaming = () => {
     const m = ctxMenu()
     if (m?.kind === "session") {
-      setRenaming(m.sessionId)
+      setRenamingSessionId(m.sessionId)
       setCtxMenu(null)
     }
   }
@@ -63,7 +63,7 @@ export default function Sessions() {
     if (name) {
       renameSession(id, name)
     }
-    setRenaming(null)
+      setRenamingSessionId(null)
   }
 
   const adjustHeight = (el: HTMLTextAreaElement) => {
@@ -113,7 +113,7 @@ export default function Sessions() {
             when={item.id === "__ghost__"}
             fallback={
               <Show
-                when={renaming() === item.id}
+                when={renamingSessionId() === item.id}
                 fallback={
                   <button
                     data-session-id={item.id}

@@ -20,7 +20,7 @@ import {
   type ViewportId,
 } from "./stores/viewport-tree-store"
 import { dragState, endDrag, listDragState, endListDrag, moveHint, setMoveHint } from "./drag/drag-state"
-import { activeSessionId, setActiveSessionId, deleteSession } from "./stores/session-store"
+import { activeSessionId, setActiveSessionId, deleteSession, setRenamingSessionId } from "./stores/session-store"
 import { loadConfig, defaultChatViewport, defaultWriteViewport, defaultLearnitViewport, loadSessionConfig, linkingMode, confirmLinkViewport, cancelLinking } from "./stores/settings-store"
 import { loadSessionMessages } from "./stores/chat-store"
 import { initDesktops, createDesktop, switchDesktop, closeDesktop, desktopCount, activeDesktopIndex } from "./stores/desktop-store"
@@ -241,6 +241,15 @@ export default function App() {
         }
         if (e.key === "m") {
           handleMoveKey()
+          return
+        }
+        if (e.key === "r" && _selectedEl) {
+          const sid = _selectedEl.getAttribute("data-session-id")
+          if (sid) {
+            e.preventDefault()
+            setSelection(null)
+            setRenamingSessionId(sid)
+          }
           return
         }
       }

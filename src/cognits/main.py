@@ -1,11 +1,12 @@
 """Entry point for Cognits.
 
-Starts the local HTTP server inside a Textual TUI: loading spinner → menu
+Starts the local HTTP server inside a Textual TUI: progress bar + menu
 (Open Web / Close) → running state, all inside a single bordered panel.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import os
@@ -100,15 +101,13 @@ Screen {
     width: 100%;
 }
 
-#loading-label, #ready-label, #running-label {
+#loading-label, #ready-label, #running-label, #loading-indicator, #download-label {
     text-align: center;
     width: 100%;
 }
 
-#spinner {
-    text-align: center;
-    width: 100%;
-    padding-top: 1;
+#loading-indicator {
+    padding-bottom: 1;
 }
 
 #menu {
@@ -140,7 +139,7 @@ class _Server(uvicorn.Server):
 # ---------------------------------------------------------------------------
 
 class CognitsTUI(App):
-    """Single-screen TUI: loading spinner → interactive menu inside a bordered panel."""
+    """Single-screen TUI: progress bar → interactive menu inside a bordered panel."""
 
     CSS = CSS
     ENABLE_COMMAND_PALETTE = False
@@ -154,8 +153,6 @@ class CognitsTUI(App):
         self._server = server
         self._port = port
         self._url = f"http://localhost:{port}"
-        self._spinner_frame = 0
-        self._spinner_stop: threading.Event | None = None
         self._server_thread: threading.Thread | None = None
         super().__init__()
 
@@ -171,8 +168,8 @@ class CognitsTUI(App):
             )
 
             with VerticalGroup(id="loading-container"):
-                yield Label("Loading BGE-M3 model\u2026", id="loading-label")
-                yield Static(SPINNER[0], id="spinner")
+                yield Static("", id="loading-indicator")
+                yield Label("Downloading\u2026", id="download-label")
 
             with VerticalGroup(id="ready-container", classes="hidden"):
                 yield Static(
@@ -201,16 +198,13 @@ class CognitsTUI(App):
         self.register_theme(COGNITS_THEME)
         self.theme = "cognits-dark"
         # Run uvicorn in its own thread + event loop so serving static
-        # assets never blocks Textual's render loop (spinner).
+        # assets never blocks Textual's render loop.
         self._server_thread = threading.Thread(
             target=lambda: asyncio.run(self._run_server()),
             daemon=True,
         )
         self._server_thread.start()
         self.run_worker(self._check_rag())
-        self._spinner_stop = threading.Event()
-        self._spinner_thread = threading.Thread(target=self._run_spinner, daemon=True)
-        self._spinner_thread.start()
 
     # -- Server --------------------------------------------------------------
 
@@ -220,30 +214,37 @@ class CognitsTUI(App):
     # -- Loading phase -------------------------------------------------------
 
     async def _check_rag(self) -> None:
-        # Lower the GIL switch interval during model loading so the asyncio
-        # event loop thread gets CPU time more often.  Default is 5 ms.
         old_switch = sys.getswitchinterval()
         sys.setswitchinterval(0.001)
+        spinner_frame = 0
         try:
             rag = self._state.rag
-            # _run_server starts uvicorn concurrently; its lifespan calls
-            # RagEngine.start_background() which sets state.rag.  Wait until
-            # that assignment happens so we don't skip past the loading
-            # screen before the model even begins downloading.
             if rag is None:
                 while self._state.rag is None:
                     await asyncio.sleep(0.1)
                 rag = self._state.rag
             if rag is not None:
-                while not rag.ready.is_set() and not rag.error:
+                # Phase 1: download
+                while not rag.ready.is_set() and not rag.error and rag.progress < 100:
+                    pct = rag.progress
+                    filled = min(7, int(pct / 14.3))
+                    bar = " ".join("\u25a0" if i < filled else "\u25a1" for i in range(7))
+                    self.query_one("#loading-indicator", Static).update(bar)
+                    self.query_one("#download-label", Label).update(
+                        f"Downloading\u2026 {pct}%"
+                    )
                     await asyncio.sleep(0.15)
+                # Phase 2: ONNX model load
+                while not rag.ready.is_set() and not rag.error:
+                    self.query_one("#download-label", Label).update("Loading model\u2026")
+                    spinner_frame = (spinner_frame + 1) % len(SPINNER)
+                    self.query_one("#loading-indicator", Static).update(SPINNER[spinner_frame])
+                    await asyncio.sleep(1 / 12)
                 if rag.error:
-                    self.query_one("#loading-label", Label).update(
+                    self.query_one("#loading-indicator", Static).update("")
+                    self.query_one("#download-label", Label).update(
                         f"[bold red]Error:[/bold red] {rag.error}"
                     )
-                    if self._spinner_stop is not None:
-                        self._spinner_stop.set()
-                    self.query_one("#spinner", Static).update("")
                     return
             await asyncio.sleep(0.3)
         finally:
@@ -251,8 +252,6 @@ class CognitsTUI(App):
         self._show_ready()
 
     def _show_ready(self) -> None:
-        if self._spinner_stop is not None:
-            self._spinner_stop.set()
         self.query_one("#loading-container").add_class("hidden")
         self._show_menu()
 
@@ -261,21 +260,6 @@ class CognitsTUI(App):
         self.call_after_refresh(
             self.query_one("#menu", OptionList).focus
         )
-
-    # -- Spinner (thread-driven, immune to event-loop stalls) ----------------
-
-    def _run_spinner(self) -> None:
-        frame = 0
-        while self._spinner_stop is not None and not self._spinner_stop.wait(1 / 12):
-            frame = (frame + 1) % len(SPINNER)
-            text = SPINNER[frame]
-            self.call_from_thread(self._update_spinner, text)
-
-    def _update_spinner(self, text: str) -> None:
-        try:
-            self.query_one("#spinner", Static).update(text)
-        except Exception:
-            pass
 
     # -- Menu actions --------------------------------------------------------
 
@@ -292,8 +276,6 @@ class CognitsTUI(App):
     # -- Cleanup -------------------------------------------------------------
 
     async def _on_exit(self) -> None:
-        if self._spinner_stop is not None:
-            self._spinner_stop.set()
         if self._server_thread is not None:
             self._server.should_exit = True
             self._server_thread.join(timeout=5)
@@ -314,15 +296,35 @@ def main() -> None:
         logger.addHandler(logging.NullHandler())
         logger.propagate = False
 
-    if "--version" in sys.argv or "-V" in sys.argv:
-        print(f"Cognits {__version__}")
-        return
-
     if "-fresh" in sys.argv:
         print("Use --fresh (two dashes), not -fresh", file=sys.stderr)
         raise SystemExit(1)
 
-    if "--fresh" in sys.argv:
+    parser = argparse.ArgumentParser(
+        prog="cognits",
+        description="Cognits — Context-Oriented Generation for Neural Intelligent Tutoring Systems",
+    )
+    parser.add_argument(
+        "--version", "-V", action="version",
+        version=f"Cognits {__version__}",
+    )
+    parser.add_argument(
+        "--fresh", action="store_true",
+        help="Remove all local data and start fresh",
+    )
+    parser.add_argument(
+        "--port", type=int,
+        help="HTTP server port (default: %(default)s, overridden by PORT env var)",
+        default=DEFAULT_PORT,
+    )
+    parser.add_argument(
+        "--force-port", type=int,
+        help="HTTP port, kill existing process, ignores PORT env var",
+    )
+
+    args = parser.parse_args()
+
+    if args.fresh:
         cwd = Path.cwd()
         for name in (paths.DATA_DIR_NAME, paths.LEGACY_DATA_DIR_NAME):
             d = cwd / name
@@ -331,22 +333,8 @@ def main() -> None:
                 print(f"Removed {d}", flush=True)
         print("Fresh start.", flush=True)
 
-    # Parse --port and --force-port from command line.
-    force = False
-    port = DEFAULT_PORT
-    args = sys.argv[1:]
-    i = 0
-    while i < len(args):
-        if args[i] in ("--port", "--force-port") and i + 1 < len(args):
-            try:
-                port = int(args[i + 1])
-                force = args[i] == "--force-port"
-                i += 2
-            except ValueError:
-                print(f"invalid port: {args[i+1]!r}", file=sys.stderr)
-                raise SystemExit(1)
-        else:
-            i += 1
+    force = args.force_port is not None
+    port = args.force_port if force else args.port
 
     # Env var overrides --port but not --force-port.
     if not force:

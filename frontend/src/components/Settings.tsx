@@ -56,6 +56,10 @@ import {
   setWriteLangs,
   noteMode,
   setNoteMode,
+  noteFontSize,
+  setNoteFontSize,
+  reportFontSize,
+  setReportFontSize,
   maxTokens,
   setMaxTokens,
   temperature,
@@ -93,6 +97,7 @@ function formatNumber(n: number): string {
 function tabDisplayName(tabId: string | null): string | null {
   if (!tabId) return null
   if (tabId.startsWith("note:")) return "Note"
+  if (tabId.startsWith("report:")) return "Web Report"
   const names: Record<string, string> = {
     chat: "Chat",
     sessions: "Sessions",
@@ -848,60 +853,24 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
 
         <CollapsibleSection title="Display">
           <div class="flex flex-col gap-2">
-            <div class="flex flex-col gap-1">
-              <div class="flex items-center justify-between text-[#9a9a9a]">
-                <span>Text size</span>
-                <span>{chatFontSize()}px</span>
-              </div>
-              <input
-                type="range"
-                min="11"
-                max="24"
-                value={chatFontSize()}
-                onInput={(e) => {
-                  setChatFontSize(parseInt(e.currentTarget.value))
-                  saveConfig()
-                }}
-                class="chat-font-slider"
-              />
-              <div class="flex justify-between text-[11px] text-[#6a6a6a]">
-                <span>11</span>
-                <span>24</span>
-              </div>
-            </div>
-            <div class="flex flex-col gap-1 mt-1">
-              <div class="flex items-center justify-between text-[#9a9a9a]">
-                <span>Typewriter speed</span>
-                <span>{typewriterSpeed().toFixed(2)}ms</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={(() => {
-                  const v = typewriterSpeed()
-                  if (v <= 0.01) return 0
-                  if (v >= 10) return 100
-                  if (v <= 5) return Math.round(50 * (Math.log10(v) - Math.log10(0.01)) / (Math.log10(5) - Math.log10(0.01)))
-                  return Math.round(50 + 50 * (Math.log10(v) - Math.log10(5)) / (Math.log10(10) - Math.log10(5)))
-                })()}
-                onInput={(e) => {
-                  const p = parseInt(e.currentTarget.value)
-                  let v: number
-                  if (p <= 0) v = 0.01
-                  else if (p >= 100) v = 10
-                  else if (p <= 50) v = Math.pow(10, Math.log10(0.01) + (p / 50) * (Math.log10(5) - Math.log10(0.01)))
-                  else v = Math.pow(10, Math.log10(5) + ((p - 50) / 50) * (Math.log10(10) - Math.log10(5)))
-                  setTypewriterSpeed(v)
-                  saveConfig()
-                }}
-                class="chat-font-slider"
-              />
-              <div class="flex justify-between text-[11px] text-[#6a6a6a]">
-                <span>Faster</span>
-                <span>Slower</span>
-              </div>
-            </div>
+            <SliderField
+              label="Text size"
+              value={chatFontSize()}
+              onInput={(v) => { setChatFontSize(v); saveConfig() }}
+              min={11}
+              max={24}
+              step={1}
+              formatValue={(v) => `${v}px`}
+            />
+            <SliderField
+              label="Typewriter speed"
+              value={typewriterSpeed()}
+              onInput={(v) => { setTypewriterSpeed(v); saveConfig() }}
+              min={0.01}
+              max={10}
+              step={0.01}
+              formatValue={(v) => `${v.toFixed(2)}ms`}
+            />
 
             <div class="flex flex-col gap-1 mt-1">
               <button
@@ -927,6 +896,15 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
       <Show when={linkedViewport() && linkedActiveTabId()?.startsWith("note:")}>
         <CollapsibleSection title="Display">
           <div class="flex flex-col gap-2">
+            <SliderField
+              label="Text size"
+              value={noteFontSize()}
+              onInput={(v) => { setNoteFontSize(v); saveConfig() }}
+              min={11}
+              max={24}
+              step={1}
+              formatValue={(v) => `${v}px`}
+            />
             <div class="text-[#9a9a9a]">Note mode</div>
             {(["edit", "view"] as const).map((mode) => {
               const active = () => noteMode() === mode
@@ -948,6 +926,22 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                 </button>
               )
             })}
+          </div>
+        </CollapsibleSection>
+      </Show>
+
+      <Show when={linkedViewport() && linkedActiveTabId()?.startsWith("report:")}>
+        <CollapsibleSection title="Display">
+          <div class="flex flex-col gap-2">
+            <SliderField
+              label="Text size"
+              value={reportFontSize()}
+              onInput={(v) => { setReportFontSize(v); saveConfig() }}
+              min={11}
+              max={24}
+              step={1}
+              formatValue={(v) => `${v}px`}
+            />
           </div>
         </CollapsibleSection>
       </Show>

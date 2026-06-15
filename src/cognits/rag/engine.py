@@ -34,6 +34,7 @@ class RagEngine:
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rag")
         self.ready = asyncio.Event()
         self.error: str | None = None
+        self.progress: int = 0
         self._model = None
         self._collection = None
 
@@ -55,7 +56,8 @@ class RagEngine:
         return engine
 
     @staticmethod
-    def _warm_cache(error_queue: multiprocessing.Queue | None = None) -> None:
+    def _warm_cache(error_queue: multiprocessing.Queue | None = None,
+                    progress_val: "multiprocessing.Value[int]" | None = None) -> None:
         """Download BGE-M3 model files in a child process so ONNX Runtime
         graph optimisation (which holds the GIL for seconds) never blocks
         the parent's event loop.  The child has its own GIL."""
@@ -64,9 +66,34 @@ class RagEngine:
             from chromadb.config import Settings
             from fastembed import TextEmbedding
             from fastembed.common.model_description import ModelSource, PoolingType
+            from huggingface_hub import snapshot_download
+            from tqdm.auto import tqdm as base_tqdm
 
             import onnxruntime as _ort
             _ort.set_default_logger_severity(4)
+
+            class ProgressTqdm(base_tqdm):
+                def __init__(self, *args, **kwargs):
+                    kwargs.pop("name", None)
+                    kwargs["disable"] = False
+                    super().__init__(*args, **kwargs)
+
+                def update(self, n=1):
+                    super().update(n)
+                    if progress_val is not None and self.total:
+                        progress_val.value = min(99, int(self.n / self.total * 100))
+
+            # Step 1: download model files with progress tracking.
+            cache_dir = os.environ.get("FASTEMBED_CACHE_DIR",
+                           str(Path.home() / ".cache" / "fastembed"))
+            snapshot_download(
+                repo_id="BAAI/bge-m3",
+                cache_dir=cache_dir,
+                allow_patterns=["onnx/*", "*.json", "*.model"],
+                tqdm_class=ProgressTqdm,
+            )
+            if progress_val is not None:
+                progress_val.value = 100
 
             TextEmbedding.add_custom_model(
                 model="BAAI/bge-m3",
@@ -81,8 +108,8 @@ class RagEngine:
                 additional_files=["onnx/model.onnx_data",
                                    "onnx/sentencepiece.bpe.model"],
             )
-            # Download + ONNX load → child GIL, parent unaffected.
-            _ = TextEmbedding(model_name="BAAI/bge-m3")
+            # Step 2: load model (ONNX init, uses cache from step 1).
+            _ = TextEmbedding(model_name="BAAI/bge-m3", cache_dir=cache_dir)
         except Exception as e:
             if error_queue is not None:
                 error_queue.put(f"{type(e).__name__}: {e}")
@@ -96,18 +123,19 @@ class RagEngine:
         # Phase 1: warm cache in subprocess — ONNX holds the GIL for seconds
         # during graph optimisation; a child process has its own GIL so the
         # parent's spinner stays smooth.
+        progress_val: multiprocessing.Value[int] = multiprocessing.Value("i", 0)
         try:
             error_queue: multiprocessing.Queue[str] = multiprocessing.Queue()
             proc = multiprocessing.Process(
-                target=RagEngine._warm_cache, args=(error_queue,)
+                target=RagEngine._warm_cache,
+                args=(error_queue, progress_val),
             )
             proc.start()
-            proc.join(timeout=300)
-            if proc.is_alive():
-                proc.kill()
-                proc.join()
-                log.warning("rag: warm-cache subprocess timed out")
-            elif proc.exitcode != 0:
+            while proc.is_alive():
+                proc.join(timeout=0.15)
+                self.progress = progress_val.value
+            self.progress = 100
+            if proc.exitcode != 0:
                 detail = ""
                 try:
                     detail = f": {error_queue.get_nowait()}"

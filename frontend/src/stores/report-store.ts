@@ -29,7 +29,7 @@ export async function openReportInViewport(vpId: string, reportId: string) {
   addDynamicTab(vpId, {
     id: tabId,
     label: "Web Report",
-    hidden: true,
+    hidden: false,
   })
 }
 

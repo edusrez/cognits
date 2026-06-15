@@ -37,7 +37,7 @@ export const [llmReasoning, setLLMReasoning] =
   createSignal<LLMConfig["llmReasoning"]>("max")
 export const [agentOverrides, setAgentOverrides] =
   createSignal<Record<string, string>>({})
-export const [chatFontSize, setChatFontSize] = createSignal(13)
+export const [chatFontSize, setChatFontSize] = createSignal(15)
 export const [typewriterSpeed, setTypewriterSpeed] = createSignal(5)
 // kept as number; slider uses parseFloat, store/backend use float
 export const [tinyfishApiKey, setTinyfishApiKey] = createSignal("")
@@ -49,6 +49,8 @@ export const [userName, setUserName] = createSignal("")
 export const [userLocation, setUserLocation] = createSignal("")
 export const [writeLangs, setWriteLangs] = createSignal<string[]>(["es"])
 export const [noteMode, setNoteMode] = createSignal("edit")
+export const [noteFontSize, setNoteFontSize] = createSignal(15)
+export const [reportFontSize, setReportFontSize] = createSignal(15)
 export const [maxTokens, setMaxTokens] = createSignal(0)
 export const [temperature, setTemperature] = createSignal(0)
 export const [topP, setTopP] = createSignal(0)
@@ -126,6 +128,8 @@ export async function loadConfig() {
     if (cfg.defaultLearnitViewport) setDefaultLearnitViewport(cfg.defaultLearnitViewport)
     if (cfg.writeLangs) setWriteLangs(cfg.writeLangs)
     if (cfg.noteMode) setNoteMode(cfg.noteMode)
+    if (cfg.noteFontSize) setNoteFontSize(cfg.noteFontSize)
+    if (cfg.reportFontSize) setReportFontSize(cfg.reportFontSize)
     if (cfg.maxTokens) setMaxTokens(cfg.maxTokens)
     if (cfg.temperature) setTemperature(cfg.temperature)
     if (cfg.topP) setTopP(cfg.topP)
@@ -158,6 +162,8 @@ export function saveConfig() {
           defaultLearnitViewport: defaultLearnitViewport(),
           writeLangs: writeLangs(),
           noteMode: noteMode(),
+          noteFontSize: noteFontSize(),
+          reportFontSize: reportFontSize(),
           maxTokens: maxTokens(),
           temperature: temperature(),
           topP: topP(),

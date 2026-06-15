@@ -1,6 +1,6 @@
 import { Show, createResource, createSignal, createEffect, onCleanup } from "solid-js"
 import { loadNote, saveNoteContent, renameNote } from "../stores/notebook-store"
-import { noteMode, setNoteMode, saveConfig } from "../stores/settings-store"
+import { noteMode, setNoteMode, saveConfig, noteFontSize } from "../stores/settings-store"
 import MarkdownView from "./MarkdownView"
 
 function adjustHeight(el: HTMLTextAreaElement) {
@@ -121,7 +121,7 @@ export default function NoteView(props: { viewportId?: string; tabId?: string })
               />
             }
           >
-            <div class="px-4 py-3 chat-markdown overflow-y-auto h-full" style={{ "font-size": "13px" }}>
+            <div class="px-4 py-3 chat-markdown overflow-y-auto h-full" style={{ "font-size": `${noteFontSize()}px` }}>
               <MarkdownView content={editContent()} />
             </div>
           </Show>

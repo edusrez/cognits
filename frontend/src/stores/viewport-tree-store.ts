@@ -217,12 +217,25 @@ export function removeSessionTabs() {
     produce((m) => {
       for (const vp of Object.values(m)) {
         vp.tabs = vp.tabs.filter(
-          (t) => !sessionTabIds.includes(t.id) && !t.id.startsWith("report:")
+          (t) => !sessionTabIds.includes(t.id)
         )
         if (
           vp.activeTabId &&
           sessionTabIds.includes(vp.activeTabId)
         ) {
+          vp.activeTabId = vp.tabs[0]?.id ?? null
+        }
+      }
+    }),
+  )
+}
+
+export function cleanPersistedTabs() {
+  setViewportMap(
+    produce((m) => {
+      for (const vp of Object.values(m)) {
+        vp.tabs = vp.tabs.filter((t) => !t.id.includes(":"))
+        if (vp.activeTabId && vp.activeTabId.includes(":")) {
           vp.activeTabId = vp.tabs[0]?.id ?? null
         }
       }

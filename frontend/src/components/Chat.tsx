@@ -1,4 +1,4 @@
-import { For, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
+import { For, Index, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
 import "highlight.js/styles/github-dark.css"
 import { currentMessages as messages, isStreaming, currentToolStatus, currentChatError, sessionUsage, mainSessionPromptTokens, toolFaviconsBySession } from "../stores/chat-store"
 import { activeSessionId } from "../stores/session-store"
@@ -12,6 +12,7 @@ import { useTypewriter } from "../lib/useTypewriter"
 
 export default function Chat(props: { viewportId?: string }) {
   let scrollRef!: HTMLDivElement
+  const [autoScroll, setAutoScroll] = createSignal(true)
 
   const chatMsgMenu = createMemo(() => {
     const m = ctxMenu()
@@ -60,8 +61,20 @@ export default function Chat(props: { viewportId?: string }) {
     reveal()
   })
 
+  createEffect(() => {
+    if (!autoScroll()) return
+    messages()
+    scrollRef.scrollTop = scrollRef.scrollHeight
+  })
+
+  createEffect(() => {
+    const msgs = messages()
+    const last = msgs[msgs.length - 1]
+    if (last && last.role === "assistant" && last.content === "") setAutoScroll(true)
+  })
+
   return (
-    <div class="flex flex-col h-full min-h-0">
+    <div class="flex flex-col h-full min-h-0 relative">
       <div
         ref={scrollRef}
         data-scrollable
@@ -72,10 +85,12 @@ export default function Chat(props: { viewportId?: string }) {
           e.preventDefault()
           setCtxMenu(null)
         }}
+        onWheel={() => setAutoScroll(false)}
+        onTouchMove={() => setAutoScroll(false)}
       >
-      <For each={messages()}>
+      <Index each={messages()}>
         {(msg, idx) => {
-          const i = () => idx()
+          const i = () => idx
           let msgRef!: HTMLDivElement
           if (!animated.has(i())) {
             animated.add(i())
@@ -90,20 +105,20 @@ export default function Chat(props: { viewportId?: string }) {
             })
           }
           const sid = activeSessionId()
-          const isLast = () => msg.role === "assistant" && isStreaming() && i() === messages().length - 1 && !!msg.content
+          const isLast = () => msg().role === "assistant" && isStreaming() && i() === messages().length - 1
           const typed = isLast() && sid ? useTypewriter(`${sid}-${i()}`, () => messages()[messages().length - 1].content, typewriterSpeed) : null
           return (
             <div
               ref={msgRef}
               class="mb-3"
-              classList={{ "flex justify-end": msg.role === "user" }}
+              classList={{ "flex justify-end": msg().role === "user" }}
               onContextMenu={(e) => {
-                if (!msg.content) return
+                if (!msg().content) return
                 e.preventDefault()
                 e.stopPropagation()
                 setCtxMenu({
                   kind: "chat-message",
-                  content: msg.content,
+                  content: msg().content,
                   x: e.clientX,
                   y: e.clientY,
                 })
@@ -112,23 +127,23 @@ export default function Chat(props: { viewportId?: string }) {
               <div
                 classList={{
                   "border border-white/20 px-3 py-1.5 whitespace-pre-wrap break-words bg-white/5 max-w-[85%]":
-                    msg.role === "user",
-                  "py-1 chat-markdown w-full": msg.role === "assistant",
+                    msg().role === "user",
+                  "py-1 chat-markdown w-full": msg().role === "assistant",
                 }}
               >
-                <Show when={msg.role === "assistant" && msg.reasoning && !isStreaming() && displayThinking()}>
+                <Show when={msg().role === "assistant" && msg().reasoning && !isStreaming() && displayThinking()}>
                   <div class="thinking-block pb-2">
                     <div class="thinking-content whitespace-pre-wrap">
-                      {msg.reasoning}
+                      {msg().reasoning}
                     </div>
                   </div>
                 </Show>
 
-                {msg.role === "assistant"
-                  ? <MarkdownView content={typed ? typed() : msg.content} streaming={isStreaming() && i() === messages().length - 1} />
-                  : msg.content}
+                {msg().role === "assistant"
+                  ? <MarkdownView content={typed ? typed() : msg().content} streaming={isStreaming() && i() === messages().length - 1} />
+                  : msg().content}
 
-                <Show when={msg.role === "assistant" && i() === messages().length - 1 && currentToolStatus()}>
+                <Show when={msg().role === "assistant" && i() === messages().length - 1 && currentToolStatus()}>
                   <div
                     style={{ "font-size": `${Math.max(10, chatFontSize() * 0.8)}px` }}
                     class="text-[#5a5a5a] italic mt-1 flex items-center gap-1.5"
@@ -142,17 +157,17 @@ export default function Chat(props: { viewportId?: string }) {
                   </div>
                 </Show>
 
-                <Show when={msg.reportId && msg.reportTitle}>
+                <Show when={msg().reportId && msg().reportTitle}>
                   <div
                     class="mt-2 border border-white/20 px-3 py-2 cursor-pointer hover:bg-white/5"
                     onClick={() => {
                       const vpId = props.viewportId
                       if (vpId) {
-                        import("../stores/report-store").then((m) => m.openReportInViewport(vpId, msg.reportId!))
+                        import("../stores/report-store").then((m) => m.openReportInViewport(vpId, msg().reportId!))
                       }
                     }}
                   >
-                    <div class="text-[#e0e0e0] text-[13px]">{msg.reportTitle}</div>
+                    <div class="text-[#e0e0e0] text-[13px]">{msg().reportTitle}</div>
                     <div class="flex justify-between text-[#6a6a6a] text-[11px] mt-1">
                       <span>Read full →</span>
                     </div>
@@ -162,7 +177,7 @@ export default function Chat(props: { viewportId?: string }) {
             </div>
           )
         }}
-      </For>
+      </Index>
 
       <Show when={currentChatError()}>
         {(err) => (
@@ -209,6 +224,18 @@ export default function Chat(props: { viewportId?: string }) {
         )}
       </Show>
       </div>
+
+      <Show when={!autoScroll() && messages().length > 0}>
+        <button
+          class="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
+          onClick={() => {
+            scrollRef.scrollTop = scrollRef.scrollHeight
+            setAutoScroll(true)
+          }}
+        >
+          &darr; Ir abajo
+        </button>
+      </Show>
     </div>
   )
 }

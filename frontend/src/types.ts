@@ -52,6 +52,8 @@ export interface LLMConfig {
   defaultLearnitViewport: string
   writeLangs: string[]
   noteMode: string
+  noteFontSize: number
+  reportFontSize: number
   maxTokens: number
   temperature: number
   topP: number

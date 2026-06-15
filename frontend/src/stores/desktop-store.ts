@@ -6,6 +6,7 @@ import {
   createSettingsOnlyTree,
   placeSessionTabs,
   removeSessionTabs,
+  cleanPersistedTabs,
   setFraction,
   type DesktopState,
 } from "./viewport-tree-store"
@@ -82,8 +83,11 @@ export async function initDesktops() {
     createDefaultTree("1")
     setDesktops([snapshotTree()])
     persistDesktops()
-  } else if (!activeSessionId()) {
-    removeSessionTabs()
+  } else {
+    cleanPersistedTabs()
+    if (!activeSessionId()) {
+      removeSessionTabs()
+    }
   }
 }
 

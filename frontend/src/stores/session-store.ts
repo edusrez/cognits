@@ -40,6 +40,8 @@ export async function loadSessions() {
 
 export const [isCreatingSession, setIsCreatingSession] = createSignal(false)
 
+export const [renamingSessionId, setRenamingSessionId] = createSignal<string | null>(null)
+
 export async function createNewSession(): Promise<Session> {
   if (isCreatingSession()) throw new Error("Already creating")
   setIsCreatingSession(true)
