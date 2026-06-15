@@ -99,6 +99,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
     from cognits.server import (
         routes_chat,
         routes_config,
+        routes_files,
         routes_misc,
         routes_notes,
         routes_reports,
@@ -109,6 +110,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
     routes_misc.register(app, state)
     routes_sessions.register(app, state)
     routes_config.register(app, state)
+    routes_files.register(app, state)
     routes_notes.register(app, state)
     routes_reports.register(app, state)
     routes_chat.register(app, state)

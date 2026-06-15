@@ -89,7 +89,7 @@ export default function TabBar(props: {
               ) : (
                 <>
                   {tab.label}
-                  {!isGhost && (tab.id.startsWith("report:") || tab.id.startsWith("settings:") || tab.id.startsWith("note:")) && (
+                  {!isGhost && (tab.id.startsWith("report:") || tab.id.startsWith("settings:") || tab.id.startsWith("note:") || tab.id.startsWith("code:") || tab.id.startsWith("text:") || tab.id.startsWith("image:") || tab.id.startsWith("pdf:")) && (
                     <span
                       class="absolute right-1 hover:text-[#e0e0e0] cursor-pointer"
                       onClick={(e) => {

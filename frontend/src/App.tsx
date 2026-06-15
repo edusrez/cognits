@@ -232,7 +232,7 @@ export default function App() {
           if (vpId) {
             const vp = getViewportData(vpId)
             const tabId = vp?.activeTabId
-            if (tabId && (tabId.startsWith("report:") || tabId.startsWith("settings:") || tabId.startsWith("note:"))) {
+            if (tabId && (tabId.startsWith("report:") || tabId.startsWith("settings:") || tabId.startsWith("note:") || tabId.startsWith("code:") || tabId.startsWith("text:") || tabId.startsWith("image:") || tabId.startsWith("pdf:"))) {
               e.preventDefault()
               removeDynamicTab(vpId, tabId)
             }

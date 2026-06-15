@@ -34,11 +34,14 @@ function FileIcon() {
   )
 }
 
-export default function FileTree(props: { node: () => FileNode | null }) {
+export default function FileTree(props: {
+  node: () => FileNode | null
+  onFileClick?: (path: string) => void
+}) {
   return (
     <div style="padding: 4px 0">
       <Show when={props.node()}>
-        {(n) => <NodeView node={n()} depth={0} />}
+        {(n) => <NodeView node={n()} depth={0} onFileClick={props.onFileClick} />}
       </Show>
     </div>
   )
@@ -52,13 +55,19 @@ function ToggleIcon(props: { expanded: boolean }) {
   )
 }
 
-function NodeView(props: { node: FileNode; depth: number }) {
+function NodeView(props: { node: FileNode; depth: number; onFileClick?: (path: string) => void }) {
   const isRoot = props.depth === 0
   const [expanded, setExpanded] = createSignal(isRoot)
   const hasKids = props.node.isDir && props.node.children && props.node.children.length > 0
 
   function handleClick() {
-    if (!isRoot && hasKids) setExpanded(!expanded())
+    if (isRoot && hasKids) {
+      // root always expanded, do nothing
+    } else if (hasKids) {
+      setExpanded(!expanded())
+    } else if (!props.node.isDir) {
+      props.onFileClick?.(props.node.path)
+    }
   }
 
   return (
@@ -93,7 +102,7 @@ function NodeView(props: { node: FileNode; depth: number }) {
       </div>
       <Show when={hasKids && (isRoot || expanded())}>
         <For each={props.node.children}>
-          {(child) => <NodeView node={child} depth={props.depth + 1} />}
+          {(child) => <NodeView node={child} depth={props.depth + 1} onFileClick={props.onFileClick} />}
         </For>
       </Show>
     </>

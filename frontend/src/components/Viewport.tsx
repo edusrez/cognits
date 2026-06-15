@@ -145,6 +145,10 @@ export default function Viewport(props: {
                   if (activeId().startsWith("report:") && t.id === "report") return true
                   if (activeId().startsWith("settings:") && t.id === "settings") return true
                   if (activeId().startsWith("note:") && t.id === "note") return true
+                  if (activeId().startsWith("code:") && t.id === "code") return true
+                  if (activeId().startsWith("text:") && t.id === "text") return true
+                  if (activeId().startsWith("image:") && t.id === "image") return true
+                  if (activeId().startsWith("pdf:") && t.id === "pdf") return true
                   return false
                 })
               })

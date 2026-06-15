@@ -130,3 +130,14 @@ export function renderMarkdownStreaming(text: string): string {
 export function sanitizeHighlight(html: string): string {
   return DOMPurify.sanitize(html, { ALLOWED_TAGS: ["b", "mark"], ALLOWED_ATTR: [] })
 }
+
+export function highlightCode(code: string, language: string): string {
+  if (language && hljs.getLanguage(language)) {
+    return hljs.highlight(code, { language }).value
+  }
+  return escapeHtml(code)
+}
+
+export function escapeHtmlSafe(text: string): string {
+  return escapeHtml(text)
+}

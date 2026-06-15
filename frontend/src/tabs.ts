@@ -5,8 +5,11 @@ import Sessions from "./components/Sessions"
 import Settings from "./components/Settings"
 import ReportView from "./components/ReportView"
 import LearnitView from "./components/LearnitView"
-
 import NoteView from "./components/NoteView"
+import CodeView from "./components/CodeView"
+import TextView from "./components/TextView"
+import ImageView from "./components/ImageView"
+import PdfView from "./components/PdfView"
 
 export type ViewportId = string
 
@@ -25,5 +28,9 @@ export const tabs: TabDef[] = [
   { id: "settings", label: "Settings",   component: Settings },
   { id: "report",   label: "Web Report", component: ReportView },
   { id: "note",     label: "Note",       component: NoteView },
-  { id: "learnit",  label: ".cognits",  component: LearnitView },
+  { id: "learnit",  label: ".cognits",   component: LearnitView },
+  { id: "code",     label: "Code",       component: CodeView },
+  { id: "text",     label: "Text",       component: TextView },
+  { id: "image",    label: "Image",      component: ImageView },
+  { id: "pdf",      label: "PDF",        component: PdfView },
 ]
