@@ -192,7 +192,13 @@ export default function Viewport(props: {
                         onClick: () => {
                           const tabMenu = m() as any
                           setCtxMenu(null)
-                          const tabId = `settings:${tabMenu.tabId.startsWith("report:") ? "report" : tabMenu.tabId}`
+                          let settingsSuffix = tabMenu.tabId
+                          if (tabMenu.tabId.startsWith("report:")) settingsSuffix = "report"
+                          else if (tabMenu.tabId.startsWith("code:")) settingsSuffix = "code"
+                          else if (tabMenu.tabId.startsWith("text:")) settingsSuffix = "text"
+                          else if (tabMenu.tabId.startsWith("image:")) settingsSuffix = "image"
+                          else if (tabMenu.tabId.startsWith("pdf:")) settingsSuffix = "pdf"
+                          const tabId = `settings:${settingsSuffix}`
                           const label = `Settings (${tabMenu.tabLabel})`
                           import("../stores/viewport-tree-store").then((vts) => {
                             vts.addDynamicTab(props.id, { id: tabId, label, hidden: false })

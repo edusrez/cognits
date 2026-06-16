@@ -50,6 +50,7 @@ export interface LLMConfig {
   userName: string
   userLocation: string
   defaultLearnitViewport: string
+  defaultFilesViewport: string
   writeLangs: string[]
   noteMode: string
   noteFontSize: number

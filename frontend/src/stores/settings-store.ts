@@ -26,6 +26,8 @@ export const [defaultWriteViewport, setDefaultWriteViewport] =
   createSignal<ViewportId>("1101")
 export const [defaultLearnitViewport, setDefaultLearnitViewport] =
   createSignal<ViewportId>("1100")
+export const [defaultFilesViewport, setDefaultFilesViewport] =
+  createSignal<ViewportId>("1100")
 
 export const [llmProvider, setLLMProvider] =
   createSignal<LLMConfig["llmProvider"]>("deepseek")
@@ -126,6 +128,7 @@ export async function loadConfig() {
     if (cfg.userName) setUserName(cfg.userName)
     if (cfg.userLocation) setUserLocation(cfg.userLocation)
     if (cfg.defaultLearnitViewport) setDefaultLearnitViewport(cfg.defaultLearnitViewport)
+    if (cfg.defaultFilesViewport) setDefaultFilesViewport(cfg.defaultFilesViewport)
     if (cfg.writeLangs) setWriteLangs(cfg.writeLangs)
     if (cfg.noteMode) setNoteMode(cfg.noteMode)
     if (cfg.noteFontSize) setNoteFontSize(cfg.noteFontSize)
@@ -160,6 +163,7 @@ export function saveConfig() {
           userName: userName(),
           userLocation: userLocation(),
           defaultLearnitViewport: defaultLearnitViewport(),
+          defaultFilesViewport: defaultFilesViewport(),
           writeLangs: writeLangs(),
           noteMode: noteMode(),
           noteFontSize: noteFontSize(),

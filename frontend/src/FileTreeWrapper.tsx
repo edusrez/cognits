@@ -3,6 +3,7 @@ import FileTree from "./FileTree"
 import type { FileNode } from "./types"
 import { addDynamicTab } from "./stores/viewport-tree-store"
 import { getFileCategory } from "./lib/file-category"
+import { defaultFilesViewport } from "./stores/settings-store"
 
 export default function FileTreeWrapper(props: { viewportId?: string; tabId?: string }) {
   const [tree, setTree] = createSignal<FileNode | null>(null)
@@ -17,16 +18,12 @@ export default function FileTreeWrapper(props: { viewportId?: string; tabId?: st
   })
 
   function handleFileClick(path: string) {
-    console.log("[FileTreeWrapper] handleFileClick called", { path, viewportId: props.viewportId })
-    if (!props.viewportId) {
-      console.warn("[FileTreeWrapper] viewportId is undefined — tab not opened")
-      return
-    }
+    console.log("[FileTreeWrapper] handleFileClick called", { path, defaultFilesViewport: defaultFilesViewport() })
     const category = getFileCategory(path)
     const name = path.split("/").pop() ?? path
     const tabId = `${category}:${path}`
-    console.log("[FileTreeWrapper] opening tab", { viewportId: props.viewportId, tabId, label: name })
-    addDynamicTab(props.viewportId, {
+    console.log("[FileTreeWrapper] opening tab", { viewportId: defaultFilesViewport(), tabId, label: name })
+    addDynamicTab(defaultFilesViewport(), {
       id: tabId,
       label: name,
       hidden: false,

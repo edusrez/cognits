@@ -52,6 +52,8 @@ import {
   saveSessionConfig,
   defaultLearnitViewport,
   setDefaultLearnitViewport,
+  defaultFilesViewport,
+  setDefaultFilesViewport,
   writeLangs,
   setWriteLangs,
   noteMode,
@@ -125,7 +127,7 @@ const basicTabs = [
   { id: "sessions", label: "Sessions" },
 ] as const
 
-type LinkTarget = "viewport" | "chat" | "write" | "learnit"
+type LinkTarget = "viewport" | "chat" | "write" | "learnit" | "files"
 
 export default function Settings(props: { viewportId?: ViewportId; tabId?: string }) {
   const scopedTabId = createMemo(() => {
@@ -325,6 +327,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
         else if (target === "chat") setDefaultChatViewport(id)
         else if (target === "write") setDefaultWriteViewport(id)
         else if (target === "learnit") setDefaultLearnitViewport(id)
+        else if (target === "files") setDefaultFilesViewport(id)
       }
       setLinkingMode(false)
       removeLinkingHandler()
@@ -387,10 +390,20 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
         <CollapsibleSection title="Project Files">
           <div class="flex flex-col gap-2">
             <div class="flex items-center justify-between gap-2">
-              <span class="text-[#9a9a9a]">Viewport linked to Reports</span>
+              <span class="text-[#9a9a9a]">Viewport linked to Reports &amp; Notes</span>
               <button
                 class="border border-white/20 px-3 py-1 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
                 onClick={() => beginLinking("learnit")}
+                disabled={linkingMode()}
+              >
+                Change
+              </button>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[#9a9a9a]">Viewport linked to Files</span>
+              <button
+                class="border border-white/20 px-3 py-1 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
+                onClick={() => beginLinking("files")}
                 disabled={linkingMode()}
               >
                 Change

@@ -100,6 +100,7 @@ class Config:
     user_name: str = ""
     user_location: str = ""
     default_learnit_viewport: str = ""
+    default_files_viewport: str = ""
     write_langs: list[str] = field(default_factory=list)
     note_mode: str = ""
     max_tokens: int = 0
@@ -126,6 +127,7 @@ class Config:
             "userName": self.user_name,
             "userLocation": self.user_location,
             "defaultLearnitViewport": self.default_learnit_viewport,
+            "defaultFilesViewport": self.default_files_viewport,
             "writeLangs": self.write_langs,
             "noteMode": self.note_mode,
             "maxTokens": self.max_tokens,
@@ -157,6 +159,7 @@ class Config:
             user_name=d.get("userName") or "",
             user_location=d.get("userLocation") or "",
             default_learnit_viewport=d.get("defaultLearnitViewport") or "",
+            default_files_viewport=d.get("defaultFilesViewport") or "",
             write_langs=d.get("writeLangs") or [],
             note_mode=d.get("noteMode") or "",
             max_tokens=int(d.get("maxTokens", 0) or 0),
