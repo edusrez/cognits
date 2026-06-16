@@ -48,15 +48,16 @@ export default function PdfView(props: { viewportId?: string; tabId?: string }) 
 
   const [mode, setMode] = createSignal<"raw" | "ai">("raw")
 
-  const [forceAi, setForceAi] = createSignal(false)
+  let lastTrigger = 0
 
   const [rawMeta] = createResource(() => mode() === "raw" ? filePath() : null, fetchRawMeta)
   const [aiContent] = createResource(
     () => mode() === "ai" ? [filePath(), doclingRefreshTrigger()] as const : null,
     ([path]) => {
-      const f = forceAi()
-      setForceAi(false)
-      return fetchAiContent(path, f)
+      const current = doclingRefreshTrigger()
+      const force = current !== lastTrigger && current > 0
+      lastTrigger = current
+      return fetchAiContent(path, force)
     }
   )
 
