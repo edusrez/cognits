@@ -50,23 +50,15 @@ export default function PdfView(props: { viewportId?: string; tabId?: string }) 
 
   const [forceAi, setForceAi] = createSignal(false)
 
-  createEffect(() => {
-    const t = pdfRefreshTrigger()
-    if (t > 0 && mode() === "ai") {
-      setForceAi(true)
-    }
-  })
-
   const [rawMeta] = createResource(() => mode() === "raw" ? filePath() : null, fetchRawMeta)
-  const aiKey = createMemo(() => {
-    if (mode() !== "ai") return null
-    return [filePath(), forceAi(), pdfRefreshTrigger()].join(":")
-  })
-  const [aiContent] = createResource(aiKey, ([path]) => {
-    const f = forceAi()
-    setForceAi(false)
-    return fetchAiContent(path, f)
-  })
+  const [aiContent] = createResource(
+    () => mode() === "ai" ? [filePath(), pdfRefreshTrigger()] as const : null,
+    ([path]) => {
+      const f = forceAi()
+      setForceAi(false)
+      return fetchAiContent(path, f)
+    }
+  )
 
   const streamUrl = createMemo(() => rawMeta()?.stream_url ?? "")
 
