@@ -413,6 +413,23 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
         </CollapsibleSection>
       </Show>
 
+      <Show when={linkedViewport() && linkedActiveTabId() === "files"}>
+        <CollapsibleSection title="Files">
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[#9a9a9a]">Viewport linked to</span>
+              <button
+                class="border border-white/20 px-3 py-1 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
+                onClick={() => beginLinking("files")}
+                disabled={linkingMode()}
+              >
+                Change
+              </button>
+            </div>
+          </div>
+        </CollapsibleSection>
+      </Show>
+
       <Show when={linkedViewport() && linkedActiveTabId() === "write"}>
         <CollapsibleSection title="Write">
           <div class="flex flex-col gap-2">
