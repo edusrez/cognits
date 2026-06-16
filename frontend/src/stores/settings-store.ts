@@ -59,6 +59,71 @@ export const [topP, setTopP] = createSignal(0)
 export const [maxSteps, setMaxSteps] = createSignal(0)
 export const [displayThinking, setDisplayThinking] = createSignal(true)
 
+export const [doclingTableMode, setDoclingTableMode] = createSignal("fast")
+export const [doclingImageScale, setDoclingImageScale] = createSignal(1.0)
+export const [doclingOcr, setDoclingOcr] = createSignal(true)
+export const [doclingCodeEnrich, setDoclingCodeEnrich] = createSignal(false)
+export const [doclingFormulaEnrich, setDoclingFormulaEnrich] = createSignal(false)
+export const [doclingPictureClassify, setDoclingPictureClassify] = createSignal(false)
+export const [doclingForceText, setDoclingForceText] = createSignal(true)
+export const [doclingPreset, setDoclingPreset] = createSignal<"fast" | "balanced" | "accurate" | null>("fast")
+export const [doclingDirty, setDoclingDirty] = createSignal(false)
+export const [doclingRefreshTrigger, setDoclingRefreshTrigger] = createSignal(0)
+
+interface DoclingPresetValues {
+  tableMode: string
+  imagesScale: number
+  doOcr: boolean
+  doCodeEnrichment: boolean
+  doFormulaEnrichment: boolean
+  doPictureClassification: boolean
+  forceBackendText: boolean
+}
+
+const DOCLING_PRESETS: Record<string, DoclingPresetValues> = {
+  fast: {
+    tableMode: "fast",
+    imagesScale: 1.0,
+    doOcr: true,
+    doCodeEnrichment: false,
+    doFormulaEnrichment: false,
+    doPictureClassification: false,
+    forceBackendText: true,
+  },
+  balanced: {
+    tableMode: "accurate",
+    imagesScale: 1.0,
+    doOcr: true,
+    doCodeEnrichment: false,
+    doFormulaEnrichment: false,
+    doPictureClassification: false,
+    forceBackendText: false,
+  },
+  accurate: {
+    tableMode: "accurate",
+    imagesScale: 2.0,
+    doOcr: true,
+    doCodeEnrichment: true,
+    doFormulaEnrichment: true,
+    doPictureClassification: true,
+    forceBackendText: false,
+  },
+}
+
+export function applyDoclingPreset(name: "fast" | "balanced" | "accurate") {
+  const p = DOCLING_PRESETS[name]
+  setDoclingTableMode(p.tableMode)
+  setDoclingImageScale(p.imagesScale)
+  setDoclingOcr(p.doOcr)
+  setDoclingCodeEnrich(p.doCodeEnrichment)
+  setDoclingFormulaEnrich(p.doFormulaEnrichment)
+  setDoclingPictureClassify(p.doPictureClassification)
+  setDoclingForceText(p.forceBackendText)
+  setDoclingPreset(name)
+  setDoclingDirty(true)
+  saveConfig()
+}
+
 export const [sessionProvider, setSessionProvider] = createSignal("")
 export const [sessionModel, setSessionModel] = createSignal("")
 export const [sessionReasoning, setSessionReasoning] = createSignal("")
@@ -138,6 +203,16 @@ export async function loadConfig() {
     if (cfg.topP) setTopP(cfg.topP)
     if (cfg.maxSteps) setMaxSteps(cfg.maxSteps)
     if (cfg.displayThinking !== undefined) setDisplayThinking(cfg.displayThinking)
+    if (cfg.doclingConfig) {
+      const dc = cfg.doclingConfig
+      if (dc.tableMode) setDoclingTableMode(dc.tableMode)
+      if (dc.imagesScale !== undefined) setDoclingImageScale(dc.imagesScale)
+      if (dc.doOcr !== undefined) setDoclingOcr(dc.doOcr)
+      if (dc.doCodeEnrichment !== undefined) setDoclingCodeEnrich(dc.doCodeEnrichment)
+      if (dc.doFormulaEnrichment !== undefined) setDoclingFormulaEnrich(dc.doFormulaEnrichment)
+      if (dc.doPictureClassification !== undefined) setDoclingPictureClassify(dc.doPictureClassification)
+      if (dc.forceBackendText !== undefined) setDoclingForceText(dc.forceBackendText)
+    }
   }
 }
 
@@ -173,6 +248,15 @@ export function saveConfig() {
           topP: topP(),
           maxSteps: maxSteps(),
           displayThinking: displayThinking(),
+          doclingConfig: {
+            tableMode: doclingTableMode(),
+            imagesScale: doclingImageScale(),
+            doOcr: doclingOcr(),
+            doCodeEnrichment: doclingCodeEnrich(),
+            doFormulaEnrichment: doclingFormulaEnrich(),
+            doPictureClassification: doclingPictureClassify(),
+            forceBackendText: doclingForceText(),
+          },
         }),
       })
     } catch (err) {

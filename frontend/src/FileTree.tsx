@@ -66,7 +66,6 @@ function NodeView(props: { node: FileNode; depth: number; onFileClick?: (path: s
     } else if (hasKids) {
       setExpanded(!expanded())
     } else if (!props.node.isDir) {
-      console.log("[FileTree] file clicked", { path: props.node.path, name: props.node.name, onFileClick: !!props.onFileClick })
       props.onFileClick?.(props.node.path)
     }
   }

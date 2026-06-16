@@ -18,11 +18,9 @@ export default function FileTreeWrapper(props: { viewportId?: string; tabId?: st
   })
 
   function handleFileClick(path: string) {
-    console.log("[FileTreeWrapper] handleFileClick called", { path, defaultFilesViewport: defaultFilesViewport() })
     const category = getFileCategory(path)
     const name = path.split("/").pop() ?? path
     const tabId = `${category}:${path}`
-    console.log("[FileTreeWrapper] opening tab", { viewportId: defaultFilesViewport(), tabId, label: name })
     addDynamicTab(defaultFilesViewport(), {
       id: tabId,
       label: name,

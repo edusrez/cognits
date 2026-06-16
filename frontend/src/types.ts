@@ -51,6 +51,15 @@ export interface LLMConfig {
   userLocation: string
   defaultLearnitViewport: string
   defaultFilesViewport: string
+  doclingConfig?: {
+    tableMode: string
+    imagesScale: number
+    doOcr: boolean
+    doCodeEnrichment: boolean
+    doFormulaEnrichment: boolean
+    doPictureClassification: boolean
+    forceBackendText: boolean
+  }
   writeLangs: string[]
   noteMode: string
   noteFontSize: number

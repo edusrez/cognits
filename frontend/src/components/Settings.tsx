@@ -54,6 +54,27 @@ import {
   setDefaultLearnitViewport,
   defaultFilesViewport,
   setDefaultFilesViewport,
+  doclingTableMode,
+  setDoclingTableMode,
+  doclingImageScale,
+  setDoclingImageScale,
+  doclingOcr,
+  setDoclingOcr,
+  doclingCodeEnrich,
+  setDoclingCodeEnrich,
+  doclingFormulaEnrich,
+  setDoclingFormulaEnrich,
+  doclingPictureClassify,
+  setDoclingPictureClassify,
+  doclingForceText,
+  setDoclingForceText,
+  doclingPreset,
+  setDoclingPreset,
+  applyDoclingPreset,
+  doclingDirty,
+  setDoclingDirty,
+  doclingRefreshTrigger,
+  setDoclingRefreshTrigger,
   writeLangs,
   setWriteLangs,
   noteMode,
@@ -140,6 +161,12 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
     const vp = linkedViewport()
     if (!vp) return null
     return getViewportData(vp)?.activeTabId ?? null
+  })
+
+  const pdfPath = createMemo(() => {
+    const tabId = linkedActiveTabId()
+    if (tabId && tabId.startsWith("pdf:")) return tabId.slice(4)
+    return null
   })
 
   const conversationStarted = createMemo(() => currentMessages().length > 0)
@@ -426,6 +453,123 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                 Change
               </button>
             </div>
+          </div>
+        </CollapsibleSection>
+      </Show>
+
+      <Show when={linkedViewport() && (scopedTabId()?.startsWith("pdf:") || linkedActiveTabId()?.startsWith("pdf:"))}>
+        <CollapsibleSection title="AI Vision">
+          <div class="flex flex-col gap-2">
+            {/* Quality preset */}
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[#9a9a9a]">Quality preset</span>
+              <div class="flex items-center gap-1">
+                {(["fast", "balanced", "accurate"] as const).map((p) => (
+                  <button
+                    class={`border border-white/20 px-3 py-1.5 text-[13px] transition-colors cursor-pointer whitespace-nowrap ${
+                      doclingPreset() === p
+                        ? "bg-white/10 text-[#e0e0e0]"
+                        : "hover:bg-white/5 text-[#6a6a6a]"
+                    }`}
+                    onClick={() => applyDoclingPreset(p)}
+                  >
+                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Table accuracy */}
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[#9a9a9a]">Table accuracy</span>
+              <div class="flex items-center gap-1">
+                {(["fast", "accurate"] as const).map((m) => (
+                  <button
+                    class={`border border-white/20 px-3 py-1.5 text-[13px] transition-colors cursor-pointer whitespace-nowrap ${
+                      doclingTableMode() === m
+                        ? "bg-white/10 text-[#e0e0e0]"
+                        : "hover:bg-white/5 text-[#6a6a6a]"
+                    }`}
+                    onClick={() => {
+                      setDoclingTableMode(m)
+                      setDoclingPreset(null)
+                      setDoclingDirty(true)
+                      saveConfig()
+                    }}
+                  >
+                    {m.charAt(0).toUpperCase() + m.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* On/Off toggles */}
+            <For each={[
+              ["OCR", doclingOcr, setDoclingOcr] as const,
+              ["Code enrichment", doclingCodeEnrich, setDoclingCodeEnrich] as const,
+              ["Formula enrichment", doclingFormulaEnrich, setDoclingFormulaEnrich] as const,
+              ["Picture classification", doclingPictureClassify, setDoclingPictureClassify] as const,
+              ["Force PDF text", doclingForceText, setDoclingForceText] as const,
+            ]}>
+              {([label, signal, setter]) => (
+                <div class="flex items-center justify-between gap-2">
+                  <span class={`text-[#9a9a9a] ${label.startsWith("Force") ? "text-[#6a6a6a]" : ""}`}>{label}</span>
+                  <div class="flex items-center gap-1">
+                    {([true, false] as const).map((v) => (
+                      <button
+                        class={`border border-white/20 px-3 py-1.5 text-[13px] transition-colors cursor-pointer whitespace-nowrap ${
+                          signal() === v
+                            ? "bg-white/10 text-[#e0e0e0]"
+                            : "hover:bg-white/5 text-[#6a6a6a]"
+                        }`}
+                        onClick={() => {
+                          setter(v)
+                          setDoclingPreset(null)
+                          setDoclingDirty(true)
+                          saveConfig()
+                        }}
+                      >
+                        {v ? "On" : "Off"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </For>
+
+            {/* Image resolution slider */}
+            <SliderField
+              label="Image resolution"
+              value={doclingImageScale()}
+              onInput={(v) => {
+                setDoclingImageScale(v)
+                setDoclingPreset(null)
+                setDoclingDirty(true)
+                saveConfig()
+              }}
+              min={1.0}
+              max={2.0}
+              step={0.1}
+              formatValue={(v) => v.toFixed(1) + "x"}
+            />
+
+            {/* Apply button */}
+            <Show when={doclingDirty() && pdfPath()}>
+              <div class="border-t border-white/5 pt-2 mt-1">
+                <p class="text-[10px] text-[#5a5a5a] mb-1">
+                  The PDF will be re-converted with these settings.
+                </p>
+                <button
+                  class="border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors cursor-pointer w-full"
+                  onClick={() => {
+                    setDoclingRefreshTrigger((t) => t + 1)
+                    setDoclingDirty(false)
+                  }}
+                >
+                  Apply &amp; Re-render this PDF
+                </button>
+              </div>
+            </Show>
           </div>
         </CollapsibleSection>
       </Show>
