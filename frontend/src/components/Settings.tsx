@@ -460,48 +460,38 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
       <Show when={linkedViewport() && (scopedTabId()?.startsWith("pdf:") || linkedActiveTabId()?.startsWith("pdf:"))}>
         <CollapsibleSection title="AI Vision">
           <div class="flex flex-col gap-2">
+
             {/* Quality preset */}
             <div class="flex items-center justify-between gap-2">
-              <span class="text-[#9a9a9a]">Quality preset</span>
-              <div class="flex items-center gap-1">
-                {(["fast", "balanced", "accurate"] as const).map((p) => (
-                  <button
-                    class={`border border-white/20 px-3 py-1.5 text-[13px] transition-colors cursor-pointer whitespace-nowrap ${
-                      doclingPreset() === p
-                        ? "bg-white/10 text-[#e0e0e0]"
-                        : "hover:bg-white/5 text-[#6a6a6a]"
-                    }`}
-                    onClick={() => applyDoclingPreset(p)}
-                  >
-                    {p.charAt(0).toUpperCase() + p.slice(1)}
-                  </button>
-                ))}
-              </div>
+              <label class="text-[#9a9a9a]">Quality preset</label>
             </div>
+            <Dropdown
+              value={doclingPreset() ?? "fast"}
+              options={[
+                { value: "fast", label: "Fast" },
+                { value: "balanced", label: "Balanced" },
+                { value: "accurate", label: "Accurate" },
+              ]}
+              onChange={(v) => applyDoclingPreset(v as "fast" | "balanced" | "accurate")}
+            />
 
             {/* Table accuracy */}
             <div class="flex items-center justify-between gap-2">
-              <span class="text-[#9a9a9a]">Table accuracy</span>
-              <div class="flex items-center gap-1">
-                {(["fast", "accurate"] as const).map((m) => (
-                  <button
-                    class={`border border-white/20 px-3 py-1.5 text-[13px] transition-colors cursor-pointer whitespace-nowrap ${
-                      doclingTableMode() === m
-                        ? "bg-white/10 text-[#e0e0e0]"
-                        : "hover:bg-white/5 text-[#6a6a6a]"
-                    }`}
-                    onClick={() => {
-                      setDoclingTableMode(m)
-                      setDoclingPreset(null)
-                      setDoclingDirty(true)
-                      saveConfig()
-                    }}
-                  >
-                    {m.charAt(0).toUpperCase() + m.slice(1)}
-                  </button>
-                ))}
-              </div>
+              <label class="text-[#9a9a9a] text-[13px]">Table accuracy</label>
             </div>
+            <Dropdown
+              value={doclingTableMode()}
+              options={[
+                { value: "fast", label: "Fast" },
+                { value: "accurate", label: "Accurate" },
+              ]}
+              onChange={(v) => {
+                setDoclingTableMode(v)
+                setDoclingPreset(null)
+                setDoclingDirty(true)
+                saveConfig()
+              }}
+            />
 
             {/* On/Off toggles */}
             <For each={[
@@ -512,27 +502,23 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
               ["Force PDF text", doclingForceText, setDoclingForceText] as const,
             ]}>
               {([label, signal, setter]) => (
-                <div class="flex items-center justify-between gap-2">
-                  <span class={`text-[#9a9a9a] ${label.startsWith("Force") ? "text-[#6a6a6a]" : ""}`}>{label}</span>
-                  <div class="flex items-center gap-1">
-                    {([true, false] as const).map((v) => (
-                      <button
-                        class={`border border-white/20 px-3 py-1.5 text-[13px] transition-colors cursor-pointer whitespace-nowrap ${
-                          signal() === v
-                            ? "bg-white/10 text-[#e0e0e0]"
-                            : "hover:bg-white/5 text-[#6a6a6a]"
-                        }`}
-                        onClick={() => {
-                          setter(v)
-                          setDoclingPreset(null)
-                          setDoclingDirty(true)
-                          saveConfig()
-                        }}
-                      >
-                        {v ? "On" : "Off"}
-                      </button>
-                    ))}
+                <div>
+                  <div class="flex items-center justify-between gap-2">
+                    <label class="text-[#9a9a9a] text-[13px]">{label}</label>
                   </div>
+                  <Dropdown
+                    value={signal() ? "on" : "off"}
+                    options={[
+                      { value: "on", label: "On" },
+                      { value: "off", label: "Off" },
+                    ]}
+                    onChange={(v) => {
+                      setter(v === "on")
+                      setDoclingPreset(null)
+                      setDoclingDirty(true)
+                      saveConfig()
+                    }}
+                  />
                 </div>
               )}
             </For>

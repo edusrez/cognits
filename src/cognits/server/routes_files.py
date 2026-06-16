@@ -115,8 +115,7 @@ def _pdf_to_markdown(file_path: Path, engine, docling_cfg, *, force: bool = Fals
             pass
 
     from docling.datamodel.input_format import InputFormat
-    from docling.datamodel.pipeline_options import PdfPipelineOptions
-    from docling.datamodel.table_structure_models import TableFormerMode
+    from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
     pipeline_opts = PdfPipelineOptions()
