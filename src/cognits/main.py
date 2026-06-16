@@ -205,7 +205,6 @@ class CognitsTUI(App):
         )
         self._server_thread.start()
         self.run_worker(self._check_rag())
-        self.run_worker(self._check_docling())
 
     # -- Server --------------------------------------------------------------
 
@@ -247,40 +246,31 @@ class CognitsTUI(App):
                         f"[bold red]Error:[/bold red] {rag.error}"
                     )
                     return
+            # Phase 3: Docling models download
+            dl = self._state.docling_engine
+            if dl is None:
+                while self._state.docling_engine is None:
+                    await asyncio.sleep(0.1)
+                dl = self._state.docling_engine
+            if dl is not None:
+                while not dl.ready.is_set() and not dl.error:
+                    self.query_one("#download-label", Label).update(
+                        "Loading Docling models\u2026"
+                    )
+                    spinner_frame = (spinner_frame + 1) % len(SPINNER)
+                    self.query_one("#loading-indicator", Static).update(
+                        SPINNER[spinner_frame]
+                    )
+                    await asyncio.sleep(1 / 12)
+                if dl.error:
+                    self.query_one("#loading-indicator", Static).update("")
+                    self.query_one("#download-label", Label).update(
+                        f"[bold yellow]Docling:[/bold yellow] {dl.error}"
+                    )
             await asyncio.sleep(0.3)
         finally:
             sys.setswitchinterval(old_switch)
         self._show_ready()
-
-    async def _check_docling(self) -> None:
-        """Wait for Docling models to download in the background.
-        Show a spinner while downloading — no progress bar (simpler
-        than BGE-M3, no multiprocessing needed)."""
-        spinner_frame = 0
-        dl = self._state.docling_engine
-        if dl is None:
-            while self._state.docling_engine is None:
-                await asyncio.sleep(0.1)
-            dl = self._state.docling_engine
-        if dl is not None:
-            while not dl.ready.is_set() and not dl.error:
-                self.query_one("#download-label", Label).update(
-                    "Loading Docling models\u2026"
-                )
-                spinner_frame = (spinner_frame + 1) % len(SPINNER)
-                self.query_one("#loading-indicator", Static).update(
-                    SPINNER[spinner_frame]
-                )
-                await asyncio.sleep(1 / 12)
-            if dl.error:
-                self.query_one("#download-label", Label).update(
-                    f"[bold yellow]Docling:[/bold yellow] {dl.error}"
-                )
-            else:
-                self.query_one("#download-label", Label).update(
-                    "Docling models ready"
-                )
-                await asyncio.sleep(0.3)
 
     def _show_ready(self) -> None:
         self.query_one("#loading-container").add_class("hidden")
