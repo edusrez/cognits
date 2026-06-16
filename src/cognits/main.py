@@ -246,27 +246,6 @@ class CognitsTUI(App):
                         f"[bold red]Error:[/bold red] {rag.error}"
                     )
                     return
-            # Phase 3: Docling models download
-            dl = self._state.docling_engine
-            if dl is None:
-                while self._state.docling_engine is None:
-                    await asyncio.sleep(0.1)
-                dl = self._state.docling_engine
-            if dl is not None:
-                while not dl.ready.is_set() and not dl.error:
-                    self.query_one("#download-label", Label).update(
-                        "Loading Docling models\u2026"
-                    )
-                    spinner_frame = (spinner_frame + 1) % len(SPINNER)
-                    self.query_one("#loading-indicator", Static).update(
-                        SPINNER[spinner_frame]
-                    )
-                    await asyncio.sleep(1 / 12)
-                if dl.error:
-                    self.query_one("#loading-indicator", Static).update("")
-                    self.query_one("#download-label", Label).update(
-                        f"[bold yellow]Docling:[/bold yellow] {dl.error}"
-                    )
             await asyncio.sleep(0.3)
         finally:
             sys.setswitchinterval(old_switch)

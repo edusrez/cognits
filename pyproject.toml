@@ -15,7 +15,7 @@ dependencies = [
     "fastembed==0.8.0",
     "rich>=13",
     "textual>=2",
-    "docling>=2.102.2",
+    "pdf-oxide>=0.3.65",
 ]
 
 [project.scripts]
