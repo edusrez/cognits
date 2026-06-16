@@ -302,6 +302,84 @@ class CognitsTUI(App):
             self._server_thread.join(timeout=5)
 
 
+def _interactive_uninstall(skip_confirm: bool = False) -> None:
+    """Interactive full uninstall: model caches + project data."""
+    is_tty = sys.stdin.isatty()
+
+    def ask(prompt: str) -> bool:
+        if skip_confirm:
+            return True
+        if not is_tty:
+            print(f"(no TTY, skipping) {prompt}", file=sys.stderr, flush=True)
+            return False
+        try:
+            answer = input(f"{prompt} [y/N] ").strip().lower()
+            return answer in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return False
+
+    print("\nCognits -- Full Uninstall\n" + "=" * 40)
+
+    remove_models = ask(
+        "\nRemove downloaded AI models?\n"
+        "  ~/.cache/docling/  (~1.5 GB)\n"
+        "  ~/.cache/fastembed/ (~2.3 GB)"
+    )
+
+    remove_data = ask(
+        "\nRemove project data?\n"
+        "  .cognits/ and .learnit/ in this directory"
+    )
+
+    if not remove_models and not remove_data:
+        print("\nNothing to remove.", flush=True)
+        _print_uninstall_hint()
+        return
+
+    print(
+        f"\n{'─' * 40}\n"
+        f"  Model caches:   {'yes' if remove_models else 'no'}\n"
+        f"  Project data:    {'yes' if remove_data else 'no'}"
+    )
+
+    if not ask("\nProceed?"):
+        print("Cancelled.", flush=True)
+        return
+
+    home = Path.home()
+
+    if remove_models:
+        for d in [home / ".cache" / "docling", home / ".cache" / "fastembed"]:
+            if d.is_dir():
+                try:
+                    shutil.rmtree(d)
+                    print(f"  Removed {d}", flush=True)
+                except OSError as e:
+                    print(f"  Failed to remove {d}: {e}", flush=True)
+            else:
+                print(f"  Not found: {d}", flush=True)
+
+    if remove_data:
+        cwd = Path.cwd()
+        for name in (paths.DATA_DIR_NAME, paths.LEGACY_DATA_DIR_NAME):
+            d = cwd / name
+            if d.is_dir():
+                try:
+                    shutil.rmtree(d)
+                    print(f"  Removed {d}", flush=True)
+                except OSError as e:
+                    print(f"  Failed to remove {d}: {e}", flush=True)
+            else:
+                print(f"  Not found: {d}", flush=True)
+
+    _print_uninstall_hint()
+
+
+def _print_uninstall_hint() -> None:
+    print("\nTo complete uninstall, run:\n  uv tool uninstall cognits", flush=True)
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -342,8 +420,28 @@ def main() -> None:
         "--force-port", type=int,
         help="HTTP port, kill existing process, ignores PORT env var",
     )
+    parser.add_argument(
+        "--uninstall", action="store_true",
+        help="Print instructions to uninstall Cognits",
+    )
+    parser.add_argument(
+        "--full-uninstall", action="store_true",
+        help="Remove model caches and project data interactively",
+    )
+    parser.add_argument(
+        "--yes", "-y", action="store_true",
+        help="Skip confirmation prompts (for --full-uninstall)",
+    )
 
     args = parser.parse_args()
+
+    if args.full_uninstall:
+        _interactive_uninstall(skip_confirm=args.yes)
+        raise SystemExit(0)
+
+    if args.uninstall:
+        print("To uninstall Cognits, run:\n  uv tool uninstall cognits")
+        raise SystemExit(0)
 
     if args.fresh:
         cwd = Path.cwd()
