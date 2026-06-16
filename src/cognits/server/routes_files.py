@@ -96,9 +96,7 @@ def _classify(file_path: Path) -> tuple[str, str | None]:
     return ("text", None)
 
 
-def _pdf_to_markdown(file_path: Path) -> str:
-    from markitdown import MarkItDown
-
+def _pdf_to_markdown(file_path: Path, engine) -> str:
     cache_dir = data_dir() / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -116,9 +114,8 @@ def _pdf_to_markdown(file_path: Path) -> str:
         except (ValueError, OSError):
             pass
 
-    md = MarkItDown()
-    result = md.convert(str(file_path))
-    content = result.text_content or ""
+    result = engine.converter.convert(str(file_path))
+    content = result.document.export_to_markdown() or ""
 
     cache_md.write_text(content, encoding="utf-8")
     cache_mtime.write_text(str(current_mtime))
@@ -152,8 +149,11 @@ def register(app: FastAPI, st) -> None:
             if category == "image":
                 return text_error("AI mode not available for images", 400)
             if category == "pdf":
+                engine = st.docling_engine
+                if engine is None or engine.error:
+                    return text_error("PDF AI mode not available (Docling not loaded)", 503)
                 try:
-                    content = await asyncio.to_thread(_pdf_to_markdown, file_path)
+                    content = await asyncio.to_thread(_pdf_to_markdown, file_path, engine)
                 except Exception as e:
                     return text_error(f"conversion failed: {e}", 500)
                 return JSONResponse({

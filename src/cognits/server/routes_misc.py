@@ -65,7 +65,18 @@ def register(app: FastAPI, st) -> None:
         if st.rag is not None:
             rag_ready = st.rag.ready.is_set()
             rag_error = st.rag.error
-        return JSONResponse({"status": "ok", "rag_ready": rag_ready, "rag_error": rag_error})
+        docling_ready = False
+        docling_error = None
+        if st.docling_engine is not None:
+            docling_ready = st.docling_engine.ready.is_set()
+            docling_error = st.docling_engine.error
+        return JSONResponse({
+            "status": "ok",
+            "rag_ready": rag_ready,
+            "rag_error": rag_error,
+            "docling_ready": docling_ready,
+            "docling_error": docling_error,
+        })
 
     @app.get("/api/tree")
     async def tree():
