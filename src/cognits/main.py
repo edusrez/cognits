@@ -226,14 +226,14 @@ class CognitsTUI(App):
             if rag is not None:
                 # Phase 1: download
                 while not rag.ready.is_set() and not rag.error and rag.progress < 100:
-                    pct = rag.progress
-                    filled = min(7, int(pct / 14.3))
-                    bar = " ".join("\u25a0" if i < filled else "\u25a1" for i in range(7))
-                    self.query_one("#loading-indicator", Static).update(bar)
                     self.query_one("#download-label", Label).update(
-                        f"Downloading\u2026 {pct}%"
+                        "Downloading BGE-M3\u2026"
                     )
-                    await asyncio.sleep(0.15)
+                    spinner_frame = (spinner_frame + 1) % len(SPINNER)
+                    self.query_one("#loading-indicator", Static).update(
+                        SPINNER[spinner_frame]
+                    )
+                    await asyncio.sleep(1 / 12)
                 # Phase 2: ONNX model load
                 while not rag.ready.is_set() and not rag.error:
                     self.query_one("#download-label", Label).update("Loading model\u2026")
