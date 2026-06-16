@@ -114,25 +114,29 @@ def _pdf_to_markdown(file_path: Path, engine, docling_cfg, *, force: bool = Fals
         except (ValueError, OSError):
             pass
 
-    from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
-    from docling.document_converter import DocumentConverter, PdfFormatOption
+    if force:
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+        from docling.document_converter import DocumentConverter, PdfFormatOption
 
-    pipeline_opts = PdfPipelineOptions()
-    pipeline_opts.table_structure_options.mode = (
-        TableFormerMode.ACCURATE if docling_cfg.table_mode == "accurate"
-        else TableFormerMode.FAST
-    )
-    pipeline_opts.images_scale = docling_cfg.images_scale
-    pipeline_opts.do_ocr = docling_cfg.do_ocr
-    pipeline_opts.do_code_enrichment = docling_cfg.do_code_enrichment
-    pipeline_opts.do_formula_enrichment = docling_cfg.do_formula_enrichment
-    pipeline_opts.do_picture_classification = docling_cfg.do_picture_classification
-    pipeline_opts.force_backend_text = docling_cfg.force_backend_text
+        pipeline_opts = PdfPipelineOptions()
+        pipeline_opts.table_structure_options.mode = (
+            TableFormerMode.ACCURATE if docling_cfg.table_mode == "accurate"
+            else TableFormerMode.FAST
+        )
+        pipeline_opts.images_scale = docling_cfg.images_scale
+        pipeline_opts.do_ocr = docling_cfg.do_ocr
+        pipeline_opts.do_code_enrichment = docling_cfg.do_code_enrichment
+        pipeline_opts.do_formula_enrichment = docling_cfg.do_formula_enrichment
+        pipeline_opts.do_picture_classification = docling_cfg.do_picture_classification
+        pipeline_opts.force_backend_text = docling_cfg.force_backend_text
 
-    converter = DocumentConverter(format_options={
-        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_opts),
-    })
+        converter = DocumentConverter(format_options={
+            InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_opts),
+        })
+    else:
+        converter = engine.converter
+
     result = converter.convert(str(file_path))
     content = result.document.export_to_markdown() or ""
 
