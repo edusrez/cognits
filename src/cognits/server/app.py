@@ -32,6 +32,7 @@ class AppState:
         self.active_agents: dict[str, object] = {}
         self.desktop_lock = asyncio.Lock()
         self.rag = None  # rag.engine.RagEngine, initialized in main
+        self.docling_engine = None  # docling_engine.DoclingEngine
 
         try:
             base = paths.data_dir()
@@ -86,12 +87,18 @@ def create_app(state: AppState | None = None) -> FastAPI:
             from cognits.rag.engine import RagEngine
 
             state.rag = RagEngine.start_background()
+        if state.docling_engine is None and os.environ.get("COGNITS_DISABLE_RAG") != "1":
+            from cognits.docling_engine import DoclingEngine
+
+            state.docling_engine = DoclingEngine.start_background()
         try:
             yield
         except asyncio.CancelledError:
             pass
         if state.rag is not None:
             state.rag.shutdown()
+        if state.docling_engine is not None:
+            state.docling_engine.shutdown()
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.ctx = state

@@ -96,7 +96,7 @@ def _classify(file_path: Path) -> tuple[str, str | None]:
     return ("text", None)
 
 
-def _pdf_to_markdown(file_path: Path, *, force: bool = False) -> str:
+def _pdf_to_markdown(file_path: Path, engine, docling_cfg, *, force: bool = False) -> str:
     cache_dir = data_dir() / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -114,10 +114,27 @@ def _pdf_to_markdown(file_path: Path, *, force: bool = False) -> str:
         except (ValueError, OSError):
             pass
 
-    from pdf_oxide import PdfDocument
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+    from docling.document_converter import DocumentConverter, PdfFormatOption
 
-    doc = PdfDocument(str(file_path))
-    content = doc.to_markdown_all(detect_headings=True) or ""
+    pipeline_opts = PdfPipelineOptions()
+    pipeline_opts.table_structure_options.mode = (
+        TableFormerMode.ACCURATE if docling_cfg.table_mode == "accurate"
+        else TableFormerMode.FAST
+    )
+    pipeline_opts.images_scale = docling_cfg.images_scale
+    pipeline_opts.do_ocr = docling_cfg.do_ocr
+    pipeline_opts.do_code_enrichment = docling_cfg.do_code_enrichment
+    pipeline_opts.do_formula_enrichment = docling_cfg.do_formula_enrichment
+    pipeline_opts.do_picture_classification = docling_cfg.do_picture_classification
+    pipeline_opts.force_backend_text = docling_cfg.force_backend_text
+
+    converter = DocumentConverter(format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_opts),
+    })
+    result = converter.convert(str(file_path))
+    content = result.document.export_to_markdown() or ""
 
     cache_md.write_text(content, encoding="utf-8")
     cache_mtime.write_text(str(current_mtime))
@@ -151,9 +168,13 @@ def register(app: FastAPI, st) -> None:
             if category == "image":
                 return text_error("AI mode not available for images", 400)
             if category == "pdf":
+                engine = st.docling_engine
+                if engine is None or engine.error:
+                    return text_error("PDF AI mode not available (Docling not loaded)", 503)
                 try:
+                    cfg = st.cached_config.docling_config
                     content = await asyncio.to_thread(
-                        _pdf_to_markdown, file_path,
+                        _pdf_to_markdown, file_path, engine, cfg,
                         force=force == "true"
                     )
                 except Exception as e:

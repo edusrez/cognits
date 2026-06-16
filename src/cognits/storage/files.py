@@ -83,6 +83,42 @@ class SubagentConfig:
 
 
 @dataclass
+class DoclingConfig:
+    table_mode: str = "fast"
+    images_scale: float = 1.0
+    do_ocr: bool = True
+    do_code_enrichment: bool = False
+    do_formula_enrichment: bool = False
+    do_picture_classification: bool = False
+    force_backend_text: bool = True
+
+    def to_json(self) -> dict:
+        return {
+            "tableMode": self.table_mode,
+            "imagesScale": self.images_scale,
+            "doOcr": self.do_ocr,
+            "doCodeEnrichment": self.do_code_enrichment,
+            "doFormulaEnrichment": self.do_formula_enrichment,
+            "doPictureClassification": self.do_picture_classification,
+            "forceBackendText": self.force_backend_text,
+        }
+
+    @classmethod
+    def from_json(cls, d: dict | None) -> "DoclingConfig":
+        if not d:
+            return cls()
+        return cls(
+            table_mode=d.get("tableMode") or "fast",
+            images_scale=float(d.get("imagesScale", 1.0) or 1.0),
+            do_ocr=bool(d.get("doOcr", True)),
+            do_code_enrichment=bool(d.get("doCodeEnrichment", False)),
+            do_formula_enrichment=bool(d.get("doFormulaEnrichment", False)),
+            do_picture_classification=bool(d.get("doPictureClassification", False)),
+            force_backend_text=bool(d.get("forceBackendText", True)),
+        )
+
+
+@dataclass
 class Config:
     llm_provider: str = ""
     llm_agent_id: str = ""
@@ -102,6 +138,7 @@ class Config:
     default_learnit_viewport: str = ""
     default_files_viewport: str = ""
     pdf_headings: bool = True
+    docling_config: DoclingConfig = field(default_factory=DoclingConfig)
     write_langs: list[str] = field(default_factory=list)
     note_mode: str = ""
     max_tokens: int = 0
@@ -130,6 +167,7 @@ class Config:
             "defaultLearnitViewport": self.default_learnit_viewport,
             "defaultFilesViewport": self.default_files_viewport,
             "pdfHeadings": self.pdf_headings,
+            "doclingConfig": self.docling_config.to_json(),
             "writeLangs": self.write_langs,
             "noteMode": self.note_mode,
             "maxTokens": self.max_tokens,
@@ -163,6 +201,7 @@ class Config:
             default_learnit_viewport=d.get("defaultLearnitViewport") or "",
             default_files_viewport=d.get("defaultFilesViewport") or "",
             pdf_headings=bool(d.get("pdfHeadings", True)),
+            docling_config=DoclingConfig.from_json(d.get("doclingConfig")),
             write_langs=d.get("writeLangs") or [],
             note_mode=d.get("noteMode") or "",
             max_tokens=int(d.get("maxTokens", 0) or 0),

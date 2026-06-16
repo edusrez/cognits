@@ -2,7 +2,7 @@ import { createSignal, createResource, createEffect, createMemo, Show, onCleanup
 import * as pdfjs from "pdfjs-dist"
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.mjs?url"
 import MarkdownView from "./MarkdownView"
-import { pdfRefreshTrigger } from "../stores/settings-store"
+import { doclingRefreshTrigger } from "../stores/settings-store"
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker
 
@@ -52,7 +52,7 @@ export default function PdfView(props: { viewportId?: string; tabId?: string }) 
 
   const [rawMeta] = createResource(() => mode() === "raw" ? filePath() : null, fetchRawMeta)
   const [aiContent] = createResource(
-    () => mode() === "ai" ? [filePath(), pdfRefreshTrigger()] as const : null,
+    () => mode() === "ai" ? [filePath(), doclingRefreshTrigger()] as const : null,
     ([path]) => {
       const f = forceAi()
       setForceAi(false)

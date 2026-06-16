@@ -54,12 +54,27 @@ import {
   setDefaultLearnitViewport,
   defaultFilesViewport,
   setDefaultFilesViewport,
-  pdfHeadings,
-  setPdfHeadings,
-  pdfHeadingsDirty,
-  setPdfHeadingsDirty,
-  pdfRefreshTrigger,
-  setPdfRefreshTrigger,
+  doclingTableMode,
+  setDoclingTableMode,
+  doclingImageScale,
+  setDoclingImageScale,
+  doclingOcr,
+  setDoclingOcr,
+  doclingCodeEnrich,
+  setDoclingCodeEnrich,
+  doclingFormulaEnrich,
+  setDoclingFormulaEnrich,
+  doclingPictureClassify,
+  setDoclingPictureClassify,
+  doclingForceText,
+  setDoclingForceText,
+  doclingPreset,
+  setDoclingPreset,
+  applyDoclingPreset,
+  doclingDirty,
+  setDoclingDirty,
+  doclingRefreshTrigger,
+  setDoclingRefreshTrigger,
   writeLangs,
   setWriteLangs,
   noteMode,
@@ -446,25 +461,86 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
         <CollapsibleSection title="AI Vision">
           <div class="flex flex-col gap-2">
 
-            {/* Heading detection */}
+            {/* Quality preset */}
             <div class="flex items-center justify-between gap-2">
-              <label class="text-[#9a9a9a] text-[13px]">Detect headings</label>
+              <label class="text-[#9a9a9a]">Quality preset</label>
             </div>
             <Dropdown
-              value={pdfHeadings() ? "on" : "off"}
+              value={doclingPreset() ?? "fast"}
               options={[
-                { value: "on", label: "On" },
-                { value: "off", label: "Off" },
+                { value: "fast", label: "Fast" },
+                { value: "balanced", label: "Balanced" },
+                { value: "accurate", label: "Accurate" },
+              ]}
+              onChange={(v) => applyDoclingPreset(v as "fast" | "balanced" | "accurate")}
+            />
+
+            {/* Table accuracy */}
+            <div class="flex items-center justify-between gap-2">
+              <label class="text-[#9a9a9a] text-[13px]">Table accuracy</label>
+            </div>
+            <Dropdown
+              value={doclingTableMode()}
+              options={[
+                { value: "fast", label: "Fast" },
+                { value: "accurate", label: "Accurate" },
               ]}
               onChange={(v) => {
-                setPdfHeadings(v === "on")
-                setPdfHeadingsDirty(true)
+                setDoclingTableMode(v)
+                setDoclingPreset(null)
+                setDoclingDirty(true)
                 saveConfig()
               }}
             />
 
+            {/* On/Off toggles */}
+            <For each={[
+              ["OCR", doclingOcr, setDoclingOcr] as const,
+              ["Code enrichment", doclingCodeEnrich, setDoclingCodeEnrich] as const,
+              ["Formula enrichment", doclingFormulaEnrich, setDoclingFormulaEnrich] as const,
+              ["Picture classification", doclingPictureClassify, setDoclingPictureClassify] as const,
+              ["Force PDF text", doclingForceText, setDoclingForceText] as const,
+            ]}>
+              {([label, signal, setter]) => (
+                <div>
+                  <div class="flex items-center justify-between gap-2">
+                    <label class="text-[#9a9a9a] text-[13px]">{label}</label>
+                  </div>
+                  <Dropdown
+                    value={signal() ? "on" : "off"}
+                    options={[
+                      { value: "on", label: "On" },
+                      { value: "off", label: "Off" },
+                    ]}
+                    onChange={(v) => {
+                      setter(v === "on")
+                      setDoclingPreset(null)
+                      setDoclingDirty(true)
+                      saveConfig()
+                    }}
+                  />
+                </div>
+              )}
+            </For>
+
+            {/* Image resolution slider */}
+            <SliderField
+              label="Image resolution"
+              value={doclingImageScale()}
+              onInput={(v) => {
+                setDoclingImageScale(v)
+                setDoclingPreset(null)
+                setDoclingDirty(true)
+                saveConfig()
+              }}
+              min={1.0}
+              max={2.0}
+              step={0.1}
+              formatValue={(v) => v.toFixed(1) + "x"}
+            />
+
             {/* Apply button */}
-            <Show when={pdfHeadingsDirty() && pdfPath()}>
+            <Show when={doclingDirty() && pdfPath()}>
               <div class="border-t border-white/5 pt-2 mt-1">
                 <p class="text-[10px] text-[#5a5a5a] mb-1">
                   The PDF will be re-converted with these settings.
@@ -472,8 +548,8 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                 <button
                   class="border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors cursor-pointer w-full"
                   onClick={() => {
-                    setPdfRefreshTrigger((t) => t + 1)
-                    setPdfHeadingsDirty(false)
+                    setDoclingRefreshTrigger((t) => t + 1)
+                    setDoclingDirty(false)
                   }}
                 >
                   Apply &amp; Re-render this PDF
