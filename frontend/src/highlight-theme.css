@@ -17,7 +17,7 @@
 .hljs-built_in,
 .hljs-selector-class,
 .hljs-selector-id {
-  color: #e74c3c;
+  color: #f87171;
 }
 
 .hljs-string,
@@ -57,7 +57,7 @@
 }
 
 .hljs-deletion {
-  color: #e74c3c;
+  color: #f87171;
 }
 
 .hljs-meta,
