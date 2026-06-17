@@ -145,7 +145,7 @@ export default function PdfView(props: { viewportId?: string; tabId?: string }) 
       </div>
 
       {/* Content area */}
-      <div class="flex-1 min-h-0 p-2 overflow-auto bg-[#0d0d0d]">
+      <div class="flex-1 min-h-0 p-2 overflow-auto bg-black">
         <Show when={mode() === "raw"} fallback={
           /* AI mode */
           <Show when={!aiContent.loading && !aiContent.error} fallback={
