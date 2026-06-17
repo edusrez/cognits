@@ -21,6 +21,18 @@ import ruby from "highlight.js/lib/languages/ruby"
 import php from "highlight.js/lib/languages/php"
 import swift from "highlight.js/lib/languages/swift"
 import kotlin from "highlight.js/lib/languages/kotlin"
+import ini from "highlight.js/lib/languages/ini"
+import lua from "highlight.js/lib/languages/lua"
+import r from "highlight.js/lib/languages/r"
+import dart from "highlight.js/lib/languages/dart"
+import erlang from "highlight.js/lib/languages/erlang"
+import elixir from "highlight.js/lib/languages/elixir"
+import haskell from "highlight.js/lib/languages/haskell"
+import scala from "highlight.js/lib/languages/scala"
+import clojure from "highlight.js/lib/languages/clojure"
+import csharp from "highlight.js/lib/languages/csharp"
+import graphql from "highlight.js/lib/languages/graphql"
+import protobuf from "highlight.js/lib/languages/protobuf"
 import remend from "remend"
 import DOMPurify from "dompurify"
 
@@ -56,6 +68,22 @@ hljs.registerLanguage("rb", ruby)
 hljs.registerLanguage("php", php)
 hljs.registerLanguage("swift", swift)
 hljs.registerLanguage("kotlin", kotlin)
+hljs.registerLanguage("ini", ini)
+hljs.registerLanguage("toml", ini)
+hljs.registerLanguage("lua", lua)
+hljs.registerLanguage("r", r)
+hljs.registerLanguage("dart", dart)
+hljs.registerLanguage("erlang", erlang)
+hljs.registerLanguage("elixir", elixir)
+hljs.registerLanguage("haskell", haskell)
+hljs.registerLanguage("scala", scala)
+hljs.registerLanguage("clojure", clojure)
+hljs.registerLanguage("csharp", csharp)
+hljs.registerLanguage("cs", csharp)
+hljs.registerLanguage("graphql", graphql)
+hljs.registerLanguage("gql", graphql)
+hljs.registerLanguage("protobuf", protobuf)
+hljs.registerLanguage("proto", protobuf)
 
 // Single Markdown configuration for the whole app: highlight + remend
 // (incomplete markdown closure during streaming) + DOMPurify sanitization.
