@@ -25,10 +25,34 @@ class DoclingEngine:
             try:
                 import os
                 os.environ.setdefault("ORT_LOG_LEVEL", "ERROR")
+                os.environ.setdefault("OMP_NUM_THREADS", "8")
 
                 log.debug("docling: loading models (~1 GB)...")
-                from docling.document_converter import DocumentConverter
-                engine._converter = DocumentConverter()
+                from docling.datamodel.base_models import InputFormat
+                from docling.datamodel.pipeline_options import (
+                    PdfPipelineOptions,
+                    TableFormerMode,
+                )
+                from docling.document_converter import (
+                    DocumentConverter,
+                    PdfFormatOption,
+                )
+
+                pipeline_opts = PdfPipelineOptions()
+                pipeline_opts.do_ocr = False
+                pipeline_opts.do_table_structure = True
+                pipeline_opts.table_structure_options.mode = TableFormerMode.FAST
+                pipeline_opts.do_code_enrichment = False
+                pipeline_opts.do_formula_enrichment = False
+                pipeline_opts.do_picture_classification = False
+                pipeline_opts.images_scale = 1.0
+                pipeline_opts.force_backend_text = True
+
+                engine._converter = DocumentConverter(format_options={
+                    InputFormat.PDF: PdfFormatOption(
+                        pipeline_options=pipeline_opts,
+                    ),
+                })
                 log.debug("docling: models ready")
             except Exception as e:
                 engine.error = str(e)

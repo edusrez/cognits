@@ -84,7 +84,7 @@ const DOCLING_PRESETS: Record<string, DoclingPresetValues> = {
   fast: {
     tableMode: "fast",
     imagesScale: 1.0,
-    doOcr: true,
+    doOcr: false,
     doCodeEnrichment: false,
     doFormulaEnrichment: false,
     doPictureClassification: false,
