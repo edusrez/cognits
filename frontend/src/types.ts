@@ -64,6 +64,8 @@ export interface LLMConfig {
   noteMode: string
   noteFontSize: number
   reportFontSize: number
+  codeFontSize: number
+  textFontSize: number
   maxTokens: number
   temperature: number
   topP: number

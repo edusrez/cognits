@@ -1,5 +1,6 @@
 import { createSignal, createResource, Show, createMemo } from "solid-js"
 import { escapeHtmlSafe } from "../lib/markdown"
+import { textFontSize } from "../stores/settings-store"
 
 interface FileContent {
   path: string
@@ -60,8 +61,8 @@ export default function TextView(props: { viewportId?: string; tabId?: string })
             <div class="text-[#8b949e] px-4 py-3 text-[13px]">Loading...</div>
           </Show>
         }>
-          <pre class="px-4 py-3 text-[13px] text-[#e0e0e0] whitespace-pre-wrap break-words m-0"
-               style={{ "font-family": "system-ui, sans-serif", "tab-size": "4" }}
+          <pre class="px-4 py-3 text-[#e0e0e0] whitespace-pre-wrap break-words m-0"
+               style={{ "font-family": "system-ui, sans-serif", "tab-size": "4", "font-size": `${textFontSize()}px` }}
                innerHTML={renderedContent()} />
         </Show>
       </div>

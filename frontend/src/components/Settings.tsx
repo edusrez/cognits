@@ -83,6 +83,10 @@ import {
   setNoteFontSize,
   reportFontSize,
   setReportFontSize,
+  codeFontSize,
+  setCodeFontSize,
+  textFontSize,
+  setTextFontSize,
   maxTokens,
   setMaxTokens,
   temperature,
@@ -1049,6 +1053,38 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                 </span>
               </button>
             </div>
+          </div>
+        </CollapsibleSection>
+      </Show>
+
+      <Show when={linkedViewport() && linkedActiveTabId()?.startsWith("code:")}>
+        <CollapsibleSection title="Display">
+          <div class="flex flex-col gap-2">
+            <SliderField
+              label="Text size"
+              value={codeFontSize()}
+              onInput={(v) => { setCodeFontSize(v); saveConfig() }}
+              min={11}
+              max={24}
+              step={1}
+              formatValue={(v) => `${v}px`}
+            />
+          </div>
+        </CollapsibleSection>
+      </Show>
+
+      <Show when={linkedViewport() && linkedActiveTabId()?.startsWith("text:")}>
+        <CollapsibleSection title="Display">
+          <div class="flex flex-col gap-2">
+            <SliderField
+              label="Text size"
+              value={textFontSize()}
+              onInput={(v) => { setTextFontSize(v); saveConfig() }}
+              min={11}
+              max={24}
+              step={1}
+              formatValue={(v) => `${v}px`}
+            />
           </div>
         </CollapsibleSection>
       </Show>

@@ -1,5 +1,6 @@
 import { createSignal, createResource, Show, createMemo } from "solid-js"
 import { highlightCode } from "../lib/markdown"
+import { codeFontSize } from "../stores/settings-store"
 import "../highlight-theme.css"
 
 interface FileContent {
@@ -74,7 +75,7 @@ export default function CodeView(props: { viewportId?: string; tabId?: string })
             <div class="text-[#8b949e] px-4 py-3 text-[13px]">Loading...</div>
           </Show>
         }>
-          <pre class="m-0" style={{ "tab-size": "4", "font-size": "13px" }}>
+          <pre class="m-0" style={{ "tab-size": "4", "font-size": `${codeFontSize()}px` }}>
             <code class="block px-4 py-3 hljs" innerHTML={highlightedHtml()} style={{ "font-family": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace" }} />
           </pre>
         </Show>
