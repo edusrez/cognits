@@ -1,6 +1,6 @@
 import { createResource, Show, createMemo } from "solid-js"
 import { loadReport } from "../stores/report-store"
-import { reportFontSize } from "../stores/settings-store"
+import { reportFontSize, setReportFontSize, saveConfig } from "../stores/settings-store"
 import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
 import ContextMenu from "./ContextMenu"
 import MarkdownView from "./MarkdownView"
@@ -20,6 +20,13 @@ export default function ReportView(props: { viewportId?: string; tabId?: string 
     <div
       class="h-full overflow-y-auto px-4 py-3 chat-markdown"
       style={{ "font-size": `${reportFontSize()}px` }}
+      onWheel={(e) => {
+        if (!e.shiftKey) return
+        e.preventDefault()
+        const delta = e.deltaY > 0 ? -1 : 1
+        setReportFontSize(Math.max(11, Math.min(24, reportFontSize() + delta)))
+        saveConfig()
+      }}
       onContextMenu={(e) => {
         const r = report()
         if (!r) return

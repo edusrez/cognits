@@ -1,6 +1,6 @@
 import { createSignal, createResource, Show, createMemo } from "solid-js"
 import { escapeHtmlSafe } from "../lib/markdown"
-import { textFontSize } from "../stores/settings-store"
+import { textFontSize, setTextFontSize, saveConfig } from "../stores/settings-store"
 
 interface FileContent {
   path: string
@@ -53,7 +53,14 @@ export default function TextView(props: { viewportId?: string; tabId?: string })
         </Show>
       </div>
 
-      <div class="flex-1 min-h-0 p-2 overflow-auto">
+      <div class="flex-1 min-h-0 p-2 overflow-auto"
+       onWheel={(e) => {
+         if (!e.shiftKey) return
+         e.preventDefault()
+         const delta = e.deltaY > 0 ? -1 : 1
+         setTextFontSize(Math.max(11, Math.min(24, textFontSize() + delta)))
+         saveConfig()
+       }}>
         <Show when={!error() && !data.loading} fallback={
           <Show when={data.loading} fallback={
             <div class="text-[#e74c3c] px-4 py-3 text-[13px]">{error() || "Failed to load file"}</div>

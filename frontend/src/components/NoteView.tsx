@@ -1,6 +1,6 @@
 import { Show, createResource, createSignal, createEffect, onCleanup } from "solid-js"
 import { loadNote, saveNoteContent, renameNote } from "../stores/notebook-store"
-import { noteMode, setNoteMode, saveConfig, noteFontSize } from "../stores/settings-store"
+import { noteMode, setNoteMode, saveConfig, noteFontSize, setNoteFontSize } from "../stores/settings-store"
 import MarkdownView from "./MarkdownView"
 
 function adjustHeight(el: HTMLTextAreaElement) {
@@ -121,7 +121,14 @@ export default function NoteView(props: { viewportId?: string; tabId?: string })
               />
             }
           >
-            <div class="px-4 py-3 chat-markdown overflow-y-auto h-full" style={{ "font-size": `${noteFontSize()}px` }}>
+            <div class="px-4 py-3 chat-markdown overflow-y-auto h-full" style={{ "font-size": `${noteFontSize()}px` }}
+              onWheel={(e) => {
+                if (!e.shiftKey) return
+                e.preventDefault()
+                const delta = e.deltaY > 0 ? -1 : 1
+                setNoteFontSize(Math.max(11, Math.min(24, noteFontSize() + delta)))
+                saveConfig()
+              }}>
               <MarkdownView content={editContent()} />
             </div>
           </Show>

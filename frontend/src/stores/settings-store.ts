@@ -55,6 +55,8 @@ export const [noteFontSize, setNoteFontSize] = createSignal(15)
 export const [reportFontSize, setReportFontSize] = createSignal(15)
 export const [codeFontSize, setCodeFontSize] = createSignal(15)
 export const [textFontSize, setTextFontSize] = createSignal(15)
+export const [pdfZoom, setPdfZoom] = createSignal(150)
+export const [pdfAIFontSize, setPdfAIFontSize] = createSignal(15)
 export const [maxTokens, setMaxTokens] = createSignal(0)
 export const [temperature, setTemperature] = createSignal(0)
 export const [topP, setTopP] = createSignal(0)
@@ -202,6 +204,8 @@ export async function loadConfig() {
     if (cfg.reportFontSize) setReportFontSize(cfg.reportFontSize)
     if (cfg.codeFontSize) setCodeFontSize(cfg.codeFontSize)
     if (cfg.textFontSize) setTextFontSize(cfg.textFontSize)
+    if (cfg.pdfZoom) setPdfZoom(cfg.pdfZoom)
+    if (cfg.pdfAIFontSize) setPdfAIFontSize(cfg.pdfAIFontSize)
     if (cfg.maxTokens) setMaxTokens(cfg.maxTokens)
     if (cfg.temperature) setTemperature(cfg.temperature)
     if (cfg.topP) setTopP(cfg.topP)
@@ -249,6 +253,8 @@ export function saveConfig() {
           reportFontSize: reportFontSize(),
           codeFontSize: codeFontSize(),
           textFontSize: textFontSize(),
+          pdfZoom: pdfZoom(),
+          pdfAIFontSize: pdfAIFontSize(),
           maxTokens: maxTokens(),
           temperature: temperature(),
           topP: topP(),

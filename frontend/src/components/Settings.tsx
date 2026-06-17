@@ -87,6 +87,10 @@ import {
   setCodeFontSize,
   textFontSize,
   setTextFontSize,
+  pdfZoom,
+  setPdfZoom,
+  pdfAIFontSize,
+  setPdfAIFontSize,
   maxTokens,
   setMaxTokens,
   temperature,
@@ -560,6 +564,31 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                 </button>
               </div>
             </Show>
+          </div>
+        </CollapsibleSection>
+      </Show>
+
+      <Show when={linkedViewport() && linkedActiveTabId()?.startsWith("pdf:")}>
+        <CollapsibleSection title="Display">
+          <div class="flex flex-col gap-2">
+            <SliderField
+              label="Raw zoom"
+              value={pdfZoom()}
+              onInput={(v) => { setPdfZoom(v); saveConfig() }}
+              min={50}
+              max={400}
+              step={10}
+              formatValue={(v) => `${v}%`}
+            />
+            <SliderField
+              label="AI text size"
+              value={pdfAIFontSize()}
+              onInput={(v) => { setPdfAIFontSize(v); saveConfig() }}
+              min={11}
+              max={24}
+              step={1}
+              formatValue={(v) => `${v}px`}
+            />
           </div>
         </CollapsibleSection>
       </Show>

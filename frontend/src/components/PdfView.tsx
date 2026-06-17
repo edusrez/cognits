@@ -2,7 +2,7 @@ import { createSignal, createResource, createEffect, createMemo, Show, onCleanup
 import * as pdfjs from "pdfjs-dist"
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.mjs?url"
 import MarkdownView from "./MarkdownView"
-import { doclingRefreshTrigger } from "../stores/settings-store"
+import { doclingRefreshTrigger, pdfZoom, setPdfZoom, pdfAIFontSize, setPdfAIFontSize, saveConfig } from "../stores/settings-store"
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker
 
@@ -47,6 +47,7 @@ export default function PdfView(props: { viewportId?: string; tabId?: string }) 
   const fileName = () => filePath().split("/").pop() ?? filePath()
 
   const [mode, setMode] = createSignal<"raw" | "ai">("raw")
+  const [renderKey, setRenderKey] = createSignal(0)
 
   let lastTrigger = 0
 
@@ -98,13 +99,12 @@ export default function PdfView(props: { viewportId?: string; tabId?: string }) 
   function renderPage(pageNum: number, canvas: HTMLCanvasElement) {
     if (!pdfDoc) return
     pdfDoc.getPage(pageNum).then((page) => {
-      const viewport = page.getViewport({ scale: 1.5 })
+      const scale = pdfZoom() / 100
+      const viewport = page.getViewport({ scale })
       canvas.width = viewport.width
       canvas.height = viewport.height
       page.render({ canvas, viewport }).promise
-    }).catch(() => {
-      // silently ignore render errors for destroyed pages
-    })
+    }).catch(() => {})
   }
 
   const pageNumbers = createMemo(() => {
@@ -145,7 +145,20 @@ export default function PdfView(props: { viewportId?: string; tabId?: string }) 
       </div>
 
       {/* Content area */}
-      <div class="flex-1 min-h-0 p-2 overflow-auto bg-black">
+      <div class="flex-1 min-h-0 p-2 overflow-auto bg-black"
+           onWheel={(e) => {
+             if (!e.shiftKey) return
+             e.preventDefault()
+             if (mode() === "raw") {
+               const delta = e.deltaY > 0 ? -10 : 10
+               setPdfZoom(Math.max(50, Math.min(400, pdfZoom() + delta)))
+               setRenderKey(k => k + 1)
+             } else {
+               const delta = e.deltaY > 0 ? -1 : 1
+               setPdfAIFontSize(Math.max(11, Math.min(24, pdfAIFontSize() + delta)))
+             }
+             saveConfig()
+           }}>
         <Show when={mode() === "raw"} fallback={
           /* AI mode */
           <Show when={!aiContent.loading && !aiContent.error} fallback={
@@ -159,7 +172,7 @@ export default function PdfView(props: { viewportId?: string; tabId?: string }) 
               </div>
             </Show>
           }>
-            <div class="px-4 py-3 chat-markdown" style={{ "font-size": "14px" }}>
+            <div class="px-4 py-3 chat-markdown" style={{ "font-size": `${pdfAIFontSize()}px` }}>
               <MarkdownView content={aiMarkdown()} />
             </div>
           </Show>
@@ -176,13 +189,16 @@ export default function PdfView(props: { viewportId?: string; tabId?: string }) 
           }>
             <div class="flex flex-col items-center py-4 gap-1">
               <For each={pageNumbers()}>
-                {(pageNum) => (
-                  <canvas
-                    ref={(el) => { renderPage(pageNum, el) }}
-                    class="shadow-lg"
-                    style={{ "max-width": "100%", "margin-bottom": "1px" }}
-                  />
-                )}
+                {(pageNum) => {
+                  renderKey()
+                  return (
+                    <canvas
+                      ref={(el) => { renderPage(pageNum, el) }}
+                      class="shadow-lg"
+                      style={{ "max-width": "100%", "margin-bottom": "1px" }}
+                    />
+                  )
+                }}
               </For>
             </div>
           </Show>

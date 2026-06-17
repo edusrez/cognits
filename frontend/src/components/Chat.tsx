@@ -2,7 +2,7 @@ import { For, Index, Show, createSignal, createEffect, createMemo, onMount, onCl
 import "../highlight-theme.css"
 import { currentMessages as messages, isStreaming, currentToolStatus, currentChatError, sessionUsage, mainSessionPromptTokens, toolFaviconsBySession } from "../stores/chat-store"
 import { activeSessionId } from "../stores/session-store"
-import { chatFontSize, displayThinking } from "../stores/settings-store"
+import { chatFontSize, setChatFontSize, saveConfig, displayThinking } from "../stores/settings-store"
 import { typewriterSpeed } from "../stores/settings-store"
 import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
 import ContextMenu from "./ContextMenu"
@@ -85,7 +85,16 @@ export default function Chat(props: { viewportId?: string }) {
           e.preventDefault()
           setCtxMenu(null)
         }}
-        onWheel={() => setAutoScroll(false)}
+        onWheel={(e) => {
+          if (e.shiftKey) {
+            e.preventDefault()
+            const delta = e.deltaY > 0 ? -1 : 1
+            setChatFontSize(Math.max(11, Math.min(24, chatFontSize() + delta)))
+            saveConfig()
+            return
+          }
+          setAutoScroll(false)
+        }}
         onTouchMove={() => setAutoScroll(false)}
       >
       <Index each={messages()}>

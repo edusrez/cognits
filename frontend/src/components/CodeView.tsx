@@ -1,6 +1,6 @@
 import { createSignal, createResource, Show, createMemo } from "solid-js"
 import { highlightCode } from "../lib/markdown"
-import { codeFontSize } from "../stores/settings-store"
+import { codeFontSize, setCodeFontSize, saveConfig } from "../stores/settings-store"
 import "../highlight-theme.css"
 
 interface FileContent {
@@ -65,7 +65,14 @@ export default function CodeView(props: { viewportId?: string; tabId?: string })
         </div>
       </div>
 
-      <div class="flex-1 min-h-0 p-2 overflow-auto">
+      <div class="flex-1 min-h-0 p-2 overflow-auto"
+           onWheel={(e) => {
+             if (!e.shiftKey) return
+             e.preventDefault()
+             const delta = e.deltaY > 0 ? -1 : 1
+             setCodeFontSize(Math.max(11, Math.min(24, codeFontSize() + delta)))
+             saveConfig()
+           }}>
         <Show when={!data.loading && !data.error} fallback={
           <Show when={data.loading} fallback={
             <div class="text-[#e74c3c] px-4 py-3 text-[13px]">

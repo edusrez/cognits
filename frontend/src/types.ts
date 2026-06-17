@@ -66,6 +66,8 @@ export interface LLMConfig {
   reportFontSize: number
   codeFontSize: number
   textFontSize: number
+  pdfZoom: number
+  pdfAIFontSize: number
   maxTokens: number
   temperature: number
   topP: number
