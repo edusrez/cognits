@@ -19,12 +19,6 @@ async function fetchFileMeta(path: string): Promise<FileMeta> {
   return res.json()
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-}
-
 export default function ImageView(props: { viewportId?: string; tabId?: string }) {
   const filePath = () => props.tabId?.replace("image:", "") ?? ""
   const fileName = () => filePath().split("/").pop() ?? filePath()
@@ -45,9 +39,6 @@ export default function ImageView(props: { viewportId?: string; tabId?: string }
     <div class="flex flex-col h-full">
       <div class="flex items-center justify-between px-4 py-2 shrink-0">
         <span class="text-[13px] text-[#9a9a9a] truncate">{fileName()}</span>
-        <Show when={data()}>
-          <span class="text-[10px] text-[#5a5a5a] shrink-0">{formatSize(data()!.size)}</span>
-        </Show>
       </div>
 
       <div class="flex-1 min-h-0 p-2 flex items-center justify-center overflow-auto bg-[#0d0d0d]">

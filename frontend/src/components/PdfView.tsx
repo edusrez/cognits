@@ -123,9 +123,6 @@ export default function PdfView(props: { viewportId?: string; tabId?: string }) 
         <span class="text-[13px] text-[#9a9a9a] truncate">{fileName()}</span>
 
         <div class="flex items-center gap-2 shrink-0">
-          <Show when={rawMeta()}>
-            <span class="text-[10px] text-[#5a5a5a]">{formatSize(rawMeta()!.size)}</span>
-          </Show>
 
           <div class="flex items-center gap-1">
             {(["raw", "ai"] as const).map((m) => (
@@ -137,7 +134,7 @@ export default function PdfView(props: { viewportId?: string; tabId?: string }) 
                 }`}
                 onClick={() => setMode(m)}
               >
-                {m === "raw" ? "Raw" : "AI"}
+                {m === "raw" ? "PDF" : "Markdown"}
               </button>
             ))}
           </div>

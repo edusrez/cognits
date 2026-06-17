@@ -1,4 +1,4 @@
-import { createSignal, createResource, Show, createMemo } from "solid-js"
+import { createResource, Show, createMemo, createSignal } from "solid-js"
 import { escapeHtmlSafe } from "../lib/markdown"
 import { textFontSize, setTextFontSize, saveConfig } from "../stores/settings-store"
 
@@ -22,12 +22,6 @@ async function fetchFileContent(path: string): Promise<FileContent> {
   return res.json()
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
 export default function TextView(props: { viewportId?: string; tabId?: string }) {
   const filePath = () => props.tabId?.replace("text:", "") ?? ""
   const fileName = () => filePath().split("/").pop() ?? filePath()
@@ -48,9 +42,6 @@ export default function TextView(props: { viewportId?: string; tabId?: string })
     <div class="flex flex-col h-full">
       <div class="flex items-center justify-between px-4 py-2 shrink-0">
         <span class="text-[13px] text-[#9a9a9a] truncate">{fileName()}</span>
-        <Show when={data()}>
-          <span class="text-[10px] text-[#5a5a5a] shrink-0">{formatSize(data()!.size)}</span>
-        </Show>
       </div>
 
       <div class="flex-1 min-h-0 p-2 overflow-auto"
@@ -61,9 +52,11 @@ export default function TextView(props: { viewportId?: string; tabId?: string })
          setTextFontSize(Math.max(11, Math.min(24, textFontSize() + delta)))
          saveConfig()
        }}>
-        <Show when={!error() && !data.loading} fallback={
+        <Show when={!data.loading && !data.error} fallback={
           <Show when={data.loading} fallback={
-            <div class="text-[#e74c3c] px-4 py-3 text-[13px]">{error() || "Failed to load file"}</div>
+            <div class="text-[#e74c3c] px-4 py-3 text-[13px]">
+              {data.error?.message || "Failed to load file"}
+            </div>
           }>
             <div class="text-[#8b949e] px-4 py-3 text-[13px]">Loading...</div>
           </Show>
