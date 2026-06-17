@@ -29,6 +29,31 @@ export const [defaultLearnitViewport, setDefaultLearnitViewport] =
 export const [defaultFilesViewport, setDefaultFilesViewport] =
   createSignal<ViewportId>("1100")
 
+export type LinkTarget = "viewport" | "chat" | "write" | "learnit" | "files"
+
+let _linkingHandler: ((e: MouseEvent) => void) | null = null
+
+export function beginLinking(target: LinkTarget) {
+  if (_linkingHandler) document.removeEventListener("click", _linkingHandler)
+  setLinkingMode(true)
+  const handler = (e: MouseEvent) => {
+    const elem = (e.target as HTMLElement).closest("[data-viewport-id]") as HTMLElement | null
+    if (elem) {
+      const id = elem.getAttribute("data-viewport-id") as ViewportId
+      if (target === "viewport") setLinkedViewport(id)
+      else if (target === "chat") setDefaultChatViewport(id)
+      else if (target === "write") setDefaultWriteViewport(id)
+      else if (target === "learnit") setDefaultLearnitViewport(id)
+      else if (target === "files") setDefaultFilesViewport(id)
+    }
+    setLinkingMode(false)
+    if (_linkingHandler) document.removeEventListener("click", _linkingHandler)
+    _linkingHandler = null
+  }
+  _linkingHandler = handler
+  document.addEventListener("click", handler)
+}
+
 export const [llmProvider, setLLMProvider] =
   createSignal<LLMConfig["llmProvider"]>("deepseek")
 export const [llmAgentId, setLLMAgentId] = createSignal("orchestrator")

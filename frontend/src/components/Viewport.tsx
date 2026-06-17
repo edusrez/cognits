@@ -3,6 +3,7 @@ import { Dynamic } from "solid-js/web"
 import type { ViewportData } from "../stores/viewport-tree-store"
 import { activateTab, splitViewport, deleteViewport, canDeleteViewport, ctxMenu, setCtxMenu, removeDynamicTab, setFocusedViewportId, focusedViewportId, shiftHeld } from "../stores/viewport-tree-store"
 import { tabs, type ViewportId } from "../tabs"
+import { getSettingsScope } from "../lib/settings-sections"
 import { dragState, initiateTabDrag } from "../drag/drag-state"
 import { activeSessionId } from "../stores/session-store"
 import { linkingMode, hiddenBasicTabs } from "../stores/settings-store"
@@ -192,13 +193,7 @@ export default function Viewport(props: {
                         onClick: () => {
                           const tabMenu = m() as any
                           setCtxMenu(null)
-                          let settingsSuffix = tabMenu.tabId
-                          if (tabMenu.tabId.startsWith("report:")) settingsSuffix = "report"
-                          else if (tabMenu.tabId.startsWith("code:")) settingsSuffix = "code"
-                          else if (tabMenu.tabId.startsWith("text:")) settingsSuffix = "text"
-                          else if (tabMenu.tabId.startsWith("image:")) settingsSuffix = "image"
-                          else if (tabMenu.tabId.startsWith("pdf:")) settingsSuffix = "pdf"
-                          const tabId = `settings:${settingsSuffix}`
+                          const tabId = `settings:${getSettingsScope(tabMenu.tabId)}`
                           const label = `Settings (${tabMenu.tabLabel})`
                           import("../stores/viewport-tree-store").then((vts) => {
                             vts.addDynamicTab(props.id, { id: tabId, label, hidden: false })

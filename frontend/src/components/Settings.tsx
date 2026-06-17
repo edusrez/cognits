@@ -1,7 +1,7 @@
 import { Show, For, createMemo, createSignal, createEffect, onCleanup } from "solid-js"
 import {
   linkingMode,
-  setLinkingMode,
+  beginLinking,
   linkedViewport,
   setLinkedViewport,
   hiddenBasicTabs,
@@ -151,12 +151,14 @@ fetch("/api/agents")
   })
   .catch(() => {})
 
+import "./settings/sections" // auto-registers sections via side-effect
+import type { LinkTarget } from "../stores/settings-store"
+import { getMatchingSections } from "../lib/settings-sections"
+
 const basicTabs = [
   { id: "files", label: "Files" },
   { id: "sessions", label: "Sessions" },
 ] as const
-
-type LinkTarget = "viewport" | "chat" | "write" | "learnit" | "files"
 
 export default function Settings(props: { viewportId?: ViewportId; tabId?: string }) {
   const scopedTabId = createMemo(() => {
@@ -176,6 +178,13 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
     if (tabId && tabId.startsWith("pdf:")) return tabId.slice(4)
     return null
   })
+
+  const sections = createMemo(() =>
+    getMatchingSections({
+      linkedViewport: !!linkedViewport(),
+      tabId: linkedActiveTabId(),
+    })
+  )
 
   const conversationStarted = createMemo(() => currentMessages().length > 0)
 
@@ -334,44 +343,6 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
     saveConfig()
   }
 
-  // A single live listener: if linking mode is reactivated without having
-  // clicked, the previous one is removed before adding the new one (and on
-  // unmount), to avoid accumulating zombie listeners on document.
-  let linkingHandler: ((e: MouseEvent) => void) | null = null
-
-  const removeLinkingHandler = () => {
-    if (linkingHandler) {
-      document.removeEventListener("click", linkingHandler)
-      linkingHandler = null
-    }
-  }
-
-  onCleanup(removeLinkingHandler)
-
-  const beginLinking = (target: LinkTarget) => {
-    removeLinkingHandler()
-    setLinkingMode(true)
-
-    const handler = (e: MouseEvent) => {
-      const elem = (e.target as HTMLElement).closest(
-        "[data-viewport-id]",
-      ) as HTMLElement | null
-      if (elem) {
-        const id = elem.getAttribute("data-viewport-id") as ViewportId
-        if (target === "viewport") setLinkedViewport(id)
-        else if (target === "chat") setDefaultChatViewport(id)
-        else if (target === "write") setDefaultWriteViewport(id)
-        else if (target === "learnit") setDefaultLearnitViewport(id)
-        else if (target === "files") setDefaultFilesViewport(id)
-      }
-      setLinkingMode(false)
-      removeLinkingHandler()
-    }
-
-    linkingHandler = handler
-    document.addEventListener("click", handler)
-  }
-
   return (
     <div class="p-3 flex flex-col gap-3 text-[13px]">
       <Show when={!linkedViewport() && !scopedTabId()}>
@@ -393,83 +364,16 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
         <p class="text-[#9a9a9a]">Click on a viewport to link it.</p>
       </Show>
 
-      <Show when={linkedViewport() && linkedActiveTabId() === "sessions"}>
-        <CollapsibleSection title="Chat and Write Viewports">
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-[#9a9a9a]">Viewport linked to Chat</span>
-              <button
-                class="border border-white/20 px-3 py-1 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
-                onClick={() => beginLinking("chat")}
-                disabled={linkingMode()}
-              >
-                Change
-              </button>
-            </div>
+      {/* ── Registry-driven sections ── */}
+      <For each={sections()}>
+        {(section) => section.render()}
+      </For>
 
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-[#9a9a9a]">Viewport linked to Write</span>
-              <button
-                class="border border-white/20 px-3 py-1 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
-                onClick={() => beginLinking("write")}
-                disabled={linkingMode()}
-              >
-                Change
-              </button>
-            </div>
-          </div>
-        </CollapsibleSection>
-      </Show>
-
-      <Show when={linkedViewport() && linkedActiveTabId() === "learnit"}>
-        <CollapsibleSection title="Project Files">
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-[#9a9a9a]">Viewport linked to Reports &amp; Notes</span>
-              <button
-                class="border border-white/20 px-3 py-1 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
-                onClick={() => beginLinking("learnit")}
-                disabled={linkingMode()}
-              >
-                Change
-              </button>
-            </div>
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-[#9a9a9a]">Viewport linked to Files</span>
-              <button
-                class="border border-white/20 px-3 py-1 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
-                onClick={() => beginLinking("files")}
-                disabled={linkingMode()}
-              >
-                Change
-              </button>
-            </div>
-          </div>
-        </CollapsibleSection>
-      </Show>
-
-      <Show when={linkedViewport() && linkedActiveTabId() === "files"}>
-        <CollapsibleSection title="Files">
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-[#9a9a9a]">Viewport linked to</span>
-              <button
-                class="border border-white/20 px-3 py-1 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
-                onClick={() => beginLinking("files")}
-                disabled={linkingMode()}
-              >
-                Change
-              </button>
-            </div>
-          </div>
-        </CollapsibleSection>
-      </Show>
-
+      {/* ── PDF AI Vision (needs component-level pdfPath) ── */}
       <Show when={linkedViewport() && (scopedTabId()?.startsWith("pdf:") || linkedActiveTabId()?.startsWith("pdf:"))}>
         <CollapsibleSection title="AI Vision">
           <div class="flex flex-col gap-2">
 
-            {/* Quality preset */}
             <div class="flex items-center justify-between gap-2">
               <label class="text-[#9a9a9a]">Quality preset</label>
             </div>
@@ -483,7 +387,6 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
               onChange={(v) => applyDoclingPreset(v as "fast" | "balanced" | "accurate")}
             />
 
-            {/* Table accuracy */}
             <div class="flex items-center justify-between gap-2">
               <label class="text-[#9a9a9a] text-[13px]">Table accuracy</label>
             </div>
@@ -501,7 +404,6 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
               }}
             />
 
-            {/* On/Off toggles */}
             <For each={[
               ["OCR", doclingOcr, setDoclingOcr] as const,
               ["Code enrichment", doclingCodeEnrich, setDoclingCodeEnrich] as const,
@@ -531,7 +433,6 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
               )}
             </For>
 
-            {/* Image resolution slider */}
             <SliderField
               label="Image resolution"
               value={doclingImageScale()}
@@ -547,7 +448,6 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
               formatValue={(v) => v.toFixed(1) + "x"}
             />
 
-            {/* Apply button */}
             <Show when={doclingDirty() && pdfPath()}>
               <div class="border-t border-white/5 pt-2 mt-1">
                 <p class="text-[10px] text-[#5a5a5a] mb-1">
@@ -564,64 +464,6 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                 </button>
               </div>
             </Show>
-          </div>
-        </CollapsibleSection>
-      </Show>
-
-      <Show when={linkedViewport() && linkedActiveTabId()?.startsWith("pdf:")}>
-        <CollapsibleSection title="Display">
-          <div class="flex flex-col gap-2">
-            <SliderField
-              label="Raw zoom"
-              value={pdfZoom()}
-              onInput={(v) => { setPdfZoom(v); saveConfig() }}
-              min={50}
-              max={400}
-              step={10}
-              formatValue={(v) => `${v}%`}
-            />
-            <SliderField
-              label="AI text size"
-              value={pdfAIFontSize()}
-              onInput={(v) => { setPdfAIFontSize(v); saveConfig() }}
-              min={11}
-              max={24}
-              step={1}
-              formatValue={(v) => `${v}px`}
-            />
-          </div>
-        </CollapsibleSection>
-      </Show>
-
-      <Show when={linkedViewport() && linkedActiveTabId() === "write"}>
-        <CollapsibleSection title="Write">
-          <div class="flex flex-col gap-2">
-            <div class="text-[#9a9a9a]">Spell Check Languages</div>
-            {(["es", "en"] as const).map((lang) => {
-              const active = () => writeLangs().includes(lang)
-              return (
-                <button
-                  class="w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 transition-colors cursor-pointer"
-                  onClick={() => {
-                    const langs = writeLangs()
-                    if (active()) {
-                      setWriteLangs([])
-                    } else {
-                      setWriteLangs([lang])
-                    }
-                    saveConfig()
-                  }}
-                >
-                  <span
-                    class="inline-block w-3.5 h-3.5 border border-white/30 shrink-0"
-                    classList={{ "bg-white/20": active() }}
-                  />
-                  <span classList={{ "text-[#6a6a6a]": !active() }}>
-                    {lang === "es" ? "Spanish" : "English"}
-                  </span>
-                </button>
-              )
-            })}
           </div>
         </CollapsibleSection>
       </Show>
@@ -1044,131 +886,6 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Display">
-          <div class="flex flex-col gap-2">
-            <SliderField
-              label="Text size"
-              value={chatFontSize()}
-              onInput={(v) => { setChatFontSize(v); saveConfig() }}
-              min={11}
-              max={24}
-              step={1}
-              formatValue={(v) => `${v}px`}
-            />
-            <SliderField
-              label="Typewriter speed"
-              value={typewriterSpeed()}
-              onInput={(v) => { setTypewriterSpeed(v); saveConfig() }}
-              min={0.01}
-              max={10}
-              step={0.01}
-              formatValue={(v) => `${v.toFixed(2)}ms`}
-            />
-
-            <div class="flex flex-col gap-1 mt-1">
-              <button
-                class="w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 transition-colors cursor-pointer"
-                onClick={() => {
-                  setDisplayThinking((p) => !p)
-                  saveConfig()
-                }}
-              >
-                <span
-                  class="inline-block w-3.5 h-3.5 border border-white/30 shrink-0"
-                  classList={{ "bg-white/20": displayThinking() }}
-                />
-                <span classList={{ "text-[#6a6a6a]": !displayThinking() }}>
-                  Show thinking
-                </span>
-              </button>
-            </div>
-          </div>
-        </CollapsibleSection>
-      </Show>
-
-      <Show when={linkedViewport() && linkedActiveTabId()?.startsWith("code:")}>
-        <CollapsibleSection title="Display">
-          <div class="flex flex-col gap-2">
-            <SliderField
-              label="Text size"
-              value={codeFontSize()}
-              onInput={(v) => { setCodeFontSize(v); saveConfig() }}
-              min={11}
-              max={24}
-              step={1}
-              formatValue={(v) => `${v}px`}
-            />
-          </div>
-        </CollapsibleSection>
-      </Show>
-
-      <Show when={linkedViewport() && linkedActiveTabId()?.startsWith("text:")}>
-        <CollapsibleSection title="Display">
-          <div class="flex flex-col gap-2">
-            <SliderField
-              label="Text size"
-              value={textFontSize()}
-              onInput={(v) => { setTextFontSize(v); saveConfig() }}
-              min={11}
-              max={24}
-              step={1}
-              formatValue={(v) => `${v}px`}
-            />
-          </div>
-        </CollapsibleSection>
-      </Show>
-
-      <Show when={linkedViewport() && linkedActiveTabId()?.startsWith("note:")}>
-        <CollapsibleSection title="Display">
-          <div class="flex flex-col gap-2">
-            <SliderField
-              label="Text size"
-              value={noteFontSize()}
-              onInput={(v) => { setNoteFontSize(v); saveConfig() }}
-              min={11}
-              max={24}
-              step={1}
-              formatValue={(v) => `${v}px`}
-            />
-            <div class="text-[#9a9a9a]">Note mode</div>
-            {(["edit", "view"] as const).map((mode) => {
-              const active = () => noteMode() === mode
-              return (
-                <button
-                  class="w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 transition-colors cursor-pointer"
-                  onClick={() => {
-                    setNoteMode(mode)
-                    saveConfig()
-                  }}
-                >
-                  <span
-                    class="inline-block w-3.5 h-3.5 border border-white/30 shrink-0"
-                    classList={{ "bg-white/20": active() }}
-                  />
-                  <span classList={{ "text-[#6a6a6a]": !active() }}>
-                    {mode === "edit" ? "Edit" : "View (read-only)"}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        </CollapsibleSection>
-      </Show>
-
-      <Show when={linkedViewport() && linkedActiveTabId()?.startsWith("report:")}>
-        <CollapsibleSection title="Display">
-          <div class="flex flex-col gap-2">
-            <SliderField
-              label="Text size"
-              value={reportFontSize()}
-              onInput={(v) => { setReportFontSize(v); saveConfig() }}
-              min={11}
-              max={24}
-              step={1}
-              formatValue={(v) => `${v}px`}
-            />
-          </div>
-        </CollapsibleSection>
       </Show>
 
       <CollapsibleSection title="General Settings">

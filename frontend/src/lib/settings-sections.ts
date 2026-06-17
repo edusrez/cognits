@@ -1,0 +1,51 @@
+/** Declarative registry of Settings sections.
+ * Add a section here once — Settings.tsx and the context menu auto-discover it. */
+import type { JSXElement } from "solid-js"
+
+export interface SectionContext {
+  linkedViewport: boolean
+  tabId: string | null
+}
+
+export interface SettingSection {
+  id: string
+  /** Returns true when this section should be visible in the Settings panel. */
+  matches(ctx: SectionContext): boolean
+  /** Returns the JSX for this section. */
+  render(): JSXElement
+}
+
+/** All setting sections in priority order. */
+const registry: SettingSection[] = []
+
+export function registerSection(section: SettingSection) {
+  registry.push(section)
+}
+
+export function getAllSections(): ReadonlyArray<SettingSection> {
+  return registry
+}
+
+export function getMatchingSections(ctx: SectionContext): SettingSection[] {
+  return registry.filter((s) => s.matches(ctx))
+}
+
+/** True if any section matches this tab (used by Viewport context menu). */
+export function hasSettings(tabId: string): boolean {
+  return registry.some((s) => s.matches({ linkedViewport: true, tabId }))
+}
+
+/** Strip dynamic suffixes from tab IDs for the settings scope.
+ *  "report:abc123"  → "report"
+ *  "code:/path/py"  → "code"
+ *  "pdf:/path/p.pdf" → "pdf"
+ *  "files"          → "files"
+ */
+export function getSettingsScope(tabId: string): string {
+  for (const prefix of [
+    "report:", "note:", "code:", "text:", "image:", "pdf:", "settings:",
+  ]) {
+    if (tabId.startsWith(prefix)) return prefix.slice(0, -1)
+  }
+  return tabId
+}
