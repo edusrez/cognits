@@ -79,6 +79,7 @@ export const [noteMode, setNoteMode] = createSignal("edit")
 export const [noteFontSize, setNoteFontSize] = createSignal(15)
 export const [reportFontSize, setReportFontSize] = createSignal(15)
 export const [codeFontSize, setCodeFontSize] = createSignal(15)
+export const [codeWordWrap, setCodeWordWrap] = createSignal(false)
 export const [textFontSize, setTextFontSize] = createSignal(15)
 export const [pdfZoom, setPdfZoom] = createSignal(150)
 export const [pdfAIFontSize, setPdfAIFontSize] = createSignal(15)
@@ -228,6 +229,7 @@ export async function loadConfig() {
     if (cfg.noteFontSize) setNoteFontSize(cfg.noteFontSize)
     if (cfg.reportFontSize) setReportFontSize(cfg.reportFontSize)
     if (cfg.codeFontSize) setCodeFontSize(cfg.codeFontSize)
+    if (cfg.codeWordWrap !== undefined) setCodeWordWrap(cfg.codeWordWrap)
     if (cfg.textFontSize) setTextFontSize(cfg.textFontSize)
     if (cfg.pdfZoom) setPdfZoom(cfg.pdfZoom)
     if (cfg.pdfAIFontSize) setPdfAIFontSize(cfg.pdfAIFontSize)
@@ -277,6 +279,7 @@ export function saveConfig() {
           noteFontSize: noteFontSize(),
           reportFontSize: reportFontSize(),
           codeFontSize: codeFontSize(),
+          codeWordWrap: codeWordWrap(),
           textFontSize: textFontSize(),
           pdfZoom: pdfZoom(),
           pdfAIFontSize: pdfAIFontSize(),

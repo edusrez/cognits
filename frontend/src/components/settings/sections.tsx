@@ -5,6 +5,7 @@
 import { Show } from "solid-js"
 import { registerSection } from "../../lib/settings-sections"
 import SliderField from "../SliderField"
+import Dropdown from "../Dropdown"
 import CollapsibleSection from "../CollapsibleSection"
 import {
   chatFontSize, setChatFontSize,
@@ -21,6 +22,8 @@ import {
   saveConfig,
   beginLinking,
   linkingMode,
+  codeWordWrap,
+  setCodeWordWrap,
 } from "../../stores/settings-store"
 
 // ── Global ──
@@ -195,6 +198,14 @@ registerSection({
         <SliderField label="Text size" value={codeFontSize()}
           onInput={(v) => { setCodeFontSize(v); saveConfig() }} min={11} max={24} step={1}
           formatValue={(v) => `${v}px`} />
+        <div class="flex items-center justify-between gap-2">
+          <label class="text-[#9a9a9a] text-[13px]">Word wrap</label>
+        </div>
+        <Dropdown
+          value={codeWordWrap() ? "on" : "off"}
+          options={[{ value: "on", label: "On" }, { value: "off", label: "Off" }]}
+          onChange={(v) => { setCodeWordWrap(v === "on"); saveConfig() }}
+        />
       </div>
     </CollapsibleSection>
   ),

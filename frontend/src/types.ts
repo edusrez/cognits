@@ -65,6 +65,7 @@ export interface LLMConfig {
   noteFontSize: number
   reportFontSize: number
   codeFontSize: number
+  codeWordWrap: boolean
   textFontSize: number
   pdfZoom: number
   pdfAIFontSize: number

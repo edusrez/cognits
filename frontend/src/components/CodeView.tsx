@@ -1,7 +1,8 @@
 import { createSignal, createResource, Show, createMemo } from "solid-js"
 import { highlightCode } from "../lib/markdown"
-import { codeFontSize, setCodeFontSize, saveConfig } from "../stores/settings-store"
+import { codeFontSize, setCodeFontSize, codeWordWrap, setCodeWordWrap, saveConfig } from "../stores/settings-store"
 import MarkdownView from "./MarkdownView"
+import ContextMenu from "./ContextMenu"
 import "../highlight-theme.css"
 
 interface FileContent {
@@ -33,6 +34,7 @@ export default function CodeView(props: { viewportId?: string; tabId?: string })
   const language = createMemo(() => data()?.language ?? "")
   const isMarkdown = createMemo(() => language() === "markdown")
   const [mdMode, setMdMode] = createSignal<"plain" | "markdown">("plain")
+  const [wrapMenu, setWrapMenu] = createSignal<{ x: number; y: number } | null>(null)
 
   const highlightedHtml = createMemo(() => {
     const d = data()
@@ -63,6 +65,11 @@ export default function CodeView(props: { viewportId?: string; tabId?: string })
       </div>
 
       <div class="flex-1 min-h-0 p-2 overflow-auto"
+           onContextMenu={(e) => {
+             if (isMarkdown() && mdMode() === "markdown") return
+             e.preventDefault()
+             setWrapMenu({ x: e.clientX, y: e.clientY })
+           }}
            onWheel={(e) => {
              if (!e.shiftKey) return
              e.preventDefault()
@@ -84,7 +91,7 @@ export default function CodeView(props: { viewportId?: string; tabId?: string })
               <MarkdownView content={data()!.content ?? ""} />
             </div>
           }>
-            <pre class="m-0" style={{ "tab-size": "4", "font-size": `${codeFontSize()}px` }}>
+            <pre class="m-0" style={{ "tab-size": "4", "font-size": `${codeFontSize()}px`, "white-space": codeWordWrap() ? "pre-wrap" : "pre" }}>
               <code class="block px-4 py-3 hljs" innerHTML={highlightedHtml()} style={{ "font-family": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace" }} />
             </pre>
           </Show>
@@ -95,6 +102,22 @@ export default function CodeView(props: { viewportId?: string; tabId?: string })
         <div class="text-[10px] text-[#f0c040] px-3 py-1 border-t border-white/5 shrink-0 bg-white/[0.02]">
           File truncated at 5 MB
         </div>
+      </Show>
+
+      <Show when={wrapMenu()}>
+        <ContextMenu
+          x={wrapMenu()!.x}
+          y={wrapMenu()!.y}
+          onClose={() => setWrapMenu(null)}
+          items={[{
+            label: codeWordWrap() ? "Unwrap lines" : "Wrap lines",
+            onClick: () => {
+              setCodeWordWrap(!codeWordWrap())
+              saveConfig()
+              setWrapMenu(null)
+            },
+          }]}
+        />
       </Show>
     </div>
   )
