@@ -89,19 +89,27 @@ hljs.registerLanguage("proto", protobuf)
 // (incomplete markdown closure during streaming) + DOMPurify sanitization.
 // All HTML derived from the web or LLM must go through here.
 const marked = new Marked(
-  { headerIds: true, mangle: false } as any,
   markedHighlight({
     highlight(code, lang) {
       if (lang && hljs.getLanguage(lang)) {
         return hljs.highlight(code, { language: lang }).value
       }
-      // Without a declared language, don't highlight: highlightAuto tests ~20
-      // lexers per block and in streaming it would run on every re-parse.
-      // marked-highlight inserts the return as-is, so escape it.
       return escapeHtml(code)
     },
   }),
 )
+
+// marked v18 removed headerIds — generate them via custom renderer
+marked.use({
+  renderer: {
+    heading({ tokens, depth }) {
+      const raw = (this.parser as any).parseInline(tokens)
+      const text = raw.replace(/<[^>]*>/g, "")
+      const id = text.toLowerCase().replace(/[^\w]+/g, "-").replace(/^-|-$/g, "")
+      return `<h${depth} id="${id}">${raw}</h${depth}>`
+    },
+  },
+})
 
 function escapeHtml(code: string): string {
   return code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
