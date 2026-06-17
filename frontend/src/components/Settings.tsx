@@ -127,6 +127,10 @@ function formatNumber(n: number): string {
 
 function tabDisplayName(tabId: string | null): string | null {
   if (!tabId) return null
+  if (tabId.startsWith("code:")) return "Code"
+  if (tabId.startsWith("text:")) return "Text"
+  if (tabId.startsWith("pdf:")) return "PDF"
+  if (tabId.startsWith("image:")) return "Image"
   if (tabId.startsWith("note:")) return "Note"
   if (tabId.startsWith("report:")) return "Web Report"
   const names: Record<string, string> = {
