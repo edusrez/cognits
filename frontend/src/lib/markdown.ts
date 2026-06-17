@@ -89,6 +89,7 @@ hljs.registerLanguage("proto", protobuf)
 // (incomplete markdown closure during streaming) + DOMPurify sanitization.
 // All HTML derived from the web or LLM must go through here.
 const marked = new Marked(
+  { headerIds: true, mangle: false } as any,
   markedHighlight({
     highlight(code, lang) {
       if (lang && hljs.getLanguage(lang)) {
