@@ -15,11 +15,13 @@ class DoclingEngine:
         self.ready = asyncio.Event()
         self.error: str | None = None
         self._converter = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     @classmethod
     def start_background(cls) -> "DoclingEngine":
         engine = cls()
-        loop = asyncio.get_running_loop()
+        engine._loop = asyncio.get_running_loop()
+        loop = engine._loop
 
         def _init() -> None:
             try:
@@ -72,4 +74,8 @@ class DoclingEngine:
         return self._converter
 
     def shutdown(self) -> None:
+        if not self.ready.is_set():
+            self.error = "shutdown"
+            if self._loop:
+                self._loop.call_soon_threadsafe(self.ready.set)
         self._executor.shutdown(wait=False, cancel_futures=True)

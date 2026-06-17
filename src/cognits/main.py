@@ -225,7 +225,7 @@ class CognitsTUI(App):
                 rag = self._state.rag
             if rag is not None:
                 # Phase 1: download
-                while not rag.ready.is_set() and not rag.error and rag.progress < 100:
+                while not rag.ready.is_set() and not rag.error:
                     self.query_one("#download-label", Label).update(
                         "Downloading BGE-M3\u2026"
                     )

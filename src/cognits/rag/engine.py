@@ -14,6 +14,7 @@ import asyncio
 import logging
 import multiprocessing
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -37,11 +38,13 @@ class RagEngine:
         self.progress: int = 0
         self._model = None
         self._collection = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     @classmethod
     def start_background(cls) -> "RagEngine":
         engine = cls(paths.data_dir() / "rag" / "chroma_db")
-        loop = asyncio.get_running_loop()
+        engine._loop = asyncio.get_running_loop()
+        loop = engine._loop
 
         def _init() -> None:
             try:
@@ -131,7 +134,14 @@ class RagEngine:
                 args=(error_queue, progress_val),
             )
             proc.start()
+            start = proc  # keep reference
+            deadline = time.monotonic() + 300  # 5 min timeout
             while proc.is_alive():
+                if time.monotonic() > deadline:
+                    log.warning("rag: warm-cache subprocess timed out after 5 min")
+                    proc.terminate()
+                    proc.join(timeout=5)
+                    break
                 proc.join(timeout=0.15)
                 self.progress = progress_val.value
             self.progress = 100
@@ -177,6 +187,10 @@ class RagEngine:
         )
 
     def shutdown(self) -> None:
+        if not self.ready.is_set():
+            self.error = "shutdown"
+            if self._loop:
+                self._loop.call_soon_threadsafe(self.ready.set)
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     def _require_ready(self) -> None:
