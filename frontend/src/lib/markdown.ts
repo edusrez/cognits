@@ -111,8 +111,11 @@ function escapeHtml(code: string): string {
 // (it's an SPA) and without exposing window.opener to the target page.
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node.tagName === "A" && node.hasAttribute("href")) {
-    node.setAttribute("target", "_blank")
-    node.setAttribute("rel", "noopener noreferrer")
+    const href = node.getAttribute("href")!
+    if (!href.startsWith("#") && !href.startsWith("/")) {
+      node.setAttribute("target", "_blank")
+      node.setAttribute("rel", "noopener noreferrer")
+    }
   }
 })
 
@@ -128,7 +131,9 @@ export function renderMarkdown(text: string): string {
     mdCache.set(text, hit)
     return hit
   }
-  const html = DOMPurify.sanitize(marked.parse(remend(text), { async: false }))
+  const html = DOMPurify.sanitize(marked.parse(remend(text), { async: false }),
+    { ADD_ATTR: ["id"] },
+  )
   if (mdCache.size >= MD_CACHE_MAX) {
     mdCache.delete(mdCache.keys().next().value!)
   }
