@@ -1,0 +1,83 @@
+/* Cognits dark syntax theme — matches app palette */
+
+.hljs {
+  color: #e0e0e0;
+  background: transparent;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #5a5a5a;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-type,
+.hljs-built_in,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: #e74c3c;
+}
+
+.hljs-string,
+.hljs-addition,
+.hljs-attribute {
+  color: #8b949e;
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-boolean,
+.hljs-regexp {
+  color: #6a6a6a;
+}
+
+.hljs-title,
+.hljs-function .hljs-title,
+.hljs-section,
+.hljs-name {
+  color: #e0e0e0;
+  font-weight: bold;
+}
+
+.hljs-attr,
+.hljs-params,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: #9a9a9a;
+}
+
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link {
+  color: #8b949e;
+}
+
+.hljs-deletion {
+  color: #e74c3c;
+}
+
+.hljs-meta,
+.hljs-doctag {
+  color: #6a6a6a;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: bold;
+}
+
+.hljs-tag,
+.hljs-subst {
+  color: #e0e0e0;
+}
+
+.hljs-formula {
+  color: #9a9a9a;
+}

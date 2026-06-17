@@ -1,6 +1,6 @@
 import { createSignal, createResource, Show, createMemo } from "solid-js"
 import { highlightCode } from "../lib/markdown"
-import "highlight.js/styles/github-dark.css"
+import "../highlight-theme.css"
 
 interface FileContent {
   path: string

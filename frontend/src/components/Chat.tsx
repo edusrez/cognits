@@ -1,5 +1,5 @@
 import { For, Index, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
-import "highlight.js/styles/github-dark.css"
+import "../highlight-theme.css"
 import { currentMessages as messages, isStreaming, currentToolStatus, currentChatError, sessionUsage, mainSessionPromptTokens, toolFaviconsBySession } from "../stores/chat-store"
 import { activeSessionId } from "../stores/session-store"
 import { chatFontSize, displayThinking } from "../stores/settings-store"
