@@ -68,6 +68,7 @@ export default function CodeView(props: { viewportId?: string; tabId?: string })
            onContextMenu={(e) => {
              if (isMarkdown() && mdMode() === "markdown") return
              e.preventDefault()
+             e.stopPropagation()
              setWrapMenu({ x: e.clientX, y: e.clientY })
            }}
            onWheel={(e) => {
