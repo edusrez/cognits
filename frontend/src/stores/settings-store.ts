@@ -3,7 +3,13 @@ import type { ViewportId } from "../tabs"
 import type { AgentDef, LLMConfig, SessionConfig, SubagentConfig } from "../types"
 import { activeSessionId } from "./session-store"
 import { sessionUsage } from "./chat-store"
-import { resolveViewportLink, onViewportReplaced, getViewportData } from "./viewport-tree-store"
+import { resolveViewportLink, onViewportReplaced, getViewportData,
+  storedLinkedViewport, setLinkedViewport,
+  storedDefaultChatViewport, setDefaultChatViewport,
+  storedDefaultWriteViewport, setDefaultWriteViewport,
+  storedDefaultLearnitViewport, setDefaultLearnitViewport,
+  storedDefaultFilesViewport, setDefaultFilesViewport,
+} from "./viewport-tree-store"
 
 // ── Pricing + token-cost helpers (used by the Chat Info section) ──
 export const PRICES: Record<string, { inputCacheHit: number; inputCacheMiss: number; output: number }> = {
@@ -22,20 +28,13 @@ export function formatNumber(n: number): string {
 export const [linkingMode, setLinkingMode] = createSignal(false)
 
 // ── Viewport links ──
-// Each link stores the user's intended viewport id (storedX) and exposes a
-// lazy-resolve function (X) that returns a viewport that currently exists.
-// resolveViewportLink falls back to a viewport holding a given tab kind, then
-// to the first leaf — so links survive splits, deletes, desktop switches, and
-// new-desktop creation that invalidate the stored id. The setters keep their
-// public names so beginLinking / loadConfig are unchanged.
-// NOTE: these are PLAIN SIGNALS + FUNCTIONS, not reactive memos. SolidJS
-// produce notifies all store listeners on ANY mutation, so a memo that reads
-// viewportMap creates infinite recursion with any effect that writes to the
-// store. The lazy resolve checks viewportMap existence only at call time and
-// does not create reactive dependencies.
+// Each link stores the user's intended viewport id (storedX in viewport-tree-store)
+// and exposes a lazy-resolve function (X) that returns a viewport that currently
+// exists. storedX are migrated by splitViewport/deleteViewport BEFORE any store
+// write so the migration survives the too-much-recursion crash.
+//
+// NOTE: these are PLAIN FUNCTIONS, not reactive memos — see setBaseSettingsTabLabel.
 
-export const [storedLinkedViewport, setLinkedViewport] =
-  createSignal<ViewportId | null>("1100")
 export function linkedViewport(): ViewportId | null {
   const id = storedLinkedViewport()
   if (!id) return null
@@ -55,30 +54,22 @@ export function toggleBasicTab(tabId: string) {
   })
 }
 
-export const [storedDefaultChatViewport, setDefaultChatViewport] =
-  createSignal<ViewportId>("1100")
 export function defaultChatViewport(): ViewportId {
   const id = storedDefaultChatViewport()
   if (getViewportData(id)) return id
   return resolveViewportLink(id, "sessions")
 }
 
-export const [storedDefaultWriteViewport, setDefaultWriteViewport] =
-  createSignal<ViewportId>("1101")
 export function defaultWriteViewport(): ViewportId {
   const id = storedDefaultWriteViewport()
   if (getViewportData(id)) return id
   return resolveViewportLink(id, null)
 }
-export const [storedDefaultLearnitViewport, setDefaultLearnitViewport] =
-  createSignal<ViewportId>("1100")
 export function defaultLearnitViewport(): ViewportId {
   const id = storedDefaultLearnitViewport()
   if (getViewportData(id)) return id
   return resolveViewportLink(id, "learnit")
 }
-export const [storedDefaultFilesViewport, setDefaultFilesViewport] =
-  createSignal<ViewportId>("1100")
 export function defaultFilesViewport(): ViewportId {
   const id = storedDefaultFilesViewport()
   if (getViewportData(id)) return id

@@ -42,6 +42,21 @@ export const [shiftHeld, setShiftHeld] = createSignal(false)
 // key → linkedViewport memo re-evaluates → effect re-fires → loop).
 export const [baseSettingsTabLabel, setBaseSettingsTabLabel] = createSignal("Settings")
 
+// Viewport-link signals — stored here (not settings-store) so splitViewport/
+// deleteViewport can migrate them BEFORE any store write. The store writes
+// trigger reactive flushes that overflow the stack; if migration happens
+// after, the crash prevents it and storedX stay stale.
+export const [storedLinkedViewport, setLinkedViewport] =
+  createSignal<ViewportId | null>("1100")
+export const [storedDefaultChatViewport, setDefaultChatViewport] =
+  createSignal<ViewportId>("1100")
+export const [storedDefaultWriteViewport, setDefaultWriteViewport] =
+  createSignal<ViewportId>("1101")
+export const [storedDefaultLearnitViewport, setDefaultLearnitViewport] =
+  createSignal<ViewportId>("1100")
+export const [storedDefaultFilesViewport, setDefaultFilesViewport] =
+  createSignal<ViewportId>("1100")
+
 export function rootId(): ViewportId {
   return rootIdSignal()
 }
@@ -197,7 +212,6 @@ export function moveTab(
 const sessionTabIds = ["chat", "write"]
 
 export function placeSessionTabs(chatVp: ViewportId, writeVp: ViewportId) {
-  console.log("[placeSessionTabs] chat→", chatVp, "write→", writeVp)
   setViewportMap(
     produce((m) => {
       for (const vp of Object.values(m)) {
@@ -262,7 +276,16 @@ export function splitViewport(vpId: ViewportId, direction: "h" | "v") {
   const rightId = vpId + "1"
   const existing = viewportMap[vpId]
   if (!existing) return
-  console.log("[splitViewport]", vpId, "→ left", leftId, "right", rightId, "| tabs:", existing.tabs.map(t=>t.id))
+
+  // Migrate stored links to the successor BEFORE any store write. The store
+  // writes trigger reactive flushes that overflow the stack; we need the
+  // migration to survive that crash. These are plain signal writes — zero
+  // reactive impact, no store involved.
+  if (storedLinkedViewport() === vpId) setLinkedViewport(leftId)
+  if (storedDefaultChatViewport() === vpId) setDefaultChatViewport(leftId)
+  if (storedDefaultWriteViewport() === vpId) setDefaultWriteViewport(leftId)
+  if (storedDefaultLearnitViewport() === vpId) setDefaultLearnitViewport(leftId)
+  if (storedDefaultFilesViewport() === vpId) setDefaultFilesViewport(leftId)
 
   // The new split inherits the split viewport's id, so the reference
   // in the parent (if any) remains valid without touching it.
@@ -322,10 +345,12 @@ export function deleteViewport(vpId: ViewportId) {
     absorbTabs(siblingId, dying.tabs, dying.activeTabId)
   }
 
-  // Migrate stored links BEFORE the produce blocks — the produce's reactive
-  // flush can overflow the stack, and we need the migration to survive.
-  // siblingId already exists in viewportMap (it's the absorbing viewport).
-  notifyViewportReplaced(vpId, siblingId)
+  // Migrate stored links BEFORE any store write (same rationale as splitViewport).
+  if (storedLinkedViewport() === vpId) setLinkedViewport(siblingId)
+  if (storedDefaultChatViewport() === vpId) setDefaultChatViewport(siblingId)
+  if (storedDefaultWriteViewport() === vpId) setDefaultWriteViewport(siblingId)
+  if (storedDefaultLearnitViewport() === vpId) setDefaultLearnitViewport(siblingId)
+  if (storedDefaultFilesViewport() === vpId) setDefaultFilesViewport(siblingId)
 
   setViewportMap(
     produce((m) => {
@@ -384,7 +409,6 @@ function findParentSplit(childId: ViewportId): ViewportId | null {
 }
 
 export function addDynamicTab(vpId: ViewportId, tab: { id: string; label: string; hidden: boolean }) {
-  console.log("[addDynamicTab]", tab.id, "→ vp", vpId)
   setViewportMap(
     produce((m) => {
       const vp = m[vpId]
