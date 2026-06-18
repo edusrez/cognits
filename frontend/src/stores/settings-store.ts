@@ -3,7 +3,7 @@ import type { ViewportId } from "../tabs"
 import type { AgentDef, LLMConfig, SessionConfig, SubagentConfig } from "../types"
 import { activeSessionId } from "./session-store"
 import { sessionUsage } from "./chat-store"
-import { resolveViewportLink, onViewportReplaced, layoutVersion } from "./viewport-tree-store"
+import { resolveViewportLink, onViewportReplaced, getViewportData } from "./viewport-tree-store"
 
 // ── Pricing + token-cost helpers (used by the Chat Info section) ──
 export const PRICES: Record<string, { inputCacheHit: number; inputCacheMiss: number; output: number }> = {
@@ -23,19 +23,25 @@ export const [linkingMode, setLinkingMode] = createSignal(false)
 
 // ── Viewport links ──
 // Each link stores the user's intended viewport id (storedX) and exposes a
-// resolved memo (X) that always returns a viewport that currently exists.
+// lazy-resolve function (X) that returns a viewport that currently exists.
 // resolveViewportLink falls back to a viewport holding a given tab kind, then
 // to the first leaf — so links survive splits, deletes, desktop switches, and
 // new-desktop creation that invalidate the stored id. The setters keep their
 // public names so beginLinking / loadConfig are unchanged.
+// NOTE: these are PLAIN SIGNALS + FUNCTIONS, not reactive memos. SolidJS
+// produce notifies all store listeners on ANY mutation, so a memo that reads
+// viewportMap creates infinite recursion with any effect that writes to the
+// store. The lazy resolve checks viewportMap existence only at call time and
+// does not create reactive dependencies.
+
 export const [storedLinkedViewport, setLinkedViewport] =
   createSignal<ViewportId | null>("1100")
-export const linkedViewport = createMemo<ViewportId | null>(() => {
-  layoutVersion() // re-resolve on any structural change (split/delete/load/swap)
+export function linkedViewport(): ViewportId | null {
   const id = storedLinkedViewport()
   if (!id) return null
+  if (getViewportData(id)) return id
   return resolveViewportLink(id, null)
-})
+}
 
 export const [hiddenBasicTabs, setHiddenBasicTabs] = createSignal(
   new Set<string>(),
@@ -51,29 +57,33 @@ export function toggleBasicTab(tabId: string) {
 
 export const [storedDefaultChatViewport, setDefaultChatViewport] =
   createSignal<ViewportId>("1100")
-export const defaultChatViewport = createMemo(() => {
-  layoutVersion()
-  return resolveViewportLink(storedDefaultChatViewport(), "sessions")
-})
+export function defaultChatViewport(): ViewportId {
+  const id = storedDefaultChatViewport()
+  if (getViewportData(id)) return id
+  return resolveViewportLink(id, "sessions")
+}
 
 export const [storedDefaultWriteViewport, setDefaultWriteViewport] =
   createSignal<ViewportId>("1101")
-export const defaultWriteViewport = createMemo(() => {
-  layoutVersion()
-  return resolveViewportLink(storedDefaultWriteViewport(), null)
-})
+export function defaultWriteViewport(): ViewportId {
+  const id = storedDefaultWriteViewport()
+  if (getViewportData(id)) return id
+  return resolveViewportLink(id, null)
+}
 export const [storedDefaultLearnitViewport, setDefaultLearnitViewport] =
   createSignal<ViewportId>("1100")
-export const defaultLearnitViewport = createMemo(() => {
-  layoutVersion()
-  return resolveViewportLink(storedDefaultLearnitViewport(), "learnit")
-})
+export function defaultLearnitViewport(): ViewportId {
+  const id = storedDefaultLearnitViewport()
+  if (getViewportData(id)) return id
+  return resolveViewportLink(id, "learnit")
+}
 export const [storedDefaultFilesViewport, setDefaultFilesViewport] =
   createSignal<ViewportId>("1100")
-export const defaultFilesViewport = createMemo(() => {
-  layoutVersion()
-  return resolveViewportLink(storedDefaultFilesViewport(), "files")
-})
+export function defaultFilesViewport(): ViewportId {
+  const id = storedDefaultFilesViewport()
+  if (getViewportData(id)) return id
+  return resolveViewportLink(id, "files")
+}
 
 // Capa 2: when a viewport is replaced (split → leftId, delete → siblingId),
 // migrate any stored link that pointed at the dying id to the successor, so

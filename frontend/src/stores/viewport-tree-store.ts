@@ -42,15 +42,6 @@ export const [shiftHeld, setShiftHeld] = createSignal(false)
 // key → linkedViewport memo re-evaluates → effect re-fires → loop).
 export const [baseSettingsTabLabel, setBaseSettingsTabLabel] = createSignal("Settings")
 
-// Bumped on every structural change (split, delete, create*, loadTreeState)
-// so viewport-link memos in settings-store re-resolve even when a
-// produce-block delete of a map key wouldn't notify their readers. Cheap:
-// the five link memos just re-run resolveViewportLink.
-export const [layoutVersion, setLayoutVersion] = createSignal(0)
-function bumpLayout() {
-  setLayoutVersion((v) => v + 1)
-}
-
 export function rootId(): ViewportId {
   return rootIdSignal()
 }
@@ -112,7 +103,6 @@ export function createDefaultTree(n: string) {
       fractions: [3, 1],
     },
   }))
-  bumpLayout()
 }
 
 export function createSettingsOnlyTree(n: string) {
@@ -124,7 +114,6 @@ export function createSettingsOnlyTree(n: string) {
     },
   }))
   setSplitMap(reconcile({}))
-  bumpLayout()
 }
 
 export function snapshotTree(): DesktopState {
@@ -141,7 +130,6 @@ export function loadTreeState(state: DesktopState) {
   setViewportMap(reconcile(state.viewports))
   setSplitMap(reconcile(state.splits))
   setRootId(state.rootId)
-  bumpLayout()
 }
 
 export type CtxMenu =
@@ -287,7 +275,6 @@ export function splitViewport(vpId: ViewportId, direction: "h" | "v") {
   // vpId has been replaced by leftId (which inherited its tabs). Notify after
   // the produce so leftId already exists when listeners migrate their links.
   notifyViewportReplaced(vpId, leftId)
-  bumpLayout()
 }
 
 export function countViewports(): number {
@@ -351,7 +338,6 @@ export function deleteViewport(vpId: ViewportId) {
   // vpId has been replaced by siblingId (which absorbed its tabs). Notify
   // after both produce blocks so siblingId is the resolved root/child.
   notifyViewportReplaced(vpId, siblingId)
-  bumpLayout()
 }
 
 function absorbTabs(
