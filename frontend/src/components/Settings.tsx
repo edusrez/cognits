@@ -1,4 +1,4 @@
-import { Show, For, createMemo, createSignal, createEffect, onCleanup } from "solid-js"
+import { Show, For, createMemo, createSignal, onCleanup } from "solid-js"
 import {
   linkingMode,
   beginLinking,
@@ -103,10 +103,10 @@ import {
   setDisplayThinking,
   saveConfig,
 } from "../stores/settings-store"
-import { getViewportData, resetTree, setTabLabel } from "../stores/viewport-tree-store"
+import { getViewportData, resetTree } from "../stores/viewport-tree-store"
 import { currentMessages, sessionUsage } from "../stores/chat-store"
 import { activeSessionId } from "../stores/session-store"
-import { type ViewportId, tabDisplayName, tabKind, dynamicPayload } from "../tabs"
+import { type ViewportId, tabKind, dynamicPayload } from "../tabs"
 import type { AgentDef, ChatUsage, SubagentConfig } from "../types"
 import Dropdown from "./Dropdown"
 import CollapsibleSection from "./CollapsibleSection"
@@ -294,17 +294,6 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
     setLLMApiKey(v)
     saveConfig()
   }
-
-  createEffect(() => {
-    const vpId = props.viewportId
-    const tabId = linkedActiveTabId()
-    if (!vpId) return
-    const tabLabel = tabDisplayName(tabId)
-    const label = tabLabel && tabKind(tabId) !== "settings"
-      ? `Settings (${tabLabel})`
-      : "Settings"
-    setTabLabel(vpId, "settings", label)
-  })
 
   const updatePrompt = (value: string) => {
     const agent = selectedAgent()

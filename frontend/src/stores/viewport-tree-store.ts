@@ -161,6 +161,22 @@ export function setTabLabel(vpId: ViewportId, tabId: string, label: string) {
   )
 }
 
+/** Update the label of every base "settings" tab across all viewports.
+ *  Used by the App-level effect that keeps the Settings tab label in sync
+ *  with the linked viewport's active tab. Scoped settings tabs
+ *  ("settings:files", ...) are left untouched — their labels are fixed at
+ *  creation time. The no-op guard prevents feedback loops. */
+export function setAllSettingsTabLabels(label: string) {
+  setViewportMap(
+    produce((m) => {
+      for (const vp of Object.values(m)) {
+        const tab = vp.tabs.find((t) => t.id === "settings")
+        if (tab && tab.label !== label) tab.label = label
+      }
+    }),
+  )
+}
+
 export function moveTab(
   tabId: string,
   fromVp: ViewportId,

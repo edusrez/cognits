@@ -17,16 +17,17 @@ import {
   setShiftHeld,
   computeViewportPositions,
   findSpatialNeighbor,
+  setAllSettingsTabLabels,
   type ViewportId,
 } from "./stores/viewport-tree-store"
 import { dragState, endDrag, listDragState, endListDrag, moveHint, setMoveHint } from "./drag/drag-state"
 import { activeSessionId, setActiveSessionId, deleteSession, setRenamingSessionId } from "./stores/session-store"
-import { loadConfig, defaultChatViewport, defaultWriteViewport, defaultLearnitViewport, loadSessionConfig, linkingMode, confirmLinkViewport, cancelLinking } from "./stores/settings-store"
+import { loadConfig, defaultChatViewport, defaultWriteViewport, defaultLearnitViewport, loadSessionConfig, linkingMode, confirmLinkViewport, cancelLinking, linkedViewport } from "./stores/settings-store"
 import { loadSessionMessages } from "./stores/chat-store"
 import { initDesktops, createDesktop, switchDesktop, closeDesktop, desktopCount, activeDesktopIndex } from "./stores/desktop-store"
 import Viewport from "./components/Viewport"
 import DragOverlay, { ListDragOverlay } from "./components/DragOverlay"
-import { isDynamicTab } from "./tabs"
+import { isDynamicTab, tabDisplayName, tabKind } from "./tabs"
 
 initDesktops()
 
@@ -76,6 +77,19 @@ export default function App() {
     } else {
       removeSessionTabs()
     }
+  })
+
+  // Keep every base "settings" tab label in sync with the linked viewport's
+  // active tab. Lives at App scope (not inside the Settings component) so it
+  // never goes stale when Settings unmounts while another tab is active.
+  createEffect(() => {
+    const linked = linkedViewport()
+    const linkedTabId = linked ? getViewportData(linked)?.activeTabId ?? null : null
+    const tabLabel = tabDisplayName(linkedTabId)
+    const label = tabLabel && tabKind(linkedTabId) !== "settings"
+      ? `Settings (${tabLabel})`
+      : "Settings"
+    setAllSettingsTabLabels(label)
   })
 
   const handleMoveKey = () => {
