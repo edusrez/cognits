@@ -2,7 +2,7 @@ import { For, Index, Show, createSignal, createEffect, createMemo, onMount, onCl
 import "../highlight-theme.css"
 import { currentMessages as messages, isStreaming, currentToolStatus, currentChatError, sessionUsage, mainSessionPromptTokens, toolFaviconsBySession } from "../stores/chat-store"
 import { activeSessionId } from "../stores/session-store"
-import { chatFontSize, setChatFontSize, saveConfig, displayThinking } from "../stores/settings-store"
+import { chatFontSize, setChatFontSize, saveConfig, displayThinking, llmApiKey } from "../stores/settings-store"
 import { typewriterSpeed } from "../stores/settings-store"
 import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
 import ContextMenu from "./ContextMenu"
@@ -196,7 +196,13 @@ export default function Chat(props: { viewportId?: string }) {
         )}
       </Show>
 
-      <Show when={messages().length === 0}>
+      <Show when={!llmApiKey()}>
+        <div class="mb-3 border border-yellow-500/40 bg-yellow-500/10 text-yellow-300 px-3 py-2 text-[0.9em]">
+          API key not configured. Go to Settings to configure your AI provider key before chatting.
+        </div>
+      </Show>
+
+      <Show when={messages().length === 0 && llmApiKey()}>
         <div class="text-[#8b949e] flex items-center justify-center h-full">
           Type a message and press Enter to send
         </div>
