@@ -300,6 +300,14 @@ class CognitsTUI(App):
         if self._server_thread is not None:
             self._server.should_exit = True
             self._server_thread.join(timeout=5)
+        # Belt-and-suspenders: the lifespan finally block should have called
+        # these, but if the server thread join timed out the lifespan may not
+        # have completed. shutdown() is idempotent and also terminates the
+        # warm-cache subprocess so atexit doesn't hang on thread.join.
+        if self._state.rag is not None:
+            self._state.rag.shutdown()
+        if self._state.docling_engine is not None:
+            self._state.docling_engine.shutdown()
 
 
 def _interactive_uninstall(skip_confirm: bool = False) -> None:

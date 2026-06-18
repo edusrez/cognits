@@ -39,6 +39,7 @@ class RagEngine:
         self._model = None
         self._collection = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._warm_proc: multiprocessing.Process | None = None
 
     @classmethod
     def start_background(cls) -> "RagEngine":
@@ -134,7 +135,7 @@ class RagEngine:
                 args=(error_queue, progress_val),
             )
             proc.start()
-            start = proc  # keep reference
+            self._warm_proc = proc  # tracked so shutdown() can terminate it
             deadline = time.monotonic() + 300  # 5 min timeout
             while proc.is_alive():
                 if time.monotonic() > deadline:
@@ -187,6 +188,17 @@ class RagEngine:
         )
 
     def shutdown(self) -> None:
+        # Terminate the warm-cache subprocess first, so _load() unblocks from
+        # proc.join() and the executor thread can exit. Without this, the
+        # thread stays alive and Python's atexit thread.join hangs (Ctrl+C
+        # during model download produces a traceback).
+        wp = self._warm_proc
+        if wp is not None and wp.is_alive():
+            try:
+                wp.terminate()
+                wp.join(timeout=3)
+            except Exception:
+                pass
         if not self.ready.is_set():
             self.error = "shutdown"
             if self._loop:
