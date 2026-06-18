@@ -197,6 +197,7 @@ export function moveTab(
 const sessionTabIds = ["chat", "write"]
 
 export function placeSessionTabs(chatVp: ViewportId, writeVp: ViewportId) {
+  console.log("[placeSessionTabs] chat→", chatVp, "write→", writeVp)
   setViewportMap(
     produce((m) => {
       for (const vp of Object.values(m)) {
@@ -261,6 +262,7 @@ export function splitViewport(vpId: ViewportId, direction: "h" | "v") {
   const rightId = vpId + "1"
   const existing = viewportMap[vpId]
   if (!existing) return
+  console.log("[splitViewport]", vpId, "→ left", leftId, "right", rightId, "| tabs:", existing.tabs.map(t=>t.id))
 
   // The new split inherits the split viewport's id, so the reference
   // in the parent (if any) remains valid without touching it.
@@ -272,14 +274,17 @@ export function splitViewport(vpId: ViewportId, direction: "h" | "v") {
     children: [leftId, rightId],
     fractions: [1, 1],
   })
+  // vpId has been replaced by leftId (which inherited its tabs). Migrate
+  // stored links BEFORE the produce that deletes vpId — the produce's
+  // reactive flush can overflow the stack, and we need the migration to
+  // survive that crash. Migrating only touches plain signals (storedX),
+  // not the store, so it never triggers reactive flushes.
+  notifyViewportReplaced(vpId, leftId)
   setViewportMap(
     produce((m) => {
       delete m[vpId]
     }),
   )
-  // vpId has been replaced by leftId (which inherited its tabs). Notify after
-  // the produce so leftId already exists when listeners migrate their links.
-  notifyViewportReplaced(vpId, leftId)
 }
 
 export function countViewports(): number {
@@ -317,6 +322,11 @@ export function deleteViewport(vpId: ViewportId) {
     absorbTabs(siblingId, dying.tabs, dying.activeTabId)
   }
 
+  // Migrate stored links BEFORE the produce blocks — the produce's reactive
+  // flush can overflow the stack, and we need the migration to survive.
+  // siblingId already exists in viewportMap (it's the absorbing viewport).
+  notifyViewportReplaced(vpId, siblingId)
+
   setViewportMap(
     produce((m) => {
       delete m[vpId]
@@ -340,9 +350,6 @@ export function deleteViewport(vpId: ViewportId) {
       }
     }),
   )
-  // vpId has been replaced by siblingId (which absorbed its tabs). Notify
-  // after both produce blocks so siblingId is the resolved root/child.
-  notifyViewportReplaced(vpId, siblingId)
 }
 
 function absorbTabs(
@@ -377,6 +384,7 @@ function findParentSplit(childId: ViewportId): ViewportId | null {
 }
 
 export function addDynamicTab(vpId: ViewportId, tab: { id: string; label: string; hidden: boolean }) {
+  console.log("[addDynamicTab]", tab.id, "→ vp", vpId)
   setViewportMap(
     produce((m) => {
       const vp = m[vpId]
