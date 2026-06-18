@@ -434,6 +434,7 @@ async def _run_agent(
                 session_id=lambda: sid,
                 emit=process_event,
                 rag_engine=st.rag if st.rag is not None and st.rag.error is None else None,
+                tinyfish_api_key=cfg.tinyfish_api_key,
             )
         )
 

@@ -58,6 +58,7 @@ class DeploySubagent(Tool):
         session_id: Callable[[], str] | None,
         emit: Emit | None,
         rag_engine=None,
+        tinyfish_api_key: str = "",
     ):
         self.llm_client = llm_client
         self.report_store = report_store
@@ -65,6 +66,7 @@ class DeploySubagent(Tool):
         self.session_id = session_id
         self.emit = emit
         self.rag_engine = rag_engine
+        self.tinyfish_api_key = tinyfish_api_key
 
     name = "deploy_subagent"
     description = (
@@ -91,6 +93,11 @@ class DeploySubagent(Tool):
         cfg = self.subagents.get(subagent_type)
         if cfg is None:
             return tool_error(f"unknown subagent: {subagent_type}")
+
+        if subagent_type == "web_researcher" and not self.tinyfish_api_key:
+            return tool_error(
+                "TinyFish API key not configured. Please configure it in Settings."
+            )
 
         sid = self.session_id() if self.session_id is not None else ""
         report_id = new_report_id()
