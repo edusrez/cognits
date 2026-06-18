@@ -156,6 +156,7 @@ export type CtxMenu =
   | { kind: "tab"; vpId: ViewportId; tabId: string; tabLabel: string; x: number; y: number }
   | { kind: "chat-message"; content: string; x: number; y: number }
   | { kind: "report-content"; content: string; reportId: string; title: string; x: number; y: number }
+  | { kind: "code-wrap"; x: number; y: number }
   | null
 
 export const [ctxMenu, setCtxMenu] = createSignal<CtxMenu>(null)

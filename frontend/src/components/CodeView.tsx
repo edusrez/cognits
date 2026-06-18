@@ -1,6 +1,7 @@
 import { createSignal, createResource, Show, createMemo } from "solid-js"
 import { highlightCode } from "../lib/markdown"
 import { codeFontSize, setCodeFontSize, codeWordWrap, setCodeWordWrap, saveConfig } from "../stores/settings-store"
+import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
 import MarkdownView from "./MarkdownView"
 import ContextMenu from "./ContextMenu"
 import "../highlight-theme.css"
@@ -34,7 +35,11 @@ export default function CodeView(props: { viewportId?: string; tabId?: string })
   const language = createMemo(() => data()?.language ?? "")
   const isMarkdown = createMemo(() => language() === "markdown")
   const [mdMode, setMdMode] = createSignal<"plain" | "markdown">("plain")
-  const [wrapMenu, setWrapMenu] = createSignal<{ x: number; y: number } | null>(null)
+
+  const codeWrapMenu = createMemo(() => {
+    const m = ctxMenu()
+    return m?.kind === "code-wrap" ? m : null
+  })
 
   const highlightedHtml = createMemo(() => {
     const d = data()
@@ -69,7 +74,7 @@ export default function CodeView(props: { viewportId?: string; tabId?: string })
              if (isMarkdown() && mdMode() === "markdown") return
              e.preventDefault()
              e.stopPropagation()
-             setWrapMenu({ x: e.clientX, y: e.clientY })
+             setCtxMenu({ kind: "code-wrap", x: e.clientX, y: e.clientY })
            }}
            onWheel={(e) => {
              if (!e.shiftKey) return
@@ -105,20 +110,22 @@ export default function CodeView(props: { viewportId?: string; tabId?: string })
         </div>
       </Show>
 
-      <Show when={wrapMenu()}>
-        <ContextMenu
-          x={wrapMenu()!.x}
-          y={wrapMenu()!.y}
-          onClose={() => setWrapMenu(null)}
-          items={[{
-            label: codeWordWrap() ? "Unwrap lines" : "Wrap lines",
-            onClick: () => {
-              setCodeWordWrap(!codeWordWrap())
-              saveConfig()
-              setWrapMenu(null)
-            },
-          }]}
-        />
+      <Show when={codeWrapMenu()}>
+        {(m) => (
+          <ContextMenu
+            x={m().x}
+            y={m().y}
+            onClose={() => setCtxMenu(null)}
+            items={[{
+              label: codeWordWrap() ? "Unwrap lines" : "Wrap lines",
+              onClick: () => {
+                setCodeWordWrap(!codeWordWrap())
+                saveConfig()
+                setCtxMenu(null)
+              },
+            }]}
+          />
+        )}
       </Show>
     </div>
   )
