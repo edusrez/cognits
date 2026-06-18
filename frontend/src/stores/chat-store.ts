@@ -359,9 +359,12 @@ export async function sendMessage(content: string) {
   try {
     await startChat(sid, messages)
     broadcastAgentStarted(sid)
-  } catch {
+  } catch (e) {
     setStreamState(sid, { active: false, thinking: false })
-    // Re-sync with the server (covers "agent already running" and rejections).
+    const msg = e instanceof Error ? e.message : ""
+    if (msg === "HTTP 401") {
+      setErrorBySession((prev) => ({ ...prev, [sid]: "API key not configured. Please configure it in Settings." }))
+    }
     subscribeToSession(sid)
     return
   }
