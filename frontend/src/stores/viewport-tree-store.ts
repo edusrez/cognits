@@ -189,7 +189,7 @@ export function moveTab(
       }
       const clamped = Math.min(insertIndex, to.tabs.length)
       to.tabs.splice(clamped, 0, tab)
-      to.activeTabId = tab.id
+      if (to.activeTabId !== tab.id) to.activeTabId = tab.id
     }),
   )
 }
@@ -200,6 +200,9 @@ export function placeSessionTabs(chatVp: ViewportId, writeVp: ViewportId) {
   setViewportMap(
     produce((m) => {
       for (const vp of Object.values(m)) {
+        // Only filter if the viewport has session tabs — avoid creating a new
+        // array reference (which triggers listeners) when the filter is a no-op.
+        if (!vp.tabs.some((t) => sessionTabIds.includes(t.id))) continue
         vp.tabs = vp.tabs.filter((t) => !sessionTabIds.includes(t.id))
         if (
           vp.activeTabId &&
@@ -224,6 +227,7 @@ export function removeSessionTabs() {
   setViewportMap(
     produce((m) => {
       for (const vp of Object.values(m)) {
+        if (!vp.tabs.some((t) => sessionTabIds.includes(t.id))) continue
         vp.tabs = vp.tabs.filter(
           (t) => !sessionTabIds.includes(t.id)
         )
@@ -242,6 +246,7 @@ export function cleanPersistedTabs() {
   setViewportMap(
     produce((m) => {
       for (const vp of Object.values(m)) {
+        if (!vp.tabs.some((t) => t.id.includes(":"))) continue
         vp.tabs = vp.tabs.filter((t) => !t.id.includes(":"))
         if (vp.activeTabId && vp.activeTabId.includes(":")) {
           vp.activeTabId = vp.tabs[0]?.id ?? null
@@ -379,7 +384,7 @@ export function addDynamicTab(vpId: ViewportId, tab: { id: string; label: string
       if (!vp.tabs.some((t) => t.id === tab.id)) {
         vp.tabs.push({ ...tab, label: tab.label })
       }
-      vp.activeTabId = tab.id
+      if (vp.activeTabId !== tab.id) vp.activeTabId = tab.id
     }),
   )
 }
@@ -389,6 +394,7 @@ export function removeDynamicTab(vpId: ViewportId, tabId: string) {
     produce((m) => {
       const vp = m[vpId]
       if (!vp) return
+      if (!vp.tabs.some((t) => t.id === tabId)) return
       vp.tabs = vp.tabs.filter((t) => t.id !== tabId)
       if (vp.activeTabId === tabId) {
         vp.activeTabId = vp.tabs[0]?.id ?? null
@@ -409,7 +415,7 @@ export function swapAdjacentTabs(vpId: ViewportId, tabId: string, right: boolean
       const tmp = vp.tabs[idx]
       vp.tabs[idx] = vp.tabs[target]
       vp.tabs[target] = tmp
-      vp.activeTabId = tabId
+      if (vp.activeTabId !== tabId) vp.activeTabId = tabId
     }),
   )
 }
