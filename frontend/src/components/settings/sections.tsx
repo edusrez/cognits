@@ -10,8 +10,9 @@ import { registerSection } from "../../lib/settings-sections"
 import SliderField from "../SliderField"
 import Dropdown from "../Dropdown"
 import CollapsibleSection from "../CollapsibleSection"
-import "./chat-sections" // side-effect: registers chat:info/agent/subagents/shared-data
-import "./pdf-sections"  // side-effect: registers pdf:ai-vision
+import "./chat-sections"   // side-effect: registers chat:info/agent/subagents/shared-data
+import "./pdf-sections"    // side-effect: registers pdf:ai-vision
+import "./general-sections" // side-effect: registers settings:link-prompt + general
 import {
   chatFontSize, setChatFontSize,
   noteFontSize, setNoteFontSize,
@@ -31,20 +32,6 @@ import {
   setCodeWordWrap,
 } from "../../stores/settings-store"
 import { tabKind } from "../../lib/tab-kinds"
-
-// ── Global ──
-
-registerSection({
-  id: "global",
-  matches: (ctx) => !ctx.linkedViewport && !ctx.tabId,
-  render: () => (
-    <CollapsibleSection title="General Settings">
-      <div class="text-[#9a9a9a] text-[13px]">
-        Click any viewport to link Settings and get context-specific options.
-      </div>
-    </CollapsibleSection>
-  ),
-})
 
 // ── Sessions ──
 

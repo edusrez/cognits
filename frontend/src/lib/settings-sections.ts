@@ -6,6 +6,11 @@ import { baseTabId } from "./tab-kinds"
 export interface SectionContext {
   linkedViewport: boolean
   tabId: string | null
+  /** True when this Settings instance is a scoped tab (e.g. "settings:files")
+   *  opened via the context menu, as opposed to the base linked Settings.
+   *  Constant per instance (derived from props.tabId), so a plain value is
+   *  fine — no reactivity needed. */
+  scoped: boolean
   /** Per-instance reactive fields. Accessors (not plain values) because
    *  render() is invoked once per section by the <For> in the shell — a plain
    *  value would be captured stale. The shell passes its createMemo directly. */
@@ -40,7 +45,7 @@ export function getMatchingSections(ctx: SectionContext): SettingSection[] {
 
 /** True if any section matches this tab (used by Viewport context menu). */
 export function hasSettings(tabId: string): boolean {
-  return registry.some((s) => s.matches({ linkedViewport: true, tabId }))
+  return registry.some((s) => s.matches({ linkedViewport: true, tabId, scoped: false }))
 }
 
 /** Strip dynamic suffixes from tab IDs for the settings scope.
