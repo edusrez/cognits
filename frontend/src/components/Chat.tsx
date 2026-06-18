@@ -197,8 +197,8 @@ export default function Chat(props: { viewportId?: string }) {
       </Show>
 
       <Show when={!llmApiKey()}>
-        <div class="mb-3 border border-yellow-500/40 bg-yellow-500/10 text-yellow-300 px-3 py-2 text-[0.9em]">
-          API key not configured. Go to Settings to configure your AI provider key before chatting.
+        <div class="text-[#8b949e] text-center text-[0.9em]">
+          Configure an API key in Settings before chatting.
         </div>
       </Show>
 
