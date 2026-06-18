@@ -2,7 +2,7 @@ import { createMemo, Show, Switch, Match } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import type { ViewportData } from "../stores/viewport-tree-store"
 import { activateTab, splitViewport, deleteViewport, canDeleteViewport, ctxMenu, setCtxMenu, removeDynamicTab, setFocusedViewportId, focusedViewportId, shiftHeld } from "../stores/viewport-tree-store"
-import { tabs, type ViewportId } from "../tabs"
+import { tabs, type ViewportId, baseTabId, tabKind, dynamicPayload } from "../tabs"
 import { getSettingsScope } from "../lib/settings-sections"
 import { dragState, initiateTabDrag } from "../drag/drag-state"
 import { activeSessionId } from "../stores/session-store"
@@ -113,8 +113,8 @@ export default function Viewport(props: {
           activeTabId={visibleActiveTabId()}
           onCloseTab={(tabId) => {
             removeDynamicTab(props.id, tabId)
-            if (tabId.startsWith("report:")) {
-              const reportId = tabId.replace("report:", "")
+            if (tabKind(tabId) === "report") {
+              const reportId = dynamicPayload(tabId) ?? ""
               import("../stores/report-store").then((m) => {
                 if (m.removeReportData) m.removeReportData(reportId)
               })
@@ -140,19 +140,7 @@ export default function Viewport(props: {
           </Match>
           <Match when={visibleActiveTabId()}>
             {(activeId) => {
-              const tab = createMemo(() => {
-                return tabs.find((t) => {
-                  if (t.id === activeId()) return true
-                  if (activeId().startsWith("report:") && t.id === "report") return true
-                  if (activeId().startsWith("settings:") && t.id === "settings") return true
-                  if (activeId().startsWith("note:") && t.id === "note") return true
-                  if (activeId().startsWith("code:") && t.id === "code") return true
-                  if (activeId().startsWith("text:") && t.id === "text") return true
-                  if (activeId().startsWith("image:") && t.id === "image") return true
-                  if (activeId().startsWith("pdf:") && t.id === "pdf") return true
-                  return false
-                })
-              })
+              const tab = createMemo(() => tabs.find((t) => t.id === baseTabId(activeId())))
               return (
                 <Show when={tab()} fallback={null}>
                   {(t) => <Dynamic component={t().component} viewportId={props.id} tabId={activeId()} />}

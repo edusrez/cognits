@@ -26,6 +26,7 @@ import { loadSessionMessages } from "./stores/chat-store"
 import { initDesktops, createDesktop, switchDesktop, closeDesktop, desktopCount, activeDesktopIndex } from "./stores/desktop-store"
 import Viewport from "./components/Viewport"
 import DragOverlay, { ListDragOverlay } from "./components/DragOverlay"
+import { isDynamicTab } from "./tabs"
 
 initDesktops()
 
@@ -232,7 +233,7 @@ export default function App() {
           if (vpId) {
             const vp = getViewportData(vpId)
             const tabId = vp?.activeTabId
-            if (tabId && (tabId.startsWith("report:") || tabId.startsWith("settings:") || tabId.startsWith("note:") || tabId.startsWith("code:") || tabId.startsWith("text:") || tabId.startsWith("image:") || tabId.startsWith("pdf:"))) {
+            if (tabId && isDynamicTab(tabId)) {
               e.preventDefault()
               removeDynamicTab(vpId, tabId)
             }

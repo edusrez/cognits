@@ -106,7 +106,7 @@ import {
 import { getViewportData, resetTree, setTabLabel } from "../stores/viewport-tree-store"
 import { currentMessages, sessionUsage } from "../stores/chat-store"
 import { activeSessionId } from "../stores/session-store"
-import type { ViewportId } from "../tabs"
+import { type ViewportId, tabDisplayName, tabKind, dynamicPayload } from "../tabs"
 import type { AgentDef, ChatUsage, SubagentConfig } from "../types"
 import Dropdown from "./Dropdown"
 import CollapsibleSection from "./CollapsibleSection"
@@ -123,23 +123,6 @@ function formatCost(tokens: number, pricePerM: number): string {
 
 function formatNumber(n: number): string {
   return n.toLocaleString()
-}
-
-function tabDisplayName(tabId: string | null): string | null {
-  if (!tabId) return null
-  if (tabId.startsWith("code:")) return "Code"
-  if (tabId.startsWith("text:")) return "Text"
-  if (tabId.startsWith("pdf:")) return "PDF"
-  if (tabId.startsWith("image:")) return "Image"
-  if (tabId.startsWith("note:")) return "Note"
-  if (tabId.startsWith("report:")) return "Web Report"
-  const names: Record<string, string> = {
-    chat: "Chat",
-    sessions: "Sessions",
-    write: "Write",
-    learnit: ".cognits",
-  }
-  return names[tabId] ?? null
 }
 
 // Default agents live in the backend (internal/agent/prompts.go);
@@ -167,7 +150,7 @@ const basicTabs = [
 export default function Settings(props: { viewportId?: ViewportId; tabId?: string }) {
   const scopedTabId = createMemo(() => {
     const t = props.tabId || ""
-    return t.startsWith("settings:") ? t.slice(9) : null
+    return tabKind(t) === "settings" ? dynamicPayload(t) : null
   })
 
   const linkedActiveTabId = createMemo(() => {
@@ -179,7 +162,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
 
   const pdfPath = createMemo(() => {
     const tabId = linkedActiveTabId()
-    if (tabId && tabId.startsWith("pdf:")) return tabId.slice(4)
+    if (tabId && tabKind(tabId) === "pdf") return dynamicPayload(tabId)
     return null
   })
 
@@ -317,7 +300,9 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
     const tabId = linkedActiveTabId()
     if (!vpId) return
     const tabLabel = tabDisplayName(tabId)
-    const label = tabLabel ? `Settings (${tabLabel})` : "Settings"
+    const label = tabLabel && tabKind(tabId) !== "settings"
+      ? `Settings (${tabLabel})`
+      : "Settings"
     setTabLabel(vpId, "settings", label)
   })
 
@@ -374,7 +359,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
       </For>
 
       {/* ── PDF AI Vision (needs component-level pdfPath) ── */}
-      <Show when={linkedViewport() && (scopedTabId()?.startsWith("pdf:") || linkedActiveTabId()?.startsWith("pdf:"))}>
+      <Show when={linkedViewport() && (tabKind(scopedTabId()) === "pdf" || tabKind(linkedActiveTabId()) === "pdf")}>
         <CollapsibleSection title="AI Vision">
           <div class="flex flex-col gap-2">
 

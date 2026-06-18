@@ -1,6 +1,7 @@
 /** Declarative registry of Settings sections.
  * Add a section here once — Settings.tsx and the context menu auto-discover it. */
 import type { JSXElement } from "solid-js"
+import { baseTabId } from "./tab-kinds"
 
 export interface SectionContext {
   linkedViewport: boolean
@@ -42,10 +43,5 @@ export function hasSettings(tabId: string): boolean {
  *  "files"          → "files"
  */
 export function getSettingsScope(tabId: string): string {
-  for (const prefix of [
-    "report:", "note:", "code:", "text:", "image:", "pdf:", "settings:",
-  ]) {
-    if (tabId.startsWith(prefix)) return prefix.slice(0, -1)
-  }
-  return tabId
+  return baseTabId(tabId)
 }

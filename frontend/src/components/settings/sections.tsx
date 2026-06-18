@@ -25,6 +25,7 @@ import {
   codeWordWrap,
   setCodeWordWrap,
 } from "../../stores/settings-store"
+import { tabKind } from "../../lib/tab-kinds"
 
 // ── Global ──
 
@@ -139,7 +140,7 @@ registerSection({
 
 registerSection({
   id: "pdf:display",
-  matches: (ctx) => !!(ctx.linkedViewport && ctx.tabId?.startsWith("pdf:")),
+  matches: (ctx) => ctx.linkedViewport && tabKind(ctx.tabId) === "pdf",
   render: () => (
     <CollapsibleSection title="Display">
       <div class="flex flex-col gap-2">
@@ -191,7 +192,7 @@ registerSection({
 
 registerSection({
   id: "code:display",
-  matches: (ctx) => !!(ctx.linkedViewport && ctx.tabId?.startsWith("code:")),
+  matches: (ctx) => ctx.linkedViewport && tabKind(ctx.tabId) === "code",
   render: () => (
     <CollapsibleSection title="Display">
       <div class="flex flex-col gap-2">
@@ -215,7 +216,7 @@ registerSection({
 
 registerSection({
   id: "text:display",
-  matches: (ctx) => !!(ctx.linkedViewport && ctx.tabId?.startsWith("text:")),
+  matches: (ctx) => ctx.linkedViewport && tabKind(ctx.tabId) === "text",
   render: () => (
     <CollapsibleSection title="Display">
       <div class="flex flex-col gap-2">
@@ -231,7 +232,7 @@ registerSection({
 
 registerSection({
   id: "note:display",
-  matches: (ctx) => !!(ctx.linkedViewport && ctx.tabId?.startsWith("note:")),
+  matches: (ctx) => ctx.linkedViewport && tabKind(ctx.tabId) === "note",
   render: () => (
     <CollapsibleSection title="Display">
       <div class="flex flex-col gap-2">
@@ -258,7 +259,7 @@ registerSection({
 
 registerSection({
   id: "report:display",
-  matches: (ctx) => !!(ctx.linkedViewport && ctx.tabId?.startsWith("report:")),
+  matches: (ctx) => ctx.linkedViewport && tabKind(ctx.tabId) === "report",
   render: () => (
     <CollapsibleSection title="Display">
       <div class="flex flex-col gap-2">
