@@ -1,4 +1,4 @@
-import { createEffect, createMemo, Show, createSignal, onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, on, Show, createSignal, onCleanup, onMount } from "solid-js"
 import {
   rootId,
   getViewportData,
@@ -56,18 +56,20 @@ pollHealth()
 export default function App() {
   const kb = createKeyboardState()
 
-  createEffect(() => {
-    const sid = activeSessionId()
-    const chatVp = defaultChatViewport()
-    console.log("[App session effect] sid=", sid, "chatVp=", chatVp, "writeVp=", defaultWriteViewport())
+  // Place/replace session tabs only when the session changes — NOT when the
+  // link memos re-resolve (e.g. after a split). Without on(), placeSessionTabs
+  // writes viewportMap → link memos re-evaluate → effect re-fires → infinite
+  // recursion (too much recursion crash). The memos are read inside the body
+  // to get their current resolved value, but only activeSessionId triggers.
+  createEffect(on(activeSessionId, (sid) => {
     if (sid) {
-      placeSessionTabs(chatVp, defaultWriteViewport())
+      placeSessionTabs(defaultChatViewport(), defaultWriteViewport())
       loadSessionMessages(sid)
       loadSessionConfig(sid)
     } else {
       removeSessionTabs()
     }
-  })
+  }))
 
   // Keep every base "settings" tab label in sync with the linked viewport's
   // active tab. Lives at App scope (not inside the Settings component) so it
