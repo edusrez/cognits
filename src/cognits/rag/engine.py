@@ -195,8 +195,11 @@ class RagEngine:
         wp = self._warm_proc
         if wp is not None and wp.is_alive():
             try:
-                wp.terminate()
+                wp.terminate()  # SIGTERM
                 wp.join(timeout=3)
+                if wp.is_alive():
+                    wp.kill()  # SIGKILL — not catchable, force exit
+                    wp.join(timeout=2)
             except Exception:
                 pass
         if not self.ready.is_set():

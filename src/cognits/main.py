@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import atexit
 import logging
 import os
 import shutil
@@ -19,6 +20,7 @@ from pathlib import Path
 import uvicorn
 from textual import on, events
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import VerticalGroup
 from textual.theme import Theme
 from textual.widgets import Label, OptionList, Static
@@ -144,6 +146,12 @@ class CognitsTUI(App):
     CSS = CSS
     ENABLE_COMMAND_PALETTE = False
     NOTIFICATION_TIMEOUT = 0
+    # Override Textual's default: Ctrl+C shows a "press Ctrl+Q" hint. For a
+    # single-user local TUI, Ctrl+C should quit — it's the reflexive exit key.
+    BINDINGS = [
+        Binding("ctrl+q", "quit", "Quit", show=False, priority=True),
+        Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
+    ]
 
     def on_print(self, event: events.Print) -> None:
         event.stop()
@@ -296,10 +304,22 @@ class CognitsTUI(App):
 
     # -- Cleanup -------------------------------------------------------------
 
-    async def _on_exit(self) -> None:
+    async def _shutdown(self) -> None:
+        # Textual calls _shutdown() in the finally block of run_async — this
+        # fires on both normal exit (Ctrl+Q / menu Close) and Ctrl+C (rebound
+        # to quit via BINDINGS). The old _on_exit method was never called by
+        # Textual (it doesn't exist as a handler), so cleanup never ran.
         if self._server_thread is not None:
             self._server.should_exit = True
             self._server_thread.join(timeout=5)
+        # The lifespan finally block should have called these, but if the
+        # server-thread join timed out the lifespan may not have completed.
+        # shutdown() is idempotent and terminates the warm-cache subprocess.
+        if self._state.rag is not None:
+            self._state.rag.shutdown()
+        if self._state.docling_engine is not None:
+            self._state.docling_engine.shutdown()
+        await super()._shutdown()
         # Belt-and-suspenders: the lifespan finally block should have called
         # these, but if the server thread join timed out the lifespan may not
         # have completed. shutdown() is idempotent and also terminates the
@@ -507,6 +527,19 @@ def main() -> None:
 
     state = AppState()
     app = create_app(state)
+
+    # Red de seguridad: si un KeyboardInterrupt escapa del event loop de
+    # Textual (p.ej. durante la carga antes de que el loop arranque), los
+    # atexit handlers de concurrent.futures y multiprocessing intentarán
+    # join() del executor thread y del warm-cache subprocess → hang. Nuestro
+    # handler corre ANTES (LIFO) y llama shutdown() para terminarlos.
+    def _cleanup_engines() -> None:
+        if state.rag is not None:
+            state.rag.shutdown()
+        if state.docling_engine is not None:
+            state.docling_engine.shutdown()
+
+    atexit.register(_cleanup_engines)
 
     config = uvicorn.Config(
         app,
