@@ -1,7 +1,7 @@
 import { createMemo, Show, Switch, Match } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import type { ViewportData } from "../stores/viewport-tree-store"
-import { activateTab, splitViewport, deleteViewport, canDeleteViewport, ctxMenu, setCtxMenu, removeDynamicTab, setFocusedViewportId, focusedViewportId, shiftHeld } from "../stores/viewport-tree-store"
+import { activateTab, splitViewport, deleteViewport, canDeleteViewport, ctxMenu, setCtxMenu, removeDynamicTab, setFocusedViewportId, focusedViewportId, shiftHeld, setLinkedViewport, setDefaultChatViewport, setDefaultWriteViewport, setDefaultLearnitViewport, setDefaultFilesViewport } from "../stores/viewport-tree-store"
 import { tabs, type ViewportId, baseTabId, tabKind, dynamicPayload } from "../tabs"
 import { tabDisplayName } from "../lib/tab-kinds"
 import { getSettingsScope } from "../lib/settings-sections"
@@ -168,6 +168,17 @@ export default function Viewport(props: {
                         { label: "Split horizontally",  onClick: () => { setCtxMenu(null); splitViewport(props.id, "h") } },
                         { label: "Split vertically",    onClick: () => { setCtxMenu(null); splitViewport(props.id, "v") } },
                         { label: "Delete viewport",     onClick: () => { setCtxMenu(null); deleteViewport(props.id) }, class: canDeleteViewport(props.id) ? "text-red-400" : "text-[#4a4a4a]" },
+                        {
+                          label: "Link viewport to",
+                          onClick: () => {},
+                          subItems: [
+                            { label: "Settings", onClick: () => { setCtxMenu(null); setLinkedViewport(props.id) } },
+                            { label: "Sessions (Chat)", onClick: () => { setCtxMenu(null); setDefaultChatViewport(props.id) } },
+                            { label: "Sessions (Write)", onClick: () => { setCtxMenu(null); setDefaultWriteViewport(props.id) } },
+                            { label: ".cognits (Reports/Notes)", onClick: () => { setCtxMenu(null); setDefaultLearnitViewport(props.id) } },
+                            { label: "Files", onClick: () => { setCtxMenu(null); setDefaultFilesViewport(props.id) } },
+                          ],
+                        },
                       ]}
                     />
                   }
