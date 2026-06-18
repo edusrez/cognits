@@ -63,7 +63,8 @@ export default function ContextMenu(props: {
   return (
     <div
       ref={menuRef}
-      class="fixed z-50 bg-[#1a1a1a] border border-white/20 shadow-lg min-w-[100px]"
+      class="fixed z-50 bg-[#1a1a1a] border border-white/20 shadow-lg min-w-[120px]"
+      style={{ left: pos().x + "px", top: pos().y + "px" }}
       onClick={(e) => e.stopPropagation()}
     >
       <For each={props.items}>
@@ -72,7 +73,7 @@ export default function ContextMenu(props: {
           return (
             <button
               ref={(el) => { itemRefs[index()] = el }}
-              class={`w-full text-left px-2.5 py-1 text-[13px] cursor-pointer transition-colors${item.class ? " " + item.class : ""}`}
+              class={`w-full text-left px-3 py-1.5 text-[13px] cursor-pointer transition-colors${item.class ? " " + item.class : ""}`}
               classList={{ "bg-black/50": hovered() === index() }}
               onMouseEnter={() => { setHovered(index()); if (hasSub()) openSub(index()) }}
               onMouseLeave={() => { setHovered(null); if (hasSub()) scheduleCloseSub() }}
@@ -97,10 +98,10 @@ export default function ContextMenu(props: {
         if (!sub) return null
         const btn = itemRefs[subIndex()]
         const sx = btn ? Math.min(btn.getBoundingClientRect().right + 4, window.innerWidth - 200) : pos().x + 180
-        const sy = btn ? Math.max(0, Math.min(btn.getBoundingClientRect().top, window.innerHeight - (sub.length * 26 + 4))) : pos().y
+        const sy = btn ? Math.max(0, Math.min(btn.getBoundingClientRect().top, window.innerHeight - (sub.length * 32 + 4))) : pos().y
         return (
           <div
-            class="fixed z-50 bg-[#1a1a1a] border border-white/20 shadow-lg min-w-[100px]"
+            class="fixed z-50 bg-[#1a1a1a] border border-white/20 shadow-lg min-w-[120px]"
             style={{ left: sx + "px", top: sy + "px" }}
             onMouseEnter={cancelCloseSub}
             onMouseLeave={scheduleCloseSub}
@@ -109,7 +110,7 @@ export default function ContextMenu(props: {
             <For each={sub}>
               {(sitem, sindex) => (
                 <button
-                  class="w-full text-left px-2.5 py-1 text-[13px] cursor-pointer transition-colors"
+                  class="w-full text-left px-3 py-1.5 text-[13px] cursor-pointer transition-colors"
                   classList={{ "bg-black/50": subHovered() === sindex() }}
                   onMouseEnter={() => { cancelCloseSub(); setSubHovered(sindex()) }}
                   onMouseLeave={() => { setSubHovered(null); scheduleCloseSub() }}
