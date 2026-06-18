@@ -3,6 +3,7 @@ import { Dynamic } from "solid-js/web"
 import type { ViewportData } from "../stores/viewport-tree-store"
 import { activateTab, splitViewport, deleteViewport, canDeleteViewport, ctxMenu, setCtxMenu, removeDynamicTab, setFocusedViewportId, focusedViewportId, shiftHeld } from "../stores/viewport-tree-store"
 import { tabs, type ViewportId, baseTabId, tabKind, dynamicPayload } from "../tabs"
+import { tabDisplayName } from "../lib/tab-kinds"
 import { getSettingsScope } from "../lib/settings-sections"
 import { dragState, initiateTabDrag } from "../drag/drag-state"
 import { activeSessionId } from "../stores/session-store"
@@ -177,12 +178,12 @@ export default function Viewport(props: {
                     onClose={() => setCtxMenu(null)}
                     items={[
                       {
-                        label: `Open Settings (${(m() as any).tabLabel})`,
+                        label: `Open Settings (${tabDisplayName((m() as any).tabId)})`,
                         onClick: () => {
                           const tabMenu = m() as any
                           setCtxMenu(null)
                           const tabId = `settings:${getSettingsScope(tabMenu.tabId)}`
-                          const label = `Settings (${tabMenu.tabLabel})`
+                          const label = `Settings (${tabDisplayName(tabMenu.tabId)})`
                           import("../stores/viewport-tree-store").then((vts) => {
                             vts.addDynamicTab(props.id, { id: tabId, label, hidden: false })
                           })
