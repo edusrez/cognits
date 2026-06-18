@@ -35,6 +35,13 @@ const [rootIdSignal, setRootId] = createSignal<ViewportId>("1")
 export const [focusedViewportId, setFocusedViewportId] = createSignal<string | null>(null)
 export const [shiftHeld, setShiftHeld] = createSignal(false)
 
+// Label for the base "settings" tab, derived by the App-level effect from
+// the linked viewport's active tab. Kept as a signal (NOT a store mutation)
+// because writing to viewportMap from inside an effect that reads it causes
+// infinite recursion (produce notifies all listeners, not just the changed
+// key → linkedViewport memo re-evaluates → effect re-fires → loop).
+export const [baseSettingsTabLabel, setBaseSettingsTabLabel] = createSignal("Settings")
+
 // Bumped on every structural change (split, delete, create*, loadTreeState)
 // so viewport-link memos in settings-store re-resolve even when a
 // produce-block delete of a map key wouldn't notify their readers. Cheap:
@@ -170,22 +177,6 @@ export function setTabLabel(vpId: ViewportId, tabId: string, label: string) {
       if (!vp) return
       const tab = vp.tabs.find((t) => t.id === tabId)
       if (tab) tab.label = label
-    }),
-  )
-}
-
-/** Update the label of every base "settings" tab across all viewports.
- *  Used by the App-level effect that keeps the Settings tab label in sync
- *  with the linked viewport's active tab. Scoped settings tabs
- *  ("settings:files", ...) are left untouched — their labels are fixed at
- *  creation time. The no-op guard prevents feedback loops. */
-export function setAllSettingsTabLabels(label: string) {
-  setViewportMap(
-    produce((m) => {
-      for (const vp of Object.values(m)) {
-        const tab = vp.tabs.find((t) => t.id === "settings")
-        if (tab && tab.label !== label) tab.label = label
-      }
     }),
   )
 }

@@ -7,7 +7,7 @@ import {
   moveTab,
   placeSessionTabs,
   removeSessionTabs,
-  setAllSettingsTabLabels,
+  setBaseSettingsTabLabel,
   type ViewportId,
 } from "./stores/viewport-tree-store"
 import { dragState, endDrag, listDragState, endListDrag, moveHint, setMoveHint } from "./drag/drag-state"
@@ -71,9 +71,10 @@ export default function App() {
     }
   }))
 
-  // Keep every base "settings" tab label in sync with the linked viewport's
-  // active tab. Lives at App scope (not inside the Settings component) so it
-  // never goes stale when Settings unmounts while another tab is active.
+  // Keep the base "settings" tab label in sync with the linked viewport's
+  // active tab. Writes to a signal (NOT viewportMap) — writing to the store
+  // from an effect that reads it causes infinite recursion (produce notifies
+  // all listeners → linkedViewport memo re-evaluates → effect re-fires).
   createEffect(() => {
     const linked = linkedViewport()
     const linkedTabId = linked ? getViewportData(linked)?.activeTabId ?? null : null
@@ -81,7 +82,7 @@ export default function App() {
     const label = tabLabel && tabKind(linkedTabId) !== "settings"
       ? `Settings (${tabLabel})`
       : "Settings"
-    setAllSettingsTabLabels(label)
+    setBaseSettingsTabLabel(label)
   })
 
   const handleDrop = () => {

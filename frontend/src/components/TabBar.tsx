@@ -1,6 +1,6 @@
 import { For, createMemo } from "solid-js"
 import type { Tab } from "../stores/viewport-tree-store"
-import { setCtxMenu } from "../stores/viewport-tree-store"
+import { setCtxMenu, baseSettingsTabLabel } from "../stores/viewport-tree-store"
 import { isDynamicTab } from "../tabs"
 import { currentToolStatus, isThinking, isStreaming, mainSessionPromptTokens } from "../stores/chat-store"
 
@@ -89,7 +89,7 @@ export default function TabBar(props: {
                 </div>
               ) : (
                 <>
-                  {tab.label}
+                  {tab.id === "settings" ? baseSettingsTabLabel() : tab.label}
                   {!isGhost && isDynamicTab(tab.id) && (
                     <span
                       class="absolute right-1 hover:text-[#e0e0e0] cursor-pointer"
