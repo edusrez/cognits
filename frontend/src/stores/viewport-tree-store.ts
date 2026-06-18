@@ -281,6 +281,9 @@ export function splitViewport(vpId: ViewportId, direction: "h" | "v") {
       delete m[vpId]
     }),
   )
+  // vpId has been replaced by leftId (which inherited its tabs). Notify after
+  // the produce so leftId already exists when listeners migrate their links.
+  notifyViewportReplaced(vpId, leftId)
 }
 
 export function countViewports(): number {
@@ -341,6 +344,9 @@ export function deleteViewport(vpId: ViewportId) {
       }
     }),
   )
+  // vpId has been replaced by siblingId (which absorbed its tabs). Notify
+  // after both produce blocks so siblingId is the resolved root/child.
+  notifyViewportReplaced(vpId, siblingId)
 }
 
 function absorbTabs(
@@ -528,4 +534,28 @@ export function resolveViewportLink(
   const first = findFirstLeaf(rootIdSignal())
   if (first) return first
   return id
+}
+
+// ── Viewport-replacement hook (Capa 2: links follow the exact successor) ──
+// splitViewport(vpId) replaces vpId with leftId (which inherits its tabs);
+// deleteViewport(vpId) replaces it with siblingId (which absorbs its tabs).
+// notifyViewportReplaced lets settings-store migrate storedX from the dying
+// id to the successor, so a link follows the *content* instead of falling
+// back to the heuristic first leaf.
+type ReplacedListener = (oldId: ViewportId, newId: ViewportId) => void
+const replacedListeners: ReplacedListener[] = []
+
+export function onViewportReplaced(fn: ReplacedListener): () => void {
+  replacedListeners.push(fn)
+  return () => {
+    const i = replacedListeners.indexOf(fn)
+    if (i >= 0) replacedListeners.splice(i, 1)
+  }
+}
+
+/** Invoke after the split/delete produce blocks have finished, so the
+ *  successor id already exists in the map when listeners migrate their
+ *  stored link to it. */
+function notifyViewportReplaced(oldId: ViewportId, newId: ViewportId) {
+  for (const fn of replacedListeners) fn(oldId, newId)
 }

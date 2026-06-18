@@ -3,7 +3,7 @@ import type { ViewportId } from "../tabs"
 import type { AgentDef, LLMConfig, SessionConfig, SubagentConfig } from "../types"
 import { activeSessionId } from "./session-store"
 import { sessionUsage } from "./chat-store"
-import { resolveViewportLink } from "./viewport-tree-store"
+import { resolveViewportLink, onViewportReplaced } from "./viewport-tree-store"
 
 // ── Pricing + token-cost helpers (used by the Chat Info section) ──
 export const PRICES: Record<string, { inputCacheHit: number; inputCacheMiss: number; output: number }> = {
@@ -69,6 +69,19 @@ export const [storedDefaultFilesViewport, setDefaultFilesViewport] =
 export const defaultFilesViewport = createMemo(() =>
   resolveViewportLink(storedDefaultFilesViewport(), "files"),
 )
+
+// Capa 2: when a viewport is replaced (split → leftId, delete → siblingId),
+// migrate any stored link that pointed at the dying id to the successor, so
+// the link follows the content instead of falling back to the first leaf.
+// The memos above then resolve the successor id directly (it already exists
+// by the time notifyViewportReplaced fires, post-produce).
+onViewportReplaced((oldId, newId) => {
+  if (storedLinkedViewport() === oldId) setLinkedViewport(newId)
+  if (storedDefaultChatViewport() === oldId) setDefaultChatViewport(newId)
+  if (storedDefaultWriteViewport() === oldId) setDefaultWriteViewport(newId)
+  if (storedDefaultLearnitViewport() === oldId) setDefaultLearnitViewport(newId)
+  if (storedDefaultFilesViewport() === oldId) setDefaultFilesViewport(newId)
+})
 
 export type LinkTarget = "viewport" | "chat" | "write" | "learnit" | "files"
 
