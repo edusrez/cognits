@@ -53,7 +53,9 @@ export const [storedDefaultChatViewport, setDefaultChatViewport] =
   createSignal<ViewportId>("1100")
 export const defaultChatViewport = createMemo(() => {
   layoutVersion()
-  return resolveViewportLink(storedDefaultChatViewport(), "sessions")
+  const r = resolveViewportLink(storedDefaultChatViewport(), "sessions")
+  console.log("[memo defaultChatViewport] stored=", storedDefaultChatViewport(), "resolved=", r, "layoutV=", layoutVersion())
+  return r
 })
 
 export const [storedDefaultWriteViewport, setDefaultWriteViewport] =
@@ -72,7 +74,9 @@ export const [storedDefaultFilesViewport, setDefaultFilesViewport] =
   createSignal<ViewportId>("1100")
 export const defaultFilesViewport = createMemo(() => {
   layoutVersion()
-  return resolveViewportLink(storedDefaultFilesViewport(), "files")
+  const r = resolveViewportLink(storedDefaultFilesViewport(), "files")
+  console.log("[memo defaultFilesViewport] stored=", storedDefaultFilesViewport(), "resolved=", r)
+  return r
 })
 
 // Capa 2: when a viewport is replaced (split → leftId, delete → siblingId),

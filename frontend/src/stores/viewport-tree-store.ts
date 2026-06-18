@@ -218,6 +218,7 @@ export function moveTab(
 const sessionTabIds = ["chat", "write"]
 
 export function placeSessionTabs(chatVp: ViewportId, writeVp: ViewportId) {
+  console.log("[placeSessionTabs] chat→", chatVp, "write→", writeVp)
   setViewportMap(
     produce((m) => {
       for (const vp of Object.values(m)) {
@@ -277,6 +278,7 @@ export function splitViewport(vpId: ViewportId, direction: "h" | "v") {
   const rightId = vpId + "1"
   const existing = viewportMap[vpId]
   if (!existing) return
+  console.log("[split]", vpId, "→ left", leftId, "right", rightId, "(tabs:", existing.tabs.map(t=>t.id), ")")
 
   // The new split inherits the split viewport's id, so the reference
   // in the parent (if any) remains valid without touching it.
@@ -395,6 +397,7 @@ function findParentSplit(childId: ViewportId): ViewportId | null {
 }
 
 export function addDynamicTab(vpId: ViewportId, tab: { id: string; label: string; hidden: boolean }) {
+  console.log("[addDynamicTab]", tab.id, "→ vp", vpId)
   setViewportMap(
     produce((m) => {
       const vp = m[vpId]
@@ -540,22 +543,24 @@ export function resolveViewportLink(
   id: ViewportId,
   fallbackTabKind: string | null,
 ): ViewportId {
-  if (viewportMap[id]) return id
-  // Split successor: splitViewport(vpId) deletes vpId and creates vpId+"0"
-  // (left, inherits the tabs) + vpId+"1". Following the left child (recursively
-  // for nested splits like 1100 -> 11000 -> 110000) keeps the link on the
-  // viewport that holds the original content, instead of falling back to the
-  // unrelated first leaf. Deletes don't create id+"0", so they fall through.
+  if (viewportMap[id]) {
+    console.log("[resolve]", id, "→ direct hit")
+    return id
+  }
   if (viewportMap[id + "0"] || splitMap[id + "0"]) {
     const succ = findFirstLeaf(id + "0")
+    console.log("[resolve]", id, "→ split successor", succ)
     if (succ) return succ
   }
   if (fallbackTabKind) {
     const byTab = findViewportWithBaseTab(fallbackTabKind)
+    console.log("[resolve]", id, "→ tab fallback", fallbackTabKind, byTab)
     if (byTab) return byTab
   }
   const first = findFirstLeaf(rootIdSignal())
+  console.log("[resolve]", id, "→ first leaf", first)
   if (first) return first
+  console.log("[resolve]", id, "→ RETURNING STALE id (no viewport found!)")
   return id
 }
 

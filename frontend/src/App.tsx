@@ -58,8 +58,10 @@ export default function App() {
 
   createEffect(() => {
     const sid = activeSessionId()
+    const chatVp = defaultChatViewport()
+    console.log("[App session effect] sid=", sid, "chatVp=", chatVp, "writeVp=", defaultWriteViewport())
     if (sid) {
-      placeSessionTabs(defaultChatViewport(), defaultWriteViewport())
+      placeSessionTabs(chatVp, defaultWriteViewport())
       loadSessionMessages(sid)
       loadSessionConfig(sid)
     } else {
