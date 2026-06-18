@@ -35,6 +35,15 @@ const [rootIdSignal, setRootId] = createSignal<ViewportId>("1")
 export const [focusedViewportId, setFocusedViewportId] = createSignal<string | null>(null)
 export const [shiftHeld, setShiftHeld] = createSignal(false)
 
+// Bumped on every structural change (split, delete, create*, loadTreeState)
+// so viewport-link memos in settings-store re-resolve even when a
+// produce-block delete of a map key wouldn't notify their readers. Cheap:
+// the five link memos just re-run resolveViewportLink.
+export const [layoutVersion, setLayoutVersion] = createSignal(0)
+function bumpLayout() {
+  setLayoutVersion((v) => v + 1)
+}
+
 export function rootId(): ViewportId {
   return rootIdSignal()
 }
@@ -96,6 +105,7 @@ export function createDefaultTree(n: string) {
       fractions: [3, 1],
     },
   }))
+  bumpLayout()
 }
 
 export function createSettingsOnlyTree(n: string) {
@@ -107,6 +117,7 @@ export function createSettingsOnlyTree(n: string) {
     },
   }))
   setSplitMap(reconcile({}))
+  bumpLayout()
 }
 
 export function snapshotTree(): DesktopState {
@@ -123,6 +134,7 @@ export function loadTreeState(state: DesktopState) {
   setViewportMap(reconcile(state.viewports))
   setSplitMap(reconcile(state.splits))
   setRootId(state.rootId)
+  bumpLayout()
 }
 
 export type CtxMenu =
@@ -284,6 +296,7 @@ export function splitViewport(vpId: ViewportId, direction: "h" | "v") {
   // vpId has been replaced by leftId (which inherited its tabs). Notify after
   // the produce so leftId already exists when listeners migrate their links.
   notifyViewportReplaced(vpId, leftId)
+  bumpLayout()
 }
 
 export function countViewports(): number {
@@ -347,6 +360,7 @@ export function deleteViewport(vpId: ViewportId) {
   // vpId has been replaced by siblingId (which absorbed its tabs). Notify
   // after both produce blocks so siblingId is the resolved root/child.
   notifyViewportReplaced(vpId, siblingId)
+  bumpLayout()
 }
 
 function absorbTabs(
@@ -527,6 +541,15 @@ export function resolveViewportLink(
   fallbackTabKind: string | null,
 ): ViewportId {
   if (viewportMap[id]) return id
+  // Split successor: splitViewport(vpId) deletes vpId and creates vpId+"0"
+  // (left, inherits the tabs) + vpId+"1". Following the left child (recursively
+  // for nested splits like 1100 -> 11000 -> 110000) keeps the link on the
+  // viewport that holds the original content, instead of falling back to the
+  // unrelated first leaf. Deletes don't create id+"0", so they fall through.
+  if (viewportMap[id + "0"] || splitMap[id + "0"]) {
+    const succ = findFirstLeaf(id + "0")
+    if (succ) return succ
+  }
   if (fallbackTabKind) {
     const byTab = findViewportWithBaseTab(fallbackTabKind)
     if (byTab) return byTab

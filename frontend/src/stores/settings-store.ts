@@ -3,7 +3,7 @@ import type { ViewportId } from "../tabs"
 import type { AgentDef, LLMConfig, SessionConfig, SubagentConfig } from "../types"
 import { activeSessionId } from "./session-store"
 import { sessionUsage } from "./chat-store"
-import { resolveViewportLink, onViewportReplaced } from "./viewport-tree-store"
+import { resolveViewportLink, onViewportReplaced, layoutVersion } from "./viewport-tree-store"
 
 // ── Pricing + token-cost helpers (used by the Chat Info section) ──
 export const PRICES: Record<string, { inputCacheHit: number; inputCacheMiss: number; output: number }> = {
@@ -31,6 +31,7 @@ export const [linkingMode, setLinkingMode] = createSignal(false)
 export const [storedLinkedViewport, setLinkedViewport] =
   createSignal<ViewportId | null>("1100")
 export const linkedViewport = createMemo<ViewportId | null>(() => {
+  layoutVersion() // re-resolve on any structural change (split/delete/load/swap)
   const id = storedLinkedViewport()
   if (!id) return null
   return resolveViewportLink(id, null)
@@ -50,25 +51,29 @@ export function toggleBasicTab(tabId: string) {
 
 export const [storedDefaultChatViewport, setDefaultChatViewport] =
   createSignal<ViewportId>("1100")
-export const defaultChatViewport = createMemo(() =>
-  resolveViewportLink(storedDefaultChatViewport(), "sessions"),
-)
+export const defaultChatViewport = createMemo(() => {
+  layoutVersion()
+  return resolveViewportLink(storedDefaultChatViewport(), "sessions")
+})
 
 export const [storedDefaultWriteViewport, setDefaultWriteViewport] =
   createSignal<ViewportId>("1101")
-export const defaultWriteViewport = createMemo(() =>
-  resolveViewportLink(storedDefaultWriteViewport(), null),
-)
+export const defaultWriteViewport = createMemo(() => {
+  layoutVersion()
+  return resolveViewportLink(storedDefaultWriteViewport(), null)
+})
 export const [storedDefaultLearnitViewport, setDefaultLearnitViewport] =
   createSignal<ViewportId>("1100")
-export const defaultLearnitViewport = createMemo(() =>
-  resolveViewportLink(storedDefaultLearnitViewport(), "learnit"),
-)
+export const defaultLearnitViewport = createMemo(() => {
+  layoutVersion()
+  return resolveViewportLink(storedDefaultLearnitViewport(), "learnit")
+})
 export const [storedDefaultFilesViewport, setDefaultFilesViewport] =
   createSignal<ViewportId>("1100")
-export const defaultFilesViewport = createMemo(() =>
-  resolveViewportLink(storedDefaultFilesViewport(), "files"),
-)
+export const defaultFilesViewport = createMemo(() => {
+  layoutVersion()
+  return resolveViewportLink(storedDefaultFilesViewport(), "files")
+})
 
 // Capa 2: when a viewport is replaced (split → leftId, delete → siblingId),
 // migrate any stored link that pointed at the dying id to the successor, so
