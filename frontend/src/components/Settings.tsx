@@ -29,6 +29,16 @@ import {
   agentOptions,
   updateAgentPrompt,
   resetAgentPrompt,
+  subagentSelector,
+  setSubagentSelector,
+  subagentSelectorDefaults,
+  updateSelectedSubagent,
+  subagentDefaults,
+  isSubagentPromptModified,
+  subagentOptions,
+  subagentPrompt,
+  updateSubagentPrompt,
+  resetSubagentPrompt,
   chatFontSize,
   setChatFontSize,
   typewriterSpeed,
@@ -114,7 +124,6 @@ import { getViewportData, resetTree } from "../stores/viewport-tree-store"
 import { currentMessages, sessionUsage } from "../stores/chat-store"
 import { activeSessionId } from "../stores/session-store"
 import { type ViewportId, tabKind, dynamicPayload } from "../tabs"
-import type { AgentDef, SubagentConfig } from "../types"
 import Dropdown from "./Dropdown"
 import CollapsibleSection from "./CollapsibleSection"
 import SliderField from "./SliderField"
@@ -183,87 +192,6 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
   })
 
   const [showKey, setShowKey] = createSignal(false)
-
-  const [subagentSelector, setSubagentSelector] = createSignal("web_researcher")
-
-  function subagentSelectorDefaults(): SubagentConfig {
-    const prev = subagentConfig()[subagentSelector()]
-    return {
-      model: prev?.model || "deepseek-v4-flash",
-      reasoning: prev?.reasoning || "high",
-      maxSteps: prev?.maxSteps ?? 0,
-      maxTokens: prev?.maxTokens ?? 0,
-      temperature: prev?.temperature ?? 0,
-      topP: prev?.topP ?? 0,
-    }
-  }
-
-  function updateSelectedSubagent(patch: Partial<SubagentConfig>) {
-    setSubagentConfig((prev) => ({
-      ...prev,
-      [subagentSelector()]: { ...subagentSelectorDefaults(), ...patch },
-    }))
-    saveConfig()
-  }
-
-  const subagentDefaults = createMemo(() => {
-    const map: Record<string, AgentDef> = {}
-    for (const a of defaultAgents()) {
-      map[a.id] = a
-    }
-    return map
-  })
-
-  const isSubagentPromptModified = createMemo(() => {
-    const key = subagentSelector()
-    const def = subagentDefaults()[key]
-    const override = agentOverrides()[key]
-    return def && override !== undefined && override !== def.systemPrompt
-  })
-
-  const subagentOptions = createMemo(() =>
-    defaultAgents()
-      .filter((a) => a.id !== "orchestrator")
-      .map((a) => {
-        const modified =
-          subagentSelector() === a.id && isSubagentPromptModified()
-        return {
-          value: a.id,
-          label: a.name + (modified ? "*" : ""),
-        }
-      }),
-  )
-
-  function subagentPrompt(): string {
-    const key = subagentSelector()
-    const def = subagentDefaults()[key]
-    return agentOverrides()[key] ?? def?.systemPrompt ?? ""
-  }
-
-  function updateSubagentPrompt(value: string) {
-    const key = subagentSelector()
-    const def = subagentDefaults()[key]
-    if (def && value === def.systemPrompt) {
-      setAgentOverrides((prev) => {
-        const next = { ...prev }
-        delete next[key]
-        return next
-      })
-    } else {
-      setAgentOverrides((prev) => ({ ...prev, [key]: value }))
-    }
-    saveConfig()
-  }
-
-  function resetSubagentPrompt() {
-    const key = subagentSelector()
-    setAgentOverrides((prev) => {
-      const next = { ...prev }
-      delete next[key]
-      return next
-    })
-    saveConfig()
-  }
 
   const setAndSaveKey = (v: string) => {
     setLLMApiKey(v)

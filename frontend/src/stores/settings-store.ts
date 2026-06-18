@@ -131,6 +131,89 @@ export function resetAgentPrompt() {
   saveConfig()
 }
 
+// ── Subagent configuration (selector + per-subagent overrides) ──
+export const [subagentSelector, setSubagentSelector] =
+  createSignal("web_researcher")
+
+export function subagentSelectorDefaults(): SubagentConfig {
+  const prev = subagentConfig()[subagentSelector()]
+  return {
+    model: prev?.model || "deepseek-v4-flash",
+    reasoning: prev?.reasoning || "high",
+    maxSteps: prev?.maxSteps ?? 0,
+    maxTokens: prev?.maxTokens ?? 0,
+    temperature: prev?.temperature ?? 0,
+    topP: prev?.topP ?? 0,
+  }
+}
+
+export function updateSelectedSubagent(patch: Partial<SubagentConfig>) {
+  setSubagentConfig((prev) => ({
+    ...prev,
+    [subagentSelector()]: { ...subagentSelectorDefaults(), ...patch },
+  }))
+  saveConfig()
+}
+
+export const subagentDefaults = createMemo(() => {
+  const map: Record<string, AgentDef> = {}
+  for (const a of defaultAgents()) {
+    map[a.id] = a
+  }
+  return map
+})
+
+export const isSubagentPromptModified = createMemo(() => {
+  const key = subagentSelector()
+  const def = subagentDefaults()[key]
+  const override = agentOverrides()[key]
+  return def && override !== undefined && override !== def.systemPrompt
+})
+
+export const subagentOptions = createMemo(() =>
+  defaultAgents()
+    .filter((a) => a.id !== "orchestrator")
+    .map((a) => {
+      const modified =
+        subagentSelector() === a.id && isSubagentPromptModified()
+      return {
+        value: a.id,
+        label: a.name + (modified ? "*" : ""),
+      }
+    }),
+)
+
+export function subagentPrompt(): string {
+  const key = subagentSelector()
+  const def = subagentDefaults()[key]
+  return agentOverrides()[key] ?? def?.systemPrompt ?? ""
+}
+
+export function updateSubagentPrompt(value: string) {
+  const key = subagentSelector()
+  const def = subagentDefaults()[key]
+  if (def && value === def.systemPrompt) {
+    setAgentOverrides((prev) => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  } else {
+    setAgentOverrides((prev) => ({ ...prev, [key]: value }))
+  }
+  saveConfig()
+}
+
+export function resetSubagentPrompt() {
+  const key = subagentSelector()
+  setAgentOverrides((prev) => {
+    const next = { ...prev }
+    delete next[key]
+    return next
+  })
+  saveConfig()
+}
+
 export const [chatFontSize, setChatFontSize] = createSignal(15)
 export const [typewriterSpeed, setTypewriterSpeed] = createSignal(5)
 // kept as number; slider uses parseFloat, store/backend use float
