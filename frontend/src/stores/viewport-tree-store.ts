@@ -1,5 +1,6 @@
 import { createStore, produce, reconcile, unwrap } from "solid-js/store"
 import { createSignal } from "solid-js"
+import { baseTabId } from "../lib/tab-kinds"
 
 export type ViewportId = string
 
@@ -359,7 +360,7 @@ function absorbTabs(
   )
 }
 
-function findFirstLeaf(id: ViewportId): ViewportId | null {
+export function findFirstLeaf(id: ViewportId): ViewportId | null {
   if (viewportMap[id]) return id
   const split = splitMap[id]
   if (!split) return null
@@ -491,4 +492,40 @@ export function findSpatialNeighbor(
   }
 
   return best?.id ?? null
+}
+
+// ── Viewport-link resolution (resilient to layout changes) ──
+// Used by settings-store to keep linkedViewport / defaultChatViewport / etc.
+// always pointing at a valid viewport, even after splits, deletes, desktop
+// switches, or new-desktop creation that invalidate the stored id.
+
+/** Find the first leaf viewport whose tabs include one with the given base
+ *  kind (e.g. "sessions", "files", "learnit"). Returns null if none match. */
+export function findViewportWithBaseTab(baseKind: string): ViewportId | null {
+  for (const [id, vp] of Object.entries(viewportMap)) {
+    if (vp.tabs.some((t) => baseTabId(t.id) === baseKind)) return id
+  }
+  return null
+}
+
+/** Resolve a stored viewport id to one that currently exists.
+ *  1. If `id` is still a leaf viewport → return it.
+ *  2. Else, if `fallbackTabKind` is given → the first viewport holding a tab
+ *     of that kind (so e.g. defaultFilesViewport tracks the Files tab even
+ *     after its original viewport was deleted).
+ *  3. Else → the first leaf of the tree (any valid viewport).
+ *  4. Last resort → return `id` unchanged (should not happen while a tree
+ *     exists; keeps the type simple for callers). */
+export function resolveViewportLink(
+  id: ViewportId,
+  fallbackTabKind: string | null,
+): ViewportId {
+  if (viewportMap[id]) return id
+  if (fallbackTabKind) {
+    const byTab = findViewportWithBaseTab(fallbackTabKind)
+    if (byTab) return byTab
+  }
+  const first = findFirstLeaf(rootIdSignal())
+  if (first) return first
+  return id
 }

@@ -3,6 +3,7 @@ import type { ViewportId } from "../tabs"
 import type { AgentDef, LLMConfig, SessionConfig, SubagentConfig } from "../types"
 import { activeSessionId } from "./session-store"
 import { sessionUsage } from "./chat-store"
+import { resolveViewportLink } from "./viewport-tree-store"
 
 // ── Pricing + token-cost helpers (used by the Chat Info section) ──
 export const PRICES: Record<string, { inputCacheHit: number; inputCacheMiss: number; output: number }> = {
@@ -19,8 +20,21 @@ export function formatNumber(n: number): string {
 }
 
 export const [linkingMode, setLinkingMode] = createSignal(false)
-export const [linkedViewport, setLinkedViewport] =
+
+// ── Viewport links ──
+// Each link stores the user's intended viewport id (storedX) and exposes a
+// resolved memo (X) that always returns a viewport that currently exists.
+// resolveViewportLink falls back to a viewport holding a given tab kind, then
+// to the first leaf — so links survive splits, deletes, desktop switches, and
+// new-desktop creation that invalidate the stored id. The setters keep their
+// public names so beginLinking / loadConfig are unchanged.
+export const [storedLinkedViewport, setLinkedViewport] =
   createSignal<ViewportId | null>("1100")
+export const linkedViewport = createMemo<ViewportId | null>(() => {
+  const id = storedLinkedViewport()
+  if (!id) return null
+  return resolveViewportLink(id, null)
+})
 
 export const [hiddenBasicTabs, setHiddenBasicTabs] = createSignal(
   new Set<string>(),
@@ -34,15 +48,27 @@ export function toggleBasicTab(tabId: string) {
   })
 }
 
-export const [defaultChatViewport, setDefaultChatViewport] =
+export const [storedDefaultChatViewport, setDefaultChatViewport] =
   createSignal<ViewportId>("1100")
+export const defaultChatViewport = createMemo(() =>
+  resolveViewportLink(storedDefaultChatViewport(), "sessions"),
+)
 
-export const [defaultWriteViewport, setDefaultWriteViewport] =
+export const [storedDefaultWriteViewport, setDefaultWriteViewport] =
   createSignal<ViewportId>("1101")
-export const [defaultLearnitViewport, setDefaultLearnitViewport] =
+export const defaultWriteViewport = createMemo(() =>
+  resolveViewportLink(storedDefaultWriteViewport(), null),
+)
+export const [storedDefaultLearnitViewport, setDefaultLearnitViewport] =
   createSignal<ViewportId>("1100")
-export const [defaultFilesViewport, setDefaultFilesViewport] =
+export const defaultLearnitViewport = createMemo(() =>
+  resolveViewportLink(storedDefaultLearnitViewport(), "learnit"),
+)
+export const [storedDefaultFilesViewport, setDefaultFilesViewport] =
   createSignal<ViewportId>("1100")
+export const defaultFilesViewport = createMemo(() =>
+  resolveViewportLink(storedDefaultFilesViewport(), "files"),
+)
 
 export type LinkTarget = "viewport" | "chat" | "write" | "learnit" | "files"
 
@@ -450,8 +476,8 @@ export function saveConfig() {
           subagentConfig: subagentConfig(),
           userName: userName(),
           userLocation: userLocation(),
-          defaultLearnitViewport: defaultLearnitViewport(),
-          defaultFilesViewport: defaultFilesViewport(),
+          defaultLearnitViewport: storedDefaultLearnitViewport(),
+          defaultFilesViewport: storedDefaultFilesViewport(),
           writeLangs: writeLangs(),
           noteMode: noteMode(),
           noteFontSize: noteFontSize(),
