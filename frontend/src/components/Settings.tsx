@@ -166,12 +166,16 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
     return null
   })
 
-  const sections = createMemo(() =>
-    getMatchingSections({
-      linkedViewport: !!linkedViewport(),
-      tabId: linkedActiveTabId(),
-    })
-  )
+  // Per-instance context shared by matches() and render(). The shell owns the
+  // instance-specific fields (tabId from props/linked viewport); future
+  // per-instance fields (pdfPath, ...) are added here so registry sections
+  // receive them without touching the store.
+  const sectionCtx = createMemo(() => ({
+    linkedViewport: !!linkedViewport(),
+    tabId: linkedActiveTabId(),
+  }))
+
+  const sections = createMemo(() => getMatchingSections(sectionCtx()))
 
   const conversationStarted = createMemo(() => currentMessages().length > 0)
 
@@ -344,7 +348,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
 
       {/* ── Registry-driven sections ── */}
       <For each={sections()}>
-        {(section) => section.render()}
+        {(section) => section.render(sectionCtx())}
       </For>
 
       {/* ── PDF AI Vision (needs component-level pdfPath) ── */}

@@ -12,8 +12,11 @@ export interface SettingSection {
   id: string
   /** Returns true when this section should be visible in the Settings panel. */
   matches(ctx: SectionContext): boolean
-  /** Returns the JSX for this section. */
-  render(): JSXElement
+  /** Returns the JSX for this section. Receives the same context used for
+   *  matching, plus any per-instance fields the shell injects (e.g. pdfPath).
+   *  Sections that don't need ctx may declare `render()` — TS contravariance
+   *  accepts fewer-param functions. */
+  render(ctx: SectionContext): JSXElement
 }
 
 /** All setting sections in priority order. */
