@@ -197,7 +197,7 @@ export default function Chat(props: { viewportId?: string }) {
       </Show>
 
       <Show when={!llmApiKey()}>
-        <div class="text-[#8b949e] text-center text-[0.9em]">
+        <div class="text-[#8b949e] flex items-center justify-center h-full text-[0.9em]">
           Configure an API key in Settings before chatting.
         </div>
       </Show>
