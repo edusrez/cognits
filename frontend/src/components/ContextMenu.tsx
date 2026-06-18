@@ -85,7 +85,7 @@ export default function ContextMenu(props: {
             >
               <span class="flex justify-between items-center w-full">
                 <span>{item.label}</span>
-                {hasSub() && <span class="text-[#6a6a6a] ml-4">▶</span>}
+                {hasSub() && <span class="text-[#5a5a5a] ml-3 text-sm">›</span>}
               </span>
             </button>
           )
