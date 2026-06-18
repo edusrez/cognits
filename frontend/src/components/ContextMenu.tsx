@@ -14,6 +14,7 @@ export default function ContextMenu(props: {
   onClose: () => void
 }) {
   const [hovered, setHovered] = createSignal<number | null>(null)
+  const [subHovered, setSubHovered] = createSignal<number | null>(null)
   const [pos, setPos] = createSignal({ x: props.x, y: props.y })
   let menuRef: HTMLDivElement | undefined
 
@@ -28,7 +29,7 @@ export default function ContextMenu(props: {
 
   function scheduleCloseSub() {
     if (subTimeout) clearTimeout(subTimeout)
-    subTimeout = setTimeout(() => setSubIndex(-1), 150)
+    subTimeout = setTimeout(() => { setSubIndex(-1); setSubHovered(null) }, 150)
   }
 
   function cancelCloseSub() {
@@ -107,9 +108,12 @@ export default function ContextMenu(props: {
             onClick={(e) => e.stopPropagation()}
           >
             <For each={sub}>
-              {(sitem) => (
+              {(sitem, sindex) => (
                 <button
-                  class="w-full text-left px-3 py-1.5 text-[13px] cursor-pointer hover:bg-black/50 transition-colors"
+                  class="w-full text-left px-3 py-1.5 text-[13px] cursor-pointer transition-colors"
+                  classList={{ "bg-black/50": subHovered() === sindex() }}
+                  onMouseEnter={() => { cancelCloseSub(); setSubHovered(sindex()) }}
+                  onMouseLeave={() => { setSubHovered(null); scheduleCloseSub() }}
                   onClick={(e) => { e.stopPropagation(); cancelCloseSub(); props.onClose(); sitem.onClick() }}
                   onContextMenu={(e) => {
                     e.preventDefault()
