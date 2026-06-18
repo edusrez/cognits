@@ -1,6 +1,6 @@
 import { createSignal, createMemo } from "solid-js"
 import type { ViewportId } from "../tabs"
-import type { LLMConfig, SessionConfig, SubagentConfig } from "../types"
+import type { AgentDef, LLMConfig, SessionConfig, SubagentConfig } from "../types"
 import { activeSessionId } from "./session-store"
 
 export const [linkingMode, setLinkingMode] = createSignal(false)
@@ -64,6 +64,73 @@ export const [llmReasoning, setLLMReasoning] =
   createSignal<LLMConfig["llmReasoning"]>("max")
 export const [agentOverrides, setAgentOverrides] =
   createSignal<Record<string, string>>({})
+
+// ── Default agents (queried from backend /api/agents) + derived memos ──
+// Default personas live in the backend (internal/agent/prompts.go); here they
+// are only queried to display them and edit via agentOverrides. Hoisted from
+// the Settings component so registry sections can consume them directly.
+export const [defaultAgents, setDefaultAgents] = createSignal<AgentDef[]>([
+  { id: "orchestrator", name: "Orchestrator", systemPrompt: "" },
+])
+
+fetch("/api/agents")
+  .then((r) => (r.ok ? r.json() : []))
+  .then((list: AgentDef[]) => {
+    if (Array.isArray(list) && list.length > 0) setDefaultAgents(list)
+  })
+  .catch(() => {})
+
+export const selectedAgent = createMemo(
+  () => defaultAgents().find((a) => a.id === llmAgentId()) ?? defaultAgents()[0],
+)
+
+export const isAgentModified = createMemo(() => {
+  const agent = selectedAgent()
+  const override = agentOverrides()[agent.id]
+  return override !== undefined && override !== agent.systemPrompt
+})
+
+export const effectivePrompt = createMemo(() => {
+  const agent = selectedAgent()
+  return agentOverrides()[agent.id] ?? agent.systemPrompt
+})
+
+export const agentOptions = createMemo(() =>
+  defaultAgents().map((a) => ({
+    value: a.id,
+    label: llmAgentId() === a.id
+      ? `${a.name}${isAgentModified() ? "*" : ""}`
+      : a.name,
+  })),
+)
+
+/** Set the orchestrator system prompt override (or clear it when restoring). */
+export function updateAgentPrompt(value: string) {
+  const agent = selectedAgent()
+  const key = agent.id
+  if (value === agent.systemPrompt) {
+    setAgentOverrides((prev) => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  } else {
+    setAgentOverrides((prev) => ({ ...prev, [key]: value }))
+  }
+  saveConfig()
+}
+
+export function resetAgentPrompt() {
+  const agent = selectedAgent()
+  const key = agent.id
+  setAgentOverrides((prev) => {
+    const next = { ...prev }
+    delete next[key]
+    return next
+  })
+  saveConfig()
+}
+
 export const [chatFontSize, setChatFontSize] = createSignal(15)
 export const [typewriterSpeed, setTypewriterSpeed] = createSignal(5)
 // kept as number; slider uses parseFloat, store/backend use float

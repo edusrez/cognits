@@ -22,6 +22,13 @@ import {
   setLLMReasoning,
   agentOverrides,
   setAgentOverrides,
+  defaultAgents,
+  selectedAgent,
+  isAgentModified,
+  effectivePrompt,
+  agentOptions,
+  updateAgentPrompt,
+  resetAgentPrompt,
   chatFontSize,
   setChatFontSize,
   typewriterSpeed,
@@ -107,7 +114,7 @@ import { getViewportData, resetTree } from "../stores/viewport-tree-store"
 import { currentMessages, sessionUsage } from "../stores/chat-store"
 import { activeSessionId } from "../stores/session-store"
 import { type ViewportId, tabKind, dynamicPayload } from "../tabs"
-import type { AgentDef, ChatUsage, SubagentConfig } from "../types"
+import type { AgentDef, SubagentConfig } from "../types"
 import Dropdown from "./Dropdown"
 import CollapsibleSection from "./CollapsibleSection"
 import SliderField from "./SliderField"
@@ -124,19 +131,6 @@ function formatCost(tokens: number, pricePerM: number): string {
 function formatNumber(n: number): string {
   return n.toLocaleString()
 }
-
-// Default agents live in the backend (internal/agent/prompts.go);
-// here they're only queried to display them and edit via agentOverrides.
-const [defaultAgents, setDefaultAgents] = createSignal<AgentDef[]>([
-  { id: "orchestrator", name: "Orchestrator", systemPrompt: "" },
-])
-
-fetch("/api/agents")
-  .then((r) => (r.ok ? r.json() : []))
-  .then((list: AgentDef[]) => {
-    if (Array.isArray(list) && list.length > 0) setDefaultAgents(list)
-  })
-  .catch(() => {})
 
 import "./settings/sections" // auto-registers sections via side-effect
 import type { LinkTarget } from "../stores/settings-store"
@@ -187,29 +181,6 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
     if (!prices) return null
     return { usage, prices, model }
   })
-
-  const selectedAgent = createMemo(() => {
-    return defaultAgents().find((a) => a.id === llmAgentId()) ?? defaultAgents()[0]
-  })
-
-  const isAgentModified = createMemo(() => {
-    const agent = selectedAgent()
-    const override = agentOverrides()[agent.id]
-    return override !== undefined && override !== agent.systemPrompt
-  })
-
-  const effectivePrompt = createMemo(() => {
-    const agent = selectedAgent()
-    return agentOverrides()[agent.id] ?? agent.systemPrompt
-  })
-
-  const agentOptions = createMemo(() =>
-    defaultAgents().map((a) => ({
-      value: a.id,
-      label: llmAgentId() === a.id
-        ? `${a.name}${isAgentModified() ? "*" : ""}`
-        : a.name,
-    })))
 
   const [showKey, setShowKey] = createSignal(false)
 
@@ -296,32 +267,6 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
 
   const setAndSaveKey = (v: string) => {
     setLLMApiKey(v)
-    saveConfig()
-  }
-
-  const updatePrompt = (value: string) => {
-    const agent = selectedAgent()
-    const key = agent.id
-    if (value === agent.systemPrompt) {
-      setAgentOverrides((prev) => {
-        const next = { ...prev }
-        delete next[key]
-        return next
-      })
-    } else {
-      setAgentOverrides((prev) => ({ ...prev, [key]: value }))
-    }
-    saveConfig()
-  }
-
-  const resetPrompt = () => {
-    const agent = selectedAgent()
-    const key = agent.id
-    setAgentOverrides((prev) => {
-      const next = { ...prev }
-      delete next[key]
-      return next
-    })
     saveConfig()
   }
 
@@ -592,7 +537,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
                 <Show when={isAgentModified() && !conversationStarted()}>
                   <button
                     class="text-[#6a6a6a] hover:text-[#e0e0e0] transition-colors cursor-pointer"
-                    onClick={resetPrompt}
+                    onClick={resetAgentPrompt}
                     title="Restore default prompt"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -604,7 +549,7 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
               </div>
               <textarea
                 value={effectivePrompt()}
-                onInput={(e) => updatePrompt(e.currentTarget.value)}
+                onInput={(e) => updateAgentPrompt(e.currentTarget.value)}
                 class="bg-transparent border border-white/20 px-2 py-1 text-[13px] text-[#e0e0e0] outline-hidden focus:border-white/40 resize-none h-36 disabled:opacity-40 disabled:cursor-not-allowed"
                 readOnly={conversationStarted()}
                 disabled={conversationStarted()}
