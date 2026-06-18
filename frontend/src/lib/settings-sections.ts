@@ -40,7 +40,13 @@ export function getAllSections(): ReadonlyArray<SettingSection> {
 }
 
 export function getMatchingSections(ctx: SectionContext): SettingSection[] {
-  return registry.filter((s) => s.matches(ctx))
+  const matched = registry.filter((s) => s.matches(ctx))
+  // \"general\" is the catch-all footer (basic tabs, restore layout, change
+  // link). Keep it last regardless of registration order, so per-tab sections
+  // appear above it.
+  const general = matched.find((s) => s.id === "general")
+  if (!general) return matched
+  return [...matched.filter((s) => s.id !== "general"), general]
 }
 
 /** True if any section matches this tab (used by Viewport context menu). */
