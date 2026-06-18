@@ -2,6 +2,21 @@ import { createSignal, createMemo } from "solid-js"
 import type { ViewportId } from "../tabs"
 import type { AgentDef, LLMConfig, SessionConfig, SubagentConfig } from "../types"
 import { activeSessionId } from "./session-store"
+import { sessionUsage } from "./chat-store"
+
+// ── Pricing + token-cost helpers (used by the Chat Info section) ──
+export const PRICES: Record<string, { inputCacheHit: number; inputCacheMiss: number; output: number }> = {
+  "deepseek-v4-flash": { inputCacheHit: 0.0028, inputCacheMiss: 0.14, output: 0.28 },
+  "deepseek-v4-pro": { inputCacheHit: 0.003625, inputCacheMiss: 0.435, output: 0.87 },
+}
+
+export function formatCost(tokens: number, pricePerM: number): string {
+  return "$" + ((tokens / 1_000_000) * pricePerM).toFixed(2)
+}
+
+export function formatNumber(n: number): string {
+  return n.toLocaleString()
+}
 
 export const [linkingMode, setLinkingMode] = createSignal(false)
 export const [linkedViewport, setLinkedViewport] =
@@ -328,6 +343,19 @@ export const activeAgentId = createMemo(() => {
   const sid = activeSessionId()
   if (sid && sessionAgentId()) return sessionAgentId()
   return llmAgentId()
+})
+
+/** Resolved token-cost context for the active session, or null when there is
+ *  no usage yet or no price table for the active model. Placed here (after
+ *  llmModel's declaration) because createMemo runs its factory eagerly on
+ *  creation — referencing llmModel above its const would hit the TDZ. */
+export const usageInfo = createMemo(() => {
+  const usage = sessionUsage()
+  const model = llmModel()
+  if (!usage || !model) return null
+  const prices = PRICES[model]
+  if (!prices) return null
+  return { usage, prices, model }
 })
 
 export async function loadSessionConfig(sessionId: string) {

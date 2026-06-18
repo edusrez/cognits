@@ -74,6 +74,10 @@ export const sessionUsage = createMemo(() => {
   return usageBySession()[sid] ?? null
 })
 
+/** True once the active session has at least one message — used to lock
+ *  settings that can't change mid-conversation. */
+export const conversationStarted = createMemo(() => currentMessages().length > 0)
+
 export const mainSessionPromptTokens = createMemo(() => {
   const sid = activeSessionId()
   if (!sid) return 0

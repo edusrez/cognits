@@ -16,7 +16,6 @@ import {
   setLLMAgentId,
   llmApiKey,
   setLLMApiKey,
-  llmModel,
   setLLMModel,
   llmReasoning,
   setLLMReasoning,
@@ -119,27 +118,17 @@ import {
   displayThinking,
   setDisplayThinking,
   saveConfig,
+  usageInfo,
+  formatCost,
+  formatNumber,
 } from "../stores/settings-store"
 import { getViewportData, resetTree } from "../stores/viewport-tree-store"
-import { currentMessages, sessionUsage } from "../stores/chat-store"
+import { conversationStarted } from "../stores/chat-store"
 import { activeSessionId } from "../stores/session-store"
 import { type ViewportId, tabKind, dynamicPayload } from "../tabs"
 import Dropdown from "./Dropdown"
 import CollapsibleSection from "./CollapsibleSection"
 import SliderField from "./SliderField"
-
-const PRICES: Record<string, { inputCacheHit: number; inputCacheMiss: number; output: number }> = {
-  "deepseek-v4-flash": { inputCacheHit: 0.0028, inputCacheMiss: 0.14, output: 0.28 },
-  "deepseek-v4-pro": { inputCacheHit: 0.003625, inputCacheMiss: 0.435, output: 0.87 },
-}
-
-function formatCost(tokens: number, pricePerM: number): string {
-  return "$" + ((tokens / 1_000_000) * pricePerM).toFixed(2)
-}
-
-function formatNumber(n: number): string {
-  return n.toLocaleString()
-}
 
 import "./settings/sections" // auto-registers sections via side-effect
 import type { LinkTarget } from "../stores/settings-store"
@@ -179,17 +168,6 @@ export default function Settings(props: { viewportId?: ViewportId; tabId?: strin
   }))
 
   const sections = createMemo(() => getMatchingSections(sectionCtx()))
-
-  const conversationStarted = createMemo(() => currentMessages().length > 0)
-
-  const usageInfo = createMemo(() => {
-    const usage = sessionUsage()
-    const model = llmModel()
-    if (!usage || !model) return null
-    const prices = PRICES[model]
-    if (!prices) return null
-    return { usage, prices, model }
-  })
 
   const [showKey, setShowKey] = createSignal(false)
 
