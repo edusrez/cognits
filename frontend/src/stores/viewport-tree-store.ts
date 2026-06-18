@@ -164,7 +164,7 @@ export function setTabLabel(vpId: ViewportId, tabId: string, label: string) {
       const vp = m[vpId]
       if (!vp) return
       const tab = vp.tabs.find((t) => t.id === tabId)
-      if (tab) tab.label = label
+      if (tab && tab.label !== label) tab.label = label
     }),
   )
 }
