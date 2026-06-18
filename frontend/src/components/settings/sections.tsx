@@ -1,12 +1,17 @@
 /** Auto-registered Settings sections — display-type (self-contained, no context needed).
  *  Add a registerSection() call here to create a new section.
- *  Settings.tsx renders them via For loop. Context menu auto-discovers via hasSettings(). */
+ *  Settings.tsx renders them via For loop. Context menu auto-discovers via hasSettings().
+ *
+ *  This file is also the barrel that loads the domain section modules
+ *  (chat, pdf, general) for their registration side-effects. */
 
 import { Show } from "solid-js"
 import { registerSection } from "../../lib/settings-sections"
 import SliderField from "../SliderField"
 import Dropdown from "../Dropdown"
 import CollapsibleSection from "../CollapsibleSection"
+import "./chat-sections" // side-effect: registers chat:info/agent/subagents/shared-data
+import "./pdf-sections"  // side-effect: registers pdf:ai-vision
 import {
   chatFontSize, setChatFontSize,
   noteFontSize, setNoteFontSize,

@@ -6,6 +6,10 @@ import { baseTabId } from "./tab-kinds"
 export interface SectionContext {
   linkedViewport: boolean
   tabId: string | null
+  /** Per-instance reactive fields. Accessors (not plain values) because
+   *  render() is invoked once per section by the <For> in the shell — a plain
+   *  value would be captured stale. The shell passes its createMemo directly. */
+  pdfPath?: () => string | null
 }
 
 export interface SettingSection {
