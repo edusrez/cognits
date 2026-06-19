@@ -73,7 +73,7 @@ export default function ContextMenu(props: {
           return (
             <button
               ref={(el) => { itemRefs[index()] = el }}
-              class={`w-full text-left px-3 py-1.5 text-[13px] cursor-pointer transition-colors${item.class ? " " + item.class : ""}`}
+              class={`w-full text-left px-2.5 py-1 text-[13px] cursor-pointer transition-colors${item.class ? " " + item.class : ""}`}
               classList={{ "bg-black/50": hovered() === index() }}
               onMouseEnter={() => { setHovered(index()); if (hasSub()) openSub(index()) }}
               onMouseLeave={() => { setHovered(null); if (hasSub()) scheduleCloseSub() }}
@@ -86,7 +86,6 @@ export default function ContextMenu(props: {
             >
               <span class="flex justify-between items-center w-full">
                 <span>{item.label}</span>
-                {hasSub() && <span class="text-[#5a5a5a] ml-3 text-sm">›</span>}
               </span>
             </button>
           )
@@ -110,7 +109,7 @@ export default function ContextMenu(props: {
             <For each={sub}>
               {(sitem, sindex) => (
                 <button
-                  class="w-full text-left px-3 py-1.5 text-[13px] cursor-pointer transition-colors"
+                  class="w-full text-left px-2.5 py-1 text-[13px] cursor-pointer transition-colors"
                   classList={{ "bg-black/50": subHovered() === sindex() }}
                   onMouseEnter={() => { cancelCloseSub(); setSubHovered(sindex()) }}
                   onMouseLeave={() => { setSubHovered(null); scheduleCloseSub() }}
