@@ -175,7 +175,7 @@ export default function Viewport(props: {
                             { label: "Settings", onClick: () => { setCtxMenu(null); setLinkedViewport(props.id) } },
                             { label: "Chat", onClick: () => { setCtxMenu(null); setDefaultChatViewport(props.id) } },
                             { label: "Write", onClick: () => { setCtxMenu(null); setDefaultWriteViewport(props.id) } },
-                            { label: "Reports & Notes", onClick: () => { setCtxMenu(null); setDefaultLearnitViewport(props.id) } },
+                            { label: "Reports", onClick: () => { setCtxMenu(null); setDefaultLearnitViewport(props.id) } },
                             { label: "Files", onClick: () => { setCtxMenu(null); setDefaultFilesViewport(props.id) } },
                           ],
                         },
