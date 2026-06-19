@@ -165,17 +165,17 @@ export default function Viewport(props: {
                       y={m().y}
                       onClose={() => setCtxMenu(null)}
                       items={[
-                        { label: "Split horizontally",  onClick: () => { setCtxMenu(null); splitViewport(props.id, "h") } },
-                        { label: "Split vertically",    onClick: () => { setCtxMenu(null); splitViewport(props.id, "v") } },
-                        { label: "Delete viewport",     onClick: () => { setCtxMenu(null); deleteViewport(props.id) }, class: canDeleteViewport(props.id) ? "text-red-400" : "text-[#4a4a4a]" },
+                        { label: "Split H",  onClick: () => { setCtxMenu(null); splitViewport(props.id, "h") } },
+                        { label: "Split V",    onClick: () => { setCtxMenu(null); splitViewport(props.id, "v") } },
+                        { label: "Delete",     onClick: () => { setCtxMenu(null); deleteViewport(props.id) }, class: canDeleteViewport(props.id) ? "text-red-400" : "text-[#4a4a4a]" },
                         {
-                          label: "Link viewport to",
+                          label: "Link to",
                           onClick: () => {},
                           subItems: [
                             { label: "Settings", onClick: () => { setCtxMenu(null); setLinkedViewport(props.id) } },
-                            { label: "Sessions (Chat)", onClick: () => { setCtxMenu(null); setDefaultChatViewport(props.id) } },
-                            { label: "Sessions (Write)", onClick: () => { setCtxMenu(null); setDefaultWriteViewport(props.id) } },
-                            { label: ".cognits (Reports/Notes)", onClick: () => { setCtxMenu(null); setDefaultLearnitViewport(props.id) } },
+                            { label: "Chat", onClick: () => { setCtxMenu(null); setDefaultChatViewport(props.id) } },
+                            { label: "Write", onClick: () => { setCtxMenu(null); setDefaultWriteViewport(props.id) } },
+                            { label: "Reports & Notes", onClick: () => { setCtxMenu(null); setDefaultLearnitViewport(props.id) } },
                             { label: "Files", onClick: () => { setCtxMenu(null); setDefaultFilesViewport(props.id) } },
                           ],
                         },

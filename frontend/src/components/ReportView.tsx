@@ -59,7 +59,7 @@ export default function ReportView(props: { viewportId?: string; tabId?: string 
             onClose={() => setCtxMenu(null)}
             items={[
               {
-                label: "Copy in Markdown",
+                label: "Copy Markdown",
                 onClick: () => {
                   const text = m().content
                   setCtxMenu(null)

@@ -324,7 +324,7 @@ export default function LearnitView() {
                 },
               },
               {
-                label: "Delete Report",
+                label: "Delete",
                 class: "text-red-400",
                 onClick: async () => {
                   const reportId = m().reportId

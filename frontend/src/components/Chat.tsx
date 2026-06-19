@@ -216,7 +216,7 @@ export default function Chat(props: { viewportId?: string }) {
             onClose={() => setCtxMenu(null)}
             items={[
               {
-                label: "Copy in Markdown",
+                label: "Copy Markdown",
                 onClick: () => {
                   const text = m().content
                   setCtxMenu(null)
@@ -224,7 +224,7 @@ export default function Chat(props: { viewportId?: string }) {
                 },
               },
               {
-                label: "Copy Conversation in Markdown",
+                label: "Copy Conversation",
                 onClick: () => {
                   setCtxMenu(null)
                   const md = messages()
