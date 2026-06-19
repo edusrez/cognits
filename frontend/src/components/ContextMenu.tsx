@@ -63,8 +63,7 @@ export default function ContextMenu(props: {
   return (
     <div
       ref={menuRef}
-      class="fixed z-50 bg-[#1a1a1a] border border-white/20 shadow-lg min-w-[100px]"
-      style={{ left: pos().x + "px", top: pos().y + "px" }}
+      class="fixed z-50 bg-[#1a1a1a] border border-white/20 shadow-lg min-w-[90px]"
       onClick={(e) => e.stopPropagation()}
     >
       <For each={props.items}>
@@ -86,6 +85,7 @@ export default function ContextMenu(props: {
             >
               <span class="flex justify-between items-center w-full">
                 <span>{item.label}</span>
+                {hasSub() && <span class="text-[#5a5a5a] ml-3 text-sm">›</span>}
               </span>
             </button>
           )
@@ -100,7 +100,7 @@ export default function ContextMenu(props: {
         const sy = btn ? Math.max(0, Math.min(btn.getBoundingClientRect().top, window.innerHeight - (sub.length * 32 + 4))) : pos().y
         return (
           <div
-            class="fixed z-50 bg-[#1a1a1a] border border-white/20 shadow-lg min-w-[80px]"
+            class="fixed z-50 bg-[#1a1a1a] border border-white/20 shadow-lg min-w-[90px]"
             style={{ left: sx + "px", top: sy + "px" }}
             onMouseEnter={cancelCloseSub}
             onMouseLeave={scheduleCloseSub}
