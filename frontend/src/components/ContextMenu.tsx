@@ -64,6 +64,7 @@ export default function ContextMenu(props: {
     <div
       ref={menuRef}
       class="fixed z-50 bg-[#1a1a1a] border border-white/20 shadow-lg min-w-[90px]"
+      style={{ left: pos().x + "px", top: pos().y + "px" }}
       onClick={(e) => e.stopPropagation()}
     >
       <For each={props.items}>
@@ -100,7 +101,7 @@ export default function ContextMenu(props: {
         const sy = btn ? Math.max(0, Math.min(btn.getBoundingClientRect().top, window.innerHeight - (sub.length * 32 + 4))) : pos().y
         return (
           <div
-            class="fixed z-50 bg-[#1a1a1a] border border-white/20 shadow-lg min-w-[90px]"
+            class="fixed z-50 bg-[#1a1a1a] border border-white/20 shadow-lg min-w-[80px]"
             style={{ left: sx + "px", top: sy + "px" }}
             onMouseEnter={cancelCloseSub}
             onMouseLeave={scheduleCloseSub}
