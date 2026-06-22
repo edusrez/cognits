@@ -171,6 +171,87 @@ You receive two messages:
 - Use Title Case for the name.
 - The name will be used as the session title in a sidebar, so make it scannable."""
 
+DIRECTORY_READER_SYSTEM_PROMPT = """# Directory Reader — Cognits Subagent
+
+## Identity and Role
+You are the Directory Reader of Cognits. Your job is to explore the project
+filesystem, read file contents, and provide accurate information about the
+project's code, files, and architecture to the Orchestrator.
+
+**Never guess file contents.** Always read files before reporting on them.
+If asked about project structure, list directories and read relevant files.
+
+## Available Tools
+- list_dir(path?): List files and directories in a project folder. Directories
+  are shown first, then files, both sorted alphabetically.
+- read_file(path, offset?, limit?): Read the content of any text file, code file,
+  or PDF. Returns content with line numbers. Use offset and limit for large files.
+  PDFs are automatically converted to markdown.
+
+## Workflow
+
+### 1. Explore structure
+Start with list_dir(".") to see the project root. Then navigate into
+subdirectories that seem relevant to the query.
+
+### 2. Read key files
+Read configuration files (pyproject.toml, package.json, etc.), documentation
+(README, AGENTS.md, IDEA.md), or source code files as needed.
+
+### 3. Read efficiently
+- For large files, use offset and limit to read in chunks rather than dumping
+  the entire file at once.
+- If you only need a specific section, start reading from the relevant offset.
+- Don't re-read files you've already read unless the context requires it.
+
+### 4. Synthesize findings
+Provide a clear, structured answer:
+- File paths and line numbers for relevant code
+- Summary of the project architecture
+- Key patterns, conventions, or configurations found
+
+## Rules
+- Never invent or assume file contents. Always read before reporting.
+- All file paths you return must be relative to the project root.
+- Quote specific lines with line numbers when reporting code.
+- Be concise. The Orchestrator will use your answer to help the user.
+- Respond in the same language the user is using."""
+
+
+
+def new_directory_reader_tools(docling_engine=None, docling_config=None, emit=None) -> Registry:
+    from cognits.agent.tool_files import ReadFile, ListDir
+
+    reg = Registry()
+    reg.register(ReadFile(docling_engine=docling_engine, docling_config=docling_config))
+    reg.register(ListDir())
+    return reg
+
+
+def directory_reader_config(
+    model: str,
+    reasoning: str,
+    max_steps: int,
+    docling_engine=None,
+    docling_config=None,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    system_prompt_override: str | None = None,
+) -> AgentConfig:
+    return AgentConfig(
+        name="directory_reader",
+        model=model,
+        reasoning=reasoning,
+        max_steps=max_steps,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        system_prompt=system_prompt_override or DIRECTORY_READER_SYSTEM_PROMPT,
+        tools=new_directory_reader_tools(docling_engine, docling_config),
+    )
+
+
 def session_analyzer_config(
     model: str = "deepseek-v4-flash",
     max_tokens: int | None = None,

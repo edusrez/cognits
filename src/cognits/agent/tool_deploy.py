@@ -76,8 +76,8 @@ class DeploySubagent(Tool):
     schema = {
         "type": "object",
         "properties": {
-            "type": {"type": "string", "enum": ["web_researcher"]},
-            "query": {"type": "string", "description": "Research task description"},
+            "type": {"type": "string", "enum": ["web_researcher", "directory_reader"]},
+            "query": {"type": "string", "description": "Task description for the subagent"},
         },
         "required": ["type", "query"],
     }
@@ -127,6 +127,10 @@ class DeploySubagent(Tool):
                 msg = "Searching the Web..."
                 if tool == "tinyfish_fetch_content":
                     msg = "Reading Results..."
+                elif tool == "read_file":
+                    msg = "Reading file..."
+                elif tool == "list_dir":
+                    msg = "Listing directory..."
                 agent = data.get("agent", cfg.name) if isinstance(data, dict) else cfg.name
                 self.emit({"type": "tool_progress", "data": {"message": msg, "agent": agent}})
                 return

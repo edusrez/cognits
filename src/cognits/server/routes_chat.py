@@ -19,6 +19,7 @@ from fastapi import FastAPI, Request, Response
 from cognits.agent.agent import Agent, AgentConfig
 from cognits.agent.prompts import DEFAULT_AGENT_ID, default_agent_prompt
 from cognits.agent.subagents import (
+    directory_reader_config,
     documentalist_config,
     researcher_config,
     session_analyzer_config,
@@ -395,7 +396,15 @@ async def _run_agent(
                 temperature=web_temperature or None,
                 top_p=web_top_p or None,
                 system_prompt_override=web_prompt,
-            )
+            ),
+            "directory_reader": directory_reader_config(
+                web_model, web_reasoning, web_max_steps,
+                docling_engine=st.docling_engine if st.docling_engine is not None and st.docling_engine.error is None else None,
+                docling_config=cfg.docling_config,
+                max_tokens=web_max_tokens or None,
+                temperature=web_temperature or None,
+                top_p=web_top_p or None,
+            ),
         }
 
         if st.rag is not None and st.rag.error is None:
