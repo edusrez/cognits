@@ -44,6 +44,7 @@ AGENT_LABELS = {
     "web_researcher": "Web Researcher",
     "documentalist": "Documentalist",
     "session_analyzer": "Session Analyzer",
+    "directory_reader": "Directory Reader",
 }
 
 # Explicit lists instead of strftime %A/%B: those are locale-dependent.

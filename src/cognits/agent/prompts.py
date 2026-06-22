@@ -1,6 +1,7 @@
 """Port of internal/agent/prompts.go."""
 
 from cognits.agent.subagents import (
+    DIRECTORY_READER_SYSTEM_PROMPT,
     DOCUMENTALIST_SYSTEM_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
     SESSION_ANALYZER_SYSTEM_PROMPT,
@@ -60,6 +61,11 @@ DEFAULT_AGENTS = [
         "id": "session_analyzer",
         "name": "Session Analyzer",
         "systemPrompt": SESSION_ANALYZER_SYSTEM_PROMPT,
+    },
+    {
+        "id": "directory_reader",
+        "name": "Directory Reader",
+        "systemPrompt": DIRECTORY_READER_SYSTEM_PROMPT,
     },
 ]
 
