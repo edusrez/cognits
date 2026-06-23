@@ -8,16 +8,13 @@ import {
   placeSessionTabs,
   removeSessionTabs,
   setBaseSettingsTabLabel,
-  createDefaultTree,
-  createSetupTree,
   type ViewportId,
 } from "./stores/viewport-tree-store"
 import { dragState, endDrag, listDragState, endListDrag, moveHint, setMoveHint } from "./drag/drag-state"
 import { activeSessionId } from "./stores/session-store"
-import { loadConfig, defaultChatViewport, defaultWriteViewport, loadSessionConfig, linkedViewport, configLoaded } from "./stores/settings-store"
+import { loadConfig, defaultChatViewport, defaultWriteViewport, loadSessionConfig, linkedViewport } from "./stores/settings-store"
 import { loadSessionMessages } from "./stores/chat-store"
 import { initDesktops } from "./stores/desktop-store"
-import { isSetupActive } from "./stores/setup-store"
 import Viewport from "./components/Viewport"
 import DragOverlay, { ListDragOverlay } from "./components/DragOverlay"
 import { tabDisplayName, tabKind } from "./tabs"
@@ -29,8 +26,6 @@ import {
 import { handleViewportFocus, handleLinkMode, handleArrowNavigation } from "./lib/keyboard/viewport-nav"
 import { cancelMoveModeOnKey, handleSpaceEnter, handleSpaceShortcuts, handleCtrlEnter } from "./lib/keyboard/selection-actions"
 import { handleDesktopShortcuts } from "./lib/keyboard/desktop-shortcuts"
-
-initDesktops()
 
 const [ragReady, setRagReady] = createSignal(false)
 const [ragError, setRagError] = createSignal<string | null>(null)
@@ -109,15 +104,10 @@ export default function App() {
     endDrag()
   })
 
-  onMount(() => {
-    loadConfig()
-    // Detect config loaded and tree already initialized (by initDesktops).
-    // If running for the first time (no API key), swap to setup layout.
-    createEffect(() => {
-      if (configLoaded() && isSetupActive()) {
-        createSetupTree("1")
-      }
-    })
+  onMount(async () => {
+    await loadConfig()
+    // initDesktops runs AFTER config is loaded so isSetupActive is reliable.
+    await initDesktops()
 
     // Keyboard dispatch — order preserves the original monolithic handler.
     // Global handlers fire regardless of focus; the form-element gate sits

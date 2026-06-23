@@ -3,6 +3,7 @@ import {
   snapshotTree,
   loadTreeState,
   createDefaultTree,
+  createSetupTree,
   createSettingsOnlyTree,
   placeSessionTabs,
   removeSessionTabs,
@@ -12,6 +13,7 @@ import {
 } from "./viewport-tree-store"
 import { activeSessionId } from "./session-store"
 import { defaultChatViewport, defaultWriteViewport } from "./settings-store"
+import { isSetupActive } from "./setup-store"
 
 // App.tsx's effect only places session tabs when the session changes;
 // when restoring another desktop tree, they must be re-placed explicitly.
@@ -80,7 +82,11 @@ export async function initDesktops() {
   initChannel()
   const loaded = await loadDesktops()
   if (!loaded) {
-    createDefaultTree("1")
+    if (isSetupActive()) {
+      createSetupTree("1")
+    } else {
+      createDefaultTree("1")
+    }
     setDesktops([snapshotTree()])
     persistDesktops()
   } else {
