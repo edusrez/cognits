@@ -69,6 +69,63 @@ export function getSplitData(id: ViewportId): SplitData | undefined {
   return splitMap[id]
 }
 
+export function createSetupTree(n: string) {
+  const l = n + "0"
+  const r = n + "1"
+  const rl = r + "0"
+  const rr = r + "1"
+  const rll = rl + "0"
+  const rlr = rl + "1"
+
+  setRootId(n)
+
+  setViewportMap(reconcile({
+    [l]: {
+      tabs: [
+        { id: "setup", label: "Setup", hidden: false },
+        { id: "files", label: "Files", hidden: false },
+        { id: "sessions", label: "Sessions", hidden: false },
+      ],
+      activeTabId: "setup",
+    },
+    [rll]: {
+      tabs: [
+        { id: "write", label: "Write", hidden: false },
+      ],
+      activeTabId: "write",
+    },
+    [rlr]: { tabs: [], activeTabId: null },
+    [rr]: {
+      tabs: [
+        { id: "settings", label: "Settings", hidden: false },
+        { id: "learnit", label: ".cognits", hidden: false },
+      ],
+      activeTabId: "settings",
+    },
+  }))
+
+  setSplitMap(reconcile({
+    [n]: {
+      parentId: null,
+      direction: "h",
+      children: [l, r],
+      fractions: [1, 5],
+    },
+    [r]: {
+      parentId: n,
+      direction: "h",
+      children: [rl, rr],
+      fractions: [4, 1],
+    },
+    [rl]: {
+      parentId: r,
+      direction: "v",
+      children: [rll, rlr],
+      fractions: [4, 1],
+    },
+  }))
+}
+
 export function createDefaultTree(n: string) {
   const l = n + "0"
   const r = n + "1"

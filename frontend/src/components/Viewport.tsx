@@ -8,6 +8,7 @@ import { getSettingsScope } from "../lib/settings-sections"
 import { dragState, initiateTabDrag } from "../drag/drag-state"
 import { activeSessionId } from "../stores/session-store"
 import { linkingMode, hiddenBasicTabs } from "../stores/settings-store"
+import { isSetupActive } from "../stores/setup-store"
 import ContextMenu from "./ContextMenu"
 import TabBar from "./TabBar"
 
@@ -51,6 +52,7 @@ export default function Viewport(props: {
   let textTarget: HTMLInputElement | HTMLTextAreaElement | null = null
 
   const onContextMenu = (e: MouseEvent) => {
+    if (isSetupActive()) return
     e.preventDefault()
     e.stopPropagation()
     const target = e.target as HTMLElement

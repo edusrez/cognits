@@ -1,8 +1,8 @@
 import { createSignal, createMemo } from "solid-js"
 import type { ChatMessage } from "../lib/chat-stream"
-import { llmApiKey } from "./settings-store"
+import { llmApiKey, configLoaded } from "./settings-store"
 
-export const isSetupActive = createMemo(() => !llmApiKey())
+export const isSetupActive = createMemo(() => configLoaded() && !llmApiKey())
 
 export const [setupStep, setSetupStep] = createSignal<"welcome" | "apikeys" | "onboarding" | "done">("welcome")
 
@@ -20,4 +20,5 @@ export function resetSetup() {
   setSetupStep("welcome")
   setSetupMessages([])
   setSetupStreaming(false)
+  setSetupComplete(false)
 }

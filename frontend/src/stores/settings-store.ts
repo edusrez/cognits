@@ -298,6 +298,7 @@ export const [temperature, setTemperature] = createSignal(0)
 export const [topP, setTopP] = createSignal(0)
 export const [maxSteps, setMaxSteps] = createSignal(0)
 export const [displayThinking, setDisplayThinking] = createSignal(true)
+export const [configLoaded, setConfigLoaded] = createSignal(false)
 
 export const [doclingTableMode, setDoclingTableMode] = createSignal("fast")
 export const [doclingImageScale, setDoclingImageScale] = createSignal(1.0)
@@ -472,6 +473,7 @@ export async function loadConfig() {
       if (dc.forceBackendText !== undefined) setDoclingForceText(dc.forceBackendText)
     }
   }
+  setConfigLoaded(true)
 }
 
 export function saveConfig() {
