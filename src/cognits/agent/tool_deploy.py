@@ -78,6 +78,11 @@ class DeploySubagent(Tool):
         "properties": {
             "type": {"type": "string", "enum": ["web_researcher", "directory_reader"]},
             "query": {"type": "string", "description": "Task description for the subagent"},
+            "thoroughness": {
+                "type": "string",
+                "enum": ["quick", "high", "max"],
+                "description": "Effort calibration for directory_reader. quick=surface, high=thorough, max=exhaustive (uses Pro model). Default: high.",
+            },
         },
         "required": ["type", "query"],
     }
@@ -93,6 +98,12 @@ class DeploySubagent(Tool):
         cfg = self.subagents.get(subagent_type)
         if cfg is None:
             return tool_error(f"unknown subagent: {subagent_type}")
+
+        if subagent_type == "directory_reader":
+            thoroughness = parsed.get("thoroughness", "high")
+            if thoroughness == "max":
+                import dataclasses
+                cfg = dataclasses.replace(cfg, model="deepseek-v4-pro", reasoning="max")
 
         if subagent_type == "web_researcher" and not self.tinyfish_api_key:
             return tool_error(
@@ -131,6 +142,10 @@ class DeploySubagent(Tool):
                     msg = "Reading file..."
                 elif tool == "list_dir":
                     msg = "Listing directory..."
+                elif tool == "grep_code":
+                    msg = "Searching code..."
+                elif tool == "glob_files":
+                    msg = "Finding files..."
                 agent = data.get("agent", cfg.name) if isinstance(data, dict) else cfg.name
                 self.emit({"type": "tool_progress", "data": {"message": msg, "agent": agent}})
                 return

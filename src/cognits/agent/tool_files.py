@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 
 from cognits.paths import data_dir
@@ -244,6 +245,194 @@ class ListDir(Tool):
 
         return json.dumps(
             {"path": str(dir_path), "entries": items},
+            ensure_ascii=False,
+        )
+
+
+SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist",
+             "build", ".cognits", ".learnit", "chroma_db", ".mypy_cache",
+             ".pytest_cache", ".ruff_cache"}
+
+
+class GrepCode(Tool):
+    name = "grep_code"
+    description = (
+        "Search file contents with a regex pattern. Returns matches grouped "
+        "by file with line numbers. Skips binary files and common non-source "
+        "directories (.git, node_modules, etc.). Use this to find code "
+        "patterns, function definitions, imports, or any text in the project."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string",
+                "description": "Regex pattern to search for (Python re syntax).",
+            },
+            "path": {
+                "type": "string",
+                "description": "Directory to search in, relative to project root. Defaults to '.' (entire project).",
+            },
+            "include": {
+                "type": "string",
+                "description": "Glob pattern to filter files (e.g. '*.py', '*.{ts,tsx}'). If omitted, searches all text files.",
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum number of matching lines to return (default 50, max 100).",
+            },
+        },
+        "required": ["pattern"],
+    }
+
+    async def execute(self, raw_args: str) -> str:
+        try:
+            args = json.loads(raw_args)
+            pattern = args["pattern"]
+            rel_path = args.get("path") or "."
+            include = args.get("include") or ""
+            max_results = int(args.get("max_results") or 0)
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            return tool_error(f"invalid args: {e}")
+
+        if max_results <= 0:
+            max_results = 50
+        max_results = min(max_results, 100)
+
+        try:
+            dir_path = _resolve_dir(rel_path)
+        except (PermissionError, FileNotFoundError, NotADirectoryError) as e:
+            return tool_error(str(e))
+
+        try:
+            compiled = re.compile(pattern)
+        except re.error as e:
+            return tool_error(f"invalid regex: {e}")
+
+        results: list[dict] = []
+        total = 0
+
+        try:
+            for root, dirs, files in os.walk(str(dir_path)):
+                dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
+
+                for fname in sorted(files):
+                    if include and not Path(fname).match(include):
+                        continue
+
+                    fpath = os.path.join(root, fname)
+                    if _is_binary(Path(fpath)):
+                        continue
+
+                    try:
+                        size = os.path.getsize(fpath)
+                    except OSError:
+                        continue
+                    if size > MAX_TEXT_BYTES:
+                        continue
+
+                    try:
+                        text = Path(fpath).read_text(encoding="utf-8", errors="replace")
+                    except OSError:
+                        continue
+
+                    file_matches = []
+                    for lineno, line in enumerate(text.split("\n"), start=1):
+                        match = compiled.search(line)
+                        if match:
+                            display = line[:300]
+                            if len(line) > 300:
+                                display += "..."
+                            file_matches.append({"line": lineno, "text": display})
+                            total += 1
+                            if total >= max_results:
+                                break
+
+                    if file_matches:
+                        rel = os.path.relpath(fpath, dir_path)
+                        results.append({"file": rel, "matches": file_matches})
+
+                    if total >= max_results:
+                        break
+
+                if total >= max_results:
+                    break
+        except OSError as e:
+            return tool_error(str(e))
+
+        return json.dumps(
+            {
+                "pattern": pattern,
+                "directory": str(dir_path),
+                "total_matches": total,
+                "truncated": total >= max_results,
+                "files": results,
+            },
+            ensure_ascii=False,
+        )
+
+
+class GlobFiles(Tool):
+    name = "glob_files"
+    description = (
+        "Find files matching a glob pattern. Searches recursively starting "
+        "from the given directory. Returns sorted file paths. Skips common "
+        "non-source directories (.git, node_modules, etc.)."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string",
+                "description": "Glob pattern (e.g. '*.py', '**/*.tsx', 'src/**/*.go').",
+            },
+            "path": {
+                "type": "string",
+                "description": "Directory to search from, relative to project root. Defaults to '.' (entire project).",
+            },
+        },
+        "required": ["pattern"],
+    }
+
+    async def execute(self, raw_args: str) -> str:
+        try:
+            args = json.loads(raw_args)
+            pattern = args["pattern"]
+            rel_path = args.get("path") or "."
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            return tool_error(f"invalid args: {e}")
+
+        try:
+            dir_path = _resolve_dir(rel_path)
+        except (PermissionError, FileNotFoundError, NotADirectoryError) as e:
+            return tool_error(str(e))
+
+        results: list[str] = []
+        try:
+            for root, dirs, files in os.walk(str(dir_path)):
+                dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
+
+                for fname in files:
+                    full = os.path.join(root, fname)
+                    if Path(fname).match(pattern):
+                        results.append(os.path.relpath(full, dir_path))
+
+                    if len(results) >= 200:
+                        break
+
+                if len(results) >= 200:
+                    break
+        except OSError as e:
+            return tool_error(str(e))
+
+        return json.dumps(
+            {
+                "pattern": pattern,
+                "directory": str(dir_path),
+                "count": len(results),
+                "truncated": len(results) >= 200,
+                "files": results,
+            },
             ensure_ascii=False,
         )
 
