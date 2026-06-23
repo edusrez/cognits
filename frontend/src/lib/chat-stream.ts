@@ -1,10 +1,9 @@
 export interface ChatMessage {
-  role: "user" | "assistant" | "system"
+  role: "user" | "assistant" | "system" | "hidden_user"
   content: string
   reasoning?: string
   reportId?: string
   reportTitle?: string
-  tags?: string[]
 }
 
 export interface ChatUsage {

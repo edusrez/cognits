@@ -139,7 +139,7 @@ def build_chat_messages(
 
     last_user_idx = -1
     for i, m in enumerate(incoming):
-        if m.get("role") == "user":
+        if m.get("role") in ("user", "hidden_user"):
             last_user_idx = i
 
     now = datetime.now().astimezone()
@@ -152,6 +152,12 @@ def build_chat_messages(
     storage_messages: list[MessageRow] = []
     for i, m in enumerate(incoming):
         role = m.get("role", "")
+        if role == "hidden_user":
+            content = m.get("content") or ""
+            if i == last_user_idx:
+                content = f"[{date_str}]\n{content.strip()}"
+            llm_messages.append(Message(role="user", content=content))
+            continue
         if role not in ("user", "assistant"):
             continue
         content = m.get("content") or ""
