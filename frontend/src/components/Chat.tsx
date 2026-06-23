@@ -1,6 +1,6 @@
 import { For, Index, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
 import "../highlight-theme.css"
-import { currentMessages as messages, isStreaming, currentToolStatus, currentChatError, sessionUsage, mainSessionPromptTokens, toolFaviconsBySession, sendMessage } from "../stores/chat-store"
+import { currentMessages as messages, isStreaming, currentToolStatus, currentChatError, sessionUsage, mainSessionPromptTokens, toolFaviconsBySession } from "../stores/chat-store"
 import { activeSessionId, createNewSession } from "../stores/session-store"
 import { chatFontSize, setChatFontSize, saveConfig, displayThinking, llmApiKey } from "../stores/settings-store"
 import { typewriterSpeed } from "../stores/settings-store"
@@ -83,9 +83,7 @@ export default function Chat(props: { viewportId?: string }) {
       !interviewStarted()
     ) {
       setInterviewStarted(true)
-      createNewSession().then(() => {
-        sendMessage("Start the onboarding interview. Ask your first question.")
-      })
+      createNewSession() // triggers App.tsx effect → sends first message there
     }
   })
 

@@ -7,6 +7,7 @@ export const [setupStep, setSetupStep] = createSignal<"welcome" | "apikeys" | "o
 export const [setupMessages, setSetupMessages] = createSignal<ChatMessage[]>([])
 export const [setupStreaming, setSetupStreaming] = createSignal(false)
 export const [setupComplete, setSetupComplete] = createSignal(false)
+export const [interviewMessageSent, setInterviewMessageSent] = createSignal(false)
 
 export const isSetupActive = createMemo(() => {
   if (!configLoaded()) return false
