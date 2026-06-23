@@ -52,7 +52,7 @@ def _format_event(ev: dict) -> str:
         return f"event: reasoning\ndata: {_dumps({'content': data})}\n\n"
     if t == "error":
         return f"event: error\ndata: {_dumps({'message': data})}\n\n"
-    if t in ("tool_start", "tool_end", "tool_progress", "subagent_end", "usage", "session_renamed"):
+    if t in ("tool_start", "tool_end", "tool_progress", "subagent_end", "usage", "session_renamed", "ui_action"):
         return f"event: {t}\ndata: {_dumps(data)}\n\n"
     return ""
 

@@ -1,6 +1,7 @@
 import { createSignal, createMemo, batch } from "solid-js"
 import { startChat, streamSession, type ChatMessage, type ChatUsage, type StreamCallbacks, type HistorySnapshot } from "../lib/chat-stream"
 import { activeSessionId } from "./session-store"
+import { setTabHidden } from "./viewport-tree-store"
 
 export type { ChatMessage, ChatUsage }
 
@@ -274,6 +275,11 @@ function createStreamCallbacks(sid: string, controller: AbortController): Stream
       if (streamController === controller) {
         streamController = null
         setStreamState(sid, { active: false, thinking: false })
+      }
+    },
+    onUIAction(data: any) {
+      if (data?.action === "toggle_tab") {
+        setTabHidden(data.viewportId, data.tabId, data.hidden)
       }
     },
   }

@@ -45,6 +45,7 @@ export interface StreamCallbacks {
   onToolEnd?: (data: any) => void
   onSubagentEnd?: (data: SubagentEndData) => void
   onSessionRenamed?: (data: { name: string }) => void
+  onUIAction?: (data: any) => void
 }
 
 export async function startChat(sessionId: string, messages: ChatMessage[]): Promise<void> {
@@ -147,6 +148,10 @@ export async function streamSession(
               break
             case "usage":
               callbacks.onUsage(json)
+              break
+            case "ui_action":
+              callbacks.onUIAction?.(json)
+              break
               break
             default: {
               const content = json.choices?.[0]?.delta?.content

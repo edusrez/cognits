@@ -45,6 +45,7 @@ AGENT_LABELS = {
     "documentalist": "Documentalist",
     "session_analyzer": "Session Analyzer",
     "directory_reader": "Directory Reader",
+    "system_support": "System Support",
 }
 
 def _build_profile_context(profile: StudentProfile) -> str:
@@ -220,15 +221,9 @@ def register(app: FastAPI, st) -> None:
                 if profile.declared:
                     system_prompt += _build_profile_context(profile)
                 else:
-                    system_prompt += (
-                        "\n\n## Onboarding\n"
-                        "No learner profile exists yet. Your first priority is "
-                        "to interview the user and build their profile. Ask about "
-                        "their background, project goals, experience, learning "
-                        "preferences, and availability. Be thorough and conversational. "
-                        "When you have enough information, say [PROFILE COMPLETE] "
-                        "and present a structured summary."
-                    )
+                    # Use the System Support agent for first-time setup / onboarding.
+                    agent_id = "system_support"
+                    system_prompt = default_agent_prompt("system_support")
             except Exception:
                 pass
 
@@ -517,10 +512,14 @@ async def _run_agent(
             )
         )
 
+        if agent_id == "system_support":
+            from cognits.agent.tool_ui import ToggleTabVisibility
+            registry.register(ToggleTabVisibility(emit=process_event))
+
         max_steps = cfg.max_steps or DEFAULT_ORCHESTRATOR_MAX_STEPS
         ag = Agent(
             AgentConfig(
-                name="orchestrator",
+                name=agent_id,
                 model=model,
                 reasoning=reasoning,
                 max_steps=max_steps,

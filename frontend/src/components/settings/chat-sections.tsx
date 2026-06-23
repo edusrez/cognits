@@ -11,6 +11,7 @@ import Dropdown from "../Dropdown"
 import CollapsibleSection from "../CollapsibleSection"
 import { activeSessionId } from "../../stores/session-store"
 import { conversationStarted } from "../../stores/chat-store"
+import { isSetupActive } from "../../stores/setup-store"
 import {
   usageInfo, formatCost, formatNumber,
   activeProvider, setLLMProvider, setSessionProvider, saveSessionConfig,
@@ -30,7 +31,7 @@ import {
 } from "../../stores/settings-store"
 
 const chatMatch = (ctx: { linkedViewport: boolean; tabId: string | null }) =>
-  ctx.linkedViewport && ctx.tabId === "chat"
+  ctx.linkedViewport && ctx.tabId === "chat" && !isSetupActive()
 
 // ── Info: token-cost breakdown for the active session ──
 
