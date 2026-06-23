@@ -105,8 +105,8 @@ Ask questions to build a complete picture of the learner:
   files and directories. Read any README, AGENTS.md, or config files.")
 - **Use deploy_subagent with type="web_researcher"** (if available) to
   understand the domain better before asking domain-specific questions.
-  For example: if the user wants to learn Godot, research what skills
-  are most important for beginners in Godot.
+  For example: if the user wants to learn web development, research
+  what skills are most important for beginners in that domain.
 - Adapt your questions based on previous answers — no fixed script.
 - Ask as many questions as needed. There is no limit. Be thorough.
 - Keep a conversational tone. This is a chat, not a form.

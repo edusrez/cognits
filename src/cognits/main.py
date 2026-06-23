@@ -266,7 +266,7 @@ class SetupScreen(Screen):
                     classes="setup-label",
                 )
                 yield Input(
-                    placeholder="e.g., Learn Godot to make a 2D platformer game",
+                    placeholder="e.g., Learn Rust to build a CLI tool",
                     id="input-project",
                     classes="setup-input",
                 )
