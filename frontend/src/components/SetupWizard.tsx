@@ -1,7 +1,7 @@
 import { Show } from "solid-js"
 import { setupStep, setSetupStep, finishSetup } from "../stores/setup-store"
 import { llmApiKey } from "../stores/settings-store"
-import { setTabHidden, setLinkedViewport } from "../stores/viewport-tree-store"
+import { setTabHidden, setLinkedViewport, activateTab } from "../stores/viewport-tree-store"
 
 export default function SetupWizard() {
 
@@ -12,6 +12,7 @@ export default function SetupWizard() {
   function beginInterview() {
     setTabHidden("1100", "setup", true)
     setTabHidden("1100", "chat", false)
+    activateTab("1100", "chat")
     setTabHidden("1101", "write", false)
     setLinkedViewport("1100")
     setSetupStep("onboarding")

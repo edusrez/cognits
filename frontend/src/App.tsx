@@ -61,6 +61,7 @@ export default function App() {
   // recursion (too much recursion crash). The memos are read inside the body
   // to get their current resolved value, but only activeSessionId triggers.
   createEffect(on(activeSessionId, (sid) => {
+    if (isSetupActive()) return
     if (sid) {
       placeSessionTabs(defaultChatViewport(), defaultWriteViewport())
       loadSessionMessages(sid)
