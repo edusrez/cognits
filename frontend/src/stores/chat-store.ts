@@ -391,6 +391,6 @@ export async function sendHiddenMessage(content: string) {
   const sid = activeSessionId()
   if (!sid) return
   setStreamState(sid, { active: true, thinking: true })
-  await startChat(sid, [{ role: "user", content }])
+  await startChat(sid, [{ role: "system", content }])
   subscribeToSession(sid)
 }
