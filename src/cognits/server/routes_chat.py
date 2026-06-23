@@ -30,7 +30,7 @@ from cognits.llm.types import ROLE_SYSTEM, ROLE_USER, Message
 from cognits.server.session_agent import SessionAgent
 from cognits.server.util import text_error
 from cognits.storage.db import MessageRow
-from cognits.storage.files import Config
+from cognits.storage.files import Config, StudentProfile
 from cognits.tinyfish import TinyfishClient
 from cognits.tools import Registry
 
@@ -46,6 +46,36 @@ AGENT_LABELS = {
     "session_analyzer": "Session Analyzer",
     "directory_reader": "Directory Reader",
 }
+
+def _build_profile_context(profile: StudentProfile) -> str:
+    d = profile.declared
+    parts = ["\n\n## Learner Profile"]
+    if d.get("background"):
+        parts.append(f"Background: {d['background']}")
+    if d.get("goals"):
+        goals = d["goals"]
+        if isinstance(goals, list):
+            parts.append("Goals: " + ", ".join(goals))
+        else:
+            parts.append(f"Goals: {goals}")
+    if d.get("self_assessed"):
+        sa = d["self_assessed"]
+        if isinstance(sa, dict):
+            items = [f"{k}: {v}" for k, v in sa.items()]
+            parts.append("Self-assessed skills: " + "; ".join(items))
+    prefs = d.get("preferences", {})
+    if isinstance(prefs, dict):
+        pref_items = []
+        if prefs.get("style"):
+            pref_items.append(f"style={prefs['style']}")
+        if prefs.get("pace"):
+            pref_items.append(f"pace={prefs['pace']}")
+        if prefs.get("language"):
+            pref_items.append(f"language={prefs['language']}")
+        if pref_items:
+            parts.append("Preferences: " + ", ".join(pref_items))
+    return "\n".join(parts)
+
 
 # Explicit lists instead of strftime %A/%B: those are locale-dependent.
 MONTHS = [
@@ -162,6 +192,15 @@ def register(app: FastAPI, st) -> None:
         model = model or DEFAULT_MODEL
         agent_id = agent_id or DEFAULT_AGENT_ID
         system_prompt = cfg.agent_overrides.get(agent_id) or default_agent_prompt(agent_id)
+
+        # Inject learner profile into system prompt if available.
+        if st.store is not None:
+            try:
+                profile = await asyncio.to_thread(st.store.load_profile)
+                if profile.declared:
+                    system_prompt += _build_profile_context(profile)
+            except Exception:
+                pass
 
         llm_messages, storage_messages = build_chat_messages(cfg, incoming)
 

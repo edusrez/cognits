@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from cognits.server.util import mask_key, text_error
-from cognits.storage.files import Config
+from cognits.storage.files import Config, StudentProfile
 
 VALID_MODELS = ("deepseek-v4-pro", "deepseek-v4-flash")
 VALID_REASONING = ("disabled", "high", "max")
@@ -77,4 +77,31 @@ def register(app: FastAPI, st) -> None:
             return text_error(str(e), 500)
 
         st.cached_config = cfg
+        return Response(status_code=204)
+
+    @app.get("/api/profile")
+    async def get_profile():
+        if st.store is None:
+            return JSONResponse({"version": 1, "declared": {}, "inferred": {}, "meta": {}})
+        try:
+            profile = await asyncio.to_thread(st.store.load_profile)
+        except Exception as e:
+            return text_error(str(e), 500)
+        return JSONResponse(profile.to_json())
+
+    @app.put("/api/profile")
+    async def put_profile(request: Request):
+        if st.store is None:
+            return text_error("store not initialized", 500)
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("body")
+            profile = StudentProfile.from_json(body)
+        except (json.JSONDecodeError, ValueError, TypeError, UnicodeDecodeError):
+            return text_error("invalid body", 400)
+        try:
+            await asyncio.to_thread(st.store.save_profile, profile)
+        except Exception as e:
+            return text_error(str(e), 500)
         return Response(status_code=204)

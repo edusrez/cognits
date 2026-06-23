@@ -119,6 +119,33 @@ class DoclingConfig:
 
 
 @dataclass
+class StudentProfile:
+    version: int = 1
+    declared: dict = field(default_factory=dict)
+    inferred: dict = field(default_factory=dict)
+    meta: dict = field(default_factory=dict)
+
+    def to_json(self) -> dict:
+        return {
+            "version": self.version,
+            "declared": self.declared,
+            "inferred": self.inferred,
+            "meta": self.meta,
+        }
+
+    @classmethod
+    def from_json(cls, d: dict | None) -> "StudentProfile":
+        if not d:
+            return cls()
+        return cls(
+            version=int(d.get("version", 1) or 1),
+            declared=d.get("declared") or {},
+            inferred=d.get("inferred") or {},
+            meta=d.get("meta") or {},
+        )
+
+
+@dataclass
 class Config:
     llm_provider: str = ""
     llm_agent_id: str = ""
@@ -237,6 +264,26 @@ class Store:
     def __init__(self, base_path: Path):
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
+
+    # --- profile ---
+
+    def _profile_dir(self) -> Path:
+        return self.base_path / "student"
+
+    def _profile_path(self) -> Path:
+        return self._profile_dir() / "profile.json"
+
+    def load_profile(self) -> StudentProfile:
+        try:
+            data = self._profile_path().read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return StudentProfile()
+        return StudentProfile.from_json(json.loads(data))
+
+    def save_profile(self, profile: StudentProfile) -> None:
+        self._profile_dir().mkdir(parents=True, exist_ok=True)
+        data = json.dumps(profile.to_json(), indent=2, ensure_ascii=False).encode("utf-8")
+        write_file_atomic(self._profile_path(), data)
 
     # --- sessions ---
 
