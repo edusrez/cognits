@@ -10,9 +10,10 @@ import {
   tinyfishApiKey, setTinyfishApiKey,
   saveConfig,
 } from "../../stores/settings-store"
+import { isSetupActive } from "../../stores/setup-store"
 
 const apikeysMatch = (ctx: SectionContext) =>
-  ctx.scoped && ctx.tabId === "apikeys"
+  (ctx.scoped && ctx.tabId === "apikeys") || isSetupActive()
 
 registerSection({
   id: "apikeys:main",

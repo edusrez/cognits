@@ -1,7 +1,7 @@
 import { createSignal, Show, For, onCleanup } from "solid-js"
 import { setupStep, setSetupStep, setupMessages, setSetupMessages, setupStreaming, setSetupStreaming, finishSetup } from "../stores/setup-store"
 import { llmApiKey, loadConfig } from "../stores/settings-store"
-import { createDefaultTree, setTabHidden, addDynamicTab } from "../stores/viewport-tree-store"
+import { setTabHidden } from "../stores/viewport-tree-store"
 import type { ChatMessage } from "../lib/chat-stream"
 import MarkdownView from "./MarkdownView"
 
@@ -24,10 +24,7 @@ export default function SetupWizard() {
   }
 
   function openSettings() {
-    const vpId = "111"
-    setTabHidden(vpId, "settings", false)
-    setTabHidden(vpId, "learnit", false)
-    addDynamicTab(vpId, { id: "settings:apikeys", label: "Settings (API Keys)", hidden: false })
+    setTabHidden("111", "settings", false)
   }
 
   async function startOnboarding() {
