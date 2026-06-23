@@ -12,7 +12,7 @@ import os
 import secrets
 import sqlite3
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 SCHEMA_VERSION = 1
@@ -122,7 +122,6 @@ class MessageRow:
     report_id: str = ""
     report_title: str = ""
     created_at: str = ""
-    tags: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict:
         return {

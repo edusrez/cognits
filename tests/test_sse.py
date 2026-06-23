@@ -75,7 +75,7 @@ async def _run_active_stream_test():
     assert history["liveContent"] == "He"
     assert history["messages"][0] == {
         "role": "user", "content": "hello", "reasoning": "",
-        "reportId": "", "reportTitle": "", "tags": [],
+        "reportId": "", "reportTitle": "",
     }
 
     # Tokens without event name, OpenAI delta format.

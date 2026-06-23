@@ -3,6 +3,9 @@ import { startChat, streamSession, type ChatMessage, type ChatUsage, type Stream
 import { activeSessionId } from "./session-store"
 import { setTabHidden } from "./viewport-tree-store"
 
+const HIDDEN_TRIGGER = "Start the onboarding interview. Ask your first question."
+export { HIDDEN_TRIGGER }
+
 export type { ChatMessage, ChatUsage }
 
 const MAX_MESSAGES = 500
@@ -185,7 +188,7 @@ function createStreamCallbacks(sid: string, controller: AbortController): Stream
       // this session are redundant and applying them would duplicate.
       pendingTokens.delete(sid)
       let finalMsgs = snap.messages.filter(
-        (m) => !m.tags?.includes("hidden"),
+        (m) => m.content !== HIDDEN_TRIGGER,
       )
       if (snap.agentActive) {
         const liveMsg: ChatMessage = { role: "assistant", content: snap.liveContent }
