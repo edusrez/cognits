@@ -386,3 +386,11 @@ export async function cancelStreaming() {
     setStreamState(sid, { active: false, thinking: false })
   }
 }
+
+export async function sendHiddenMessage(content: string) {
+  const sid = activeSessionId()
+  if (!sid) return
+  setStreamState(sid, { active: true, thinking: true })
+  await startChat(sid, [{ role: "user", content }])
+  subscribeToSession(sid)
+}

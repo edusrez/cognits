@@ -13,9 +13,10 @@ import {
 import { dragState, endDrag, listDragState, endListDrag, moveHint, setMoveHint } from "./drag/drag-state"
 import { activeSessionId } from "./stores/session-store"
 import { loadConfig, defaultChatViewport, defaultWriteViewport, loadSessionConfig, linkedViewport } from "./stores/settings-store"
-import { loadSessionMessages, sendMessage } from "./stores/chat-store"
+import { loadSessionMessages, sendHiddenMessage } from "./stores/chat-store"
 import { initDesktops } from "./stores/desktop-store"
 import { isSetupActive, setupStep, interviewMessageSent, setInterviewMessageSent } from "./stores/setup-store"
+import { setDisplayThinking, saveConfig } from "./stores/settings-store"
 import Viewport from "./components/Viewport"
 import DragOverlay, { ListDragOverlay } from "./components/DragOverlay"
 import { tabDisplayName, tabKind } from "./tabs"
@@ -69,8 +70,10 @@ export default function App() {
       loadSessionConfig(sid)
       if (isSetupActive() && setupStep() === "onboarding" && !interviewMessageSent()) {
         setInterviewMessageSent(true)
+        setDisplayThinking(false)
+        saveConfig()
         setTimeout(() => {
-          sendMessage("Start the onboarding interview. Ask your first question.")
+          sendHiddenMessage("Start the onboarding interview. Ask your first question.")
         }, 100)
       }
     } else {
