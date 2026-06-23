@@ -77,6 +77,26 @@ def _build_profile_context(profile: StudentProfile) -> str:
     return "\n".join(parts)
 
 
+def _extract_declared(text: str) -> dict:
+    declared: dict = {}
+    lines = text.split("\n")
+    for line in lines:
+        line = line.strip()
+        if line.startswith("- Background:") or line.startswith("Background:"):
+            declared["background"] = line.split(":", 1)[1].strip()
+        elif line.startswith("- Project:") or line.startswith("Project:"):
+            declared["project"] = line.split(":", 1)[1].strip()
+        elif line.startswith("- Experience:") or line.startswith("Experience:"):
+            declared["experience"] = line.split(":", 1)[1].strip()
+        elif line.startswith("- Learning style:") or line.startswith("Learning style:"):
+            declared["learning_style"] = line.split(":", 1)[1].strip()
+        elif line.startswith("- Availability:") or line.startswith("Availability:"):
+            declared["availability"] = line.split(":", 1)[1].strip()
+        elif line.startswith("- Goals:") or line.startswith("Goals:"):
+            declared["goals"] = line.split(":", 1)[1].strip()
+    return declared
+
+
 # Explicit lists instead of strftime %A/%B: those are locale-dependent.
 MONTHS = [
     "January", "February", "March", "April", "May", "June",
@@ -199,6 +219,16 @@ def register(app: FastAPI, st) -> None:
                 profile = await asyncio.to_thread(st.store.load_profile)
                 if profile.declared:
                     system_prompt += _build_profile_context(profile)
+                else:
+                    system_prompt += (
+                        "\n\n## Onboarding\n"
+                        "No learner profile exists yet. Your first priority is "
+                        "to interview the user and build their profile. Ask about "
+                        "their background, project goals, experience, learning "
+                        "preferences, and availability. Be thorough and conversational. "
+                        "When you have enough information, say [PROFILE COMPLETE] "
+                        "and present a structured summary."
+                    )
             except Exception:
                 pass
 
@@ -551,6 +581,33 @@ async def _run_agent(
 
         st.active_agents.pop(sid, None)
         sa.close()
+
+        # Detect [PROFILE COMPLETE] in the assistant's response and save profile.
+        if "[PROFILE COMPLETE]" in content and st.store is not None:
+            try:
+                declared = _extract_declared(content)
+                import datetime
+                profile = StudentProfile(
+                    declared={
+                        "background": declared.get("background", ""),
+                        "goals": [declared.get("goals", "")],
+                        "experience": declared.get("experience", ""),
+                        "project": declared.get("project", ""),
+                        "preferences": {
+                            "style": declared.get("learning_style", "socratic"),
+                        },
+                        "availability": declared.get("availability", ""),
+                    },
+                    meta={
+                        "created": datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z",
+                        "sessions": 0,
+                        "source": "onboarding",
+                    },
+                )
+                st.store.save_profile(profile)
+                log.info("chat: onboarding profile saved for session %s", sid)
+            except Exception as e:
+                log.error("chat: save onboarding profile: %s", e)
 
         # Close HTTP clients without awaiting (fire-and-forget on the loop).
         for client in (llm_client, tf_client):

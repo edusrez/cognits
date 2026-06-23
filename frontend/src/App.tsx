@@ -15,6 +15,7 @@ import { activeSessionId } from "./stores/session-store"
 import { loadConfig, defaultChatViewport, defaultWriteViewport, loadSessionConfig, linkedViewport } from "./stores/settings-store"
 import { loadSessionMessages } from "./stores/chat-store"
 import { initDesktops } from "./stores/desktop-store"
+import { isSetupActive } from "./stores/setup-store"
 import Viewport from "./components/Viewport"
 import DragOverlay, { ListDragOverlay } from "./components/DragOverlay"
 import { tabDisplayName, tabKind } from "./tabs"
@@ -199,6 +200,7 @@ function SplitView(props: { id: ViewportId }) {
   const [dragging, setDragging] = createSignal(false)
 
   const onResizerDown = (e: MouseEvent) => {
+    if (isSetupActive()) return
     e.preventDefault()
     // Capture the container here: during the drag the pointer can leave
     // this split and ev.target would point to another container.

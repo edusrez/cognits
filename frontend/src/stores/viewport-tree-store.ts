@@ -90,6 +90,7 @@ export function createSetupTree(n: string) {
     [rll]: {
       tabs: [
         { id: "setup", label: "Setup", hidden: false },
+        { id: "chat", label: "Chat", hidden: true },
       ],
       activeTabId: "setup",
     },

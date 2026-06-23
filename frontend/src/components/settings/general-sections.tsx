@@ -14,6 +14,7 @@ import {
   toggleBasicTab,
 } from "../../stores/settings-store"
 import { resetTree } from "../../stores/viewport-tree-store"
+import { isSetupActive } from "../../stores/setup-store"
 
 const basicTabs = [
   { id: "files", label: "Files" },
@@ -47,7 +48,7 @@ registerSection({
 
 registerSection({
   id: "general",
-  matches: () => true,
+  matches: () => !isSetupActive(),
   render: (ctx) => (
     <CollapsibleSection title="General Settings">
       <div class="flex flex-col gap-2">

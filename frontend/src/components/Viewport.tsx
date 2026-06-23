@@ -124,6 +124,7 @@ export default function Viewport(props: {
             }
           }}
           onTabDragStart={(tabId, label, e) => {
+            if (isSetupActive()) return
             initiateTabDrag(tabId, label, props.id, e, () =>
               activateTab(props.id, tabId),
             )
