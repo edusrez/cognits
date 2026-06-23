@@ -10,6 +10,7 @@
 /** Canonical human labels for every tab kind. The tabs registry in tabs.ts
  *  derives its labels from this map so there is exactly one source of truth. */
 export const TAB_LABELS: Record<string, string> = {
+  setup: "Setup",
   files: "Files",
   sessions: "Sessions",
   chat: "Chat",

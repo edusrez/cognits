@@ -3,6 +3,7 @@ import Chat from "./components/Chat"
 import Write from "./components/Write"
 import Sessions from "./components/Sessions"
 import Settings from "./components/Settings"
+import SetupWizard from "./components/SetupWizard"
 import ReportView from "./components/ReportView"
 import LearnitView from "./components/LearnitView"
 import NoteView from "./components/NoteView"
@@ -29,6 +30,7 @@ export interface TabDef {
 }
 
 export const tabs: TabDef[] = [
+  { id: "setup",    label: TAB_LABELS.setup,    component: SetupWizard },
   { id: "files",    label: TAB_LABELS.files,    component: FileTreeWrapper },
   { id: "sessions", label: TAB_LABELS.sessions, component: Sessions },
   { id: "chat",     label: TAB_LABELS.chat,     component: Chat, sessionScoped: true },

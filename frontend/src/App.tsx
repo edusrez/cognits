@@ -8,6 +8,7 @@ import {
   placeSessionTabs,
   removeSessionTabs,
   setBaseSettingsTabLabel,
+  createDefaultTree,
   type ViewportId,
 } from "./stores/viewport-tree-store"
 import { dragState, endDrag, listDragState, endListDrag, moveHint, setMoveHint } from "./drag/drag-state"
@@ -15,6 +16,8 @@ import { activeSessionId } from "./stores/session-store"
 import { loadConfig, defaultChatViewport, defaultWriteViewport, loadSessionConfig, linkedViewport } from "./stores/settings-store"
 import { loadSessionMessages } from "./stores/chat-store"
 import { initDesktops } from "./stores/desktop-store"
+import { isSetupActive, setupComplete } from "./stores/setup-store"
+import SetupWizard from "./components/SetupWizard"
 import Viewport from "./components/Viewport"
 import DragOverlay, { ListDragOverlay } from "./components/DragOverlay"
 import { tabDisplayName, tabKind } from "./tabs"
@@ -163,7 +166,13 @@ export default function App() {
           </div>
         }
       >
-        <GridNode id={rootId()} />
+        <Show when={isSetupActive() && !setupComplete()} fallback={
+          <GridNode id={rootId()} />
+        }>
+          <div class="h-full w-full">
+            <SetupWizard />
+          </div>
+        </Show>
         <DragOverlay onDrop={handleDrop} />
         <ListDragOverlay onDrop={handleListDrop} />
       </Show>
