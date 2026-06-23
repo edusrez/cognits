@@ -1,6 +1,6 @@
 import { For, Index, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
 import "../highlight-theme.css"
-import { currentMessages as messages, isStreaming, currentToolStatus, currentChatError, sessionUsage, mainSessionPromptTokens, toolFaviconsBySession, HIDDEN_TRIGGER } from "../stores/chat-store"
+import { currentMessages as messages, isStreaming, currentToolStatus, currentChatError, sessionUsage, mainSessionPromptTokens, toolFaviconsBySession } from "../stores/chat-store"
 import { activeSessionId, createNewSession } from "../stores/session-store"
 import { chatFontSize, setChatFontSize, saveConfig, displayThinking, llmApiKey } from "../stores/settings-store"
 import { typewriterSpeed } from "../stores/settings-store"
@@ -15,7 +15,6 @@ export default function Chat(props: { viewportId?: string }) {
   let scrollRef!: HTMLDivElement
   const [autoScroll, setAutoScroll] = createSignal(true)
   const [interviewStarted, setInterviewStarted] = createSignal(false)
-  const displayedMessages = createMemo(() => messages().filter(m => m.content !== HIDDEN_TRIGGER))
 
   const chatMsgMenu = createMemo(() => {
     const m = ctxMenu()
@@ -112,7 +111,7 @@ export default function Chat(props: { viewportId?: string }) {
         }}
         onTouchMove={() => setAutoScroll(false)}
        >
-      <Index each={displayedMessages()}>
+      <Index each={messages()}>
         {(msg, idx) => {
           const i = () => idx
           let msgRef!: HTMLDivElement
@@ -217,7 +216,7 @@ export default function Chat(props: { viewportId?: string }) {
         </div>
       </Show>
 
-      <Show when={displayedMessages().length === 0 && llmApiKey()}>
+      <Show when={messages().length === 0 && llmApiKey()}>
         <div class="text-[#8b949e] flex items-center justify-center h-full">
           Type a message and press Enter to send
         </div>
