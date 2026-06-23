@@ -39,6 +39,7 @@ def _message_dict(m: MessageRow) -> dict:
         "reasoning": m.reasoning,
         "reportId": m.report_id,
         "reportTitle": m.report_title,
+        "tags": m.tags if m.tags else [],
     }
 
 

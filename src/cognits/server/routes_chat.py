@@ -165,6 +165,7 @@ def build_chat_messages(
                 reasoning=m.get("reasoning") or "",
                 report_id=m.get("reportId") or "",
                 report_title=m.get("reportTitle") or "",
+                tags=m.get("tags") if isinstance(m.get("tags"), list) else [],
             )
         )
 
