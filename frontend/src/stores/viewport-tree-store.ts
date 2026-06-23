@@ -80,13 +80,7 @@ export function createSetupTree(n: string) {
   setRootId(n)
 
   setViewportMap(reconcile({
-    [l]: {
-      tabs: [
-        { id: "files", label: "Files", hidden: true },
-        { id: "sessions", label: "Sessions", hidden: true },
-      ],
-      activeTabId: "files",
-    },
+    [l]: { tabs: [], activeTabId: null },
     [rll]: {
       tabs: [
         { id: "setup", label: "Setup", hidden: false },
@@ -103,7 +97,6 @@ export function createSetupTree(n: string) {
     [rr]: {
       tabs: [
         { id: "settings", label: "Settings", hidden: true },
-        { id: "learnit", label: ".cognits", hidden: true },
       ],
       activeTabId: "settings",
     },
