@@ -184,7 +184,9 @@ function createStreamCallbacks(sid: string, controller: AbortController): Stream
       // The snapshot already includes live content: buffered tokens for
       // this session are redundant and applying them would duplicate.
       pendingTokens.delete(sid)
-      let finalMsgs = snap.messages
+      let finalMsgs = snap.messages.filter(
+        (m) => !(m.role === "user" && m.content.includes("Start the onboarding interview")),
+      )
       if (snap.agentActive) {
         const liveMsg: ChatMessage = { role: "assistant", content: snap.liveContent }
         if (snap.liveReasoning) liveMsg.reasoning = snap.liveReasoning
@@ -397,6 +399,6 @@ export async function sendHiddenMessage(content: string) {
   const sid = activeSessionId()
   if (!sid) return
   setStreamState(sid, { active: true, thinking: true })
-  await startChat(sid, [{ role: "system", content }])
+  await startChat(sid, [{ role: "user", content }])
   subscribeToSession(sid)
 }
