@@ -78,7 +78,7 @@ export default function Chat(props: { viewportId?: string }) {
       <div
         ref={scrollRef}
         data-scrollable
-        class="flex-1 overflow-y-auto px-3 py-2"
+        class="flex-1 overflow-y-auto overflow-x-hidden px-3 py-2"
         style={{ "font-size": `${chatFontSize()}px` }}
         onContextMenu={(e) => {
           if (e.target !== scrollRef) return

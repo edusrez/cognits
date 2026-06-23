@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import atexit
+import json
 import logging
 import os
 import shutil
@@ -30,11 +31,15 @@ from textual.widgets.option_list import Option
 from cognits import __version__, paths
 from cognits.agent.agent import Agent, AgentConfig
 from cognits.agent.prompts import ONBOARDING_SYSTEM_PROMPT
+from cognits.agent.subagents import directory_reader_config, researcher_config
+from cognits.agent.tool_deploy import DeploySubagent
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import ROLE_ASSISTANT, ROLE_SYSTEM, ROLE_USER, Message
 from cognits.server.app import DEFAULT_PORT, AppState, create_app
 from cognits.server.browser import open_browser
-from cognits.storage.files import StudentProfile
+from cognits.storage.files import Config, StudentProfile
+from cognits.tinyfish import TinyfishClient
+from cognits.tools import Registry
 
 # ---------------------------------------------------------------------------
 # Spinner — bouncing filled square, Knight-Rider style
@@ -155,7 +160,7 @@ SetupScreen {
 #setup-panel {
     border: solid #555;
     padding: 1 2;
-    width: 60;
+    width: 70;
     max-height: 90vh;
     background: #111111;
 }
@@ -191,7 +196,7 @@ SetupScreen {
 }
 
 #onboarding-log {
-    height: 16;
+    height: 1fr;
     border: solid #333;
     margin-bottom: 1;
     overflow-y: auto;
@@ -323,13 +328,41 @@ class SetupScreen(Screen):
 
     def _start_onboarding(self) -> None:
         self._llm_client = DeepSeekClient(self._api_key)
+
+        subagent_map: dict[str, AgentConfig] = {
+            "directory_reader": directory_reader_config(
+                "deepseek-v4-flash", "high", 50,
+                docling_engine=self._state.docling_engine if self._state.docling_engine is not None and self._state.docling_engine.error is None else None,
+                docling_config=self._state.cached_config.docling_config if self._state.cached_config else None,
+            ),
+        }
+
+        if self._tinyfish_key:
+            tf_client = TinyfishClient(self._tinyfish_key)
+            subagent_map["web_researcher"] = researcher_config(
+                "deepseek-v4-flash", "high", 100, tf_client,
+            )
+
+        deploy_tool = DeploySubagent(
+            llm_client=self._llm_client,
+            report_store=None,
+            subagents=subagent_map,
+            session_id=None,
+            emit=None,
+            rag_engine=None,
+            tinyfish_api_key=self._tinyfish_key,
+        )
+        registry = Registry()
+        registry.register(deploy_tool)
+
         cfg = AgentConfig(
             name="onboarding",
             model="deepseek-v4-pro",
             reasoning="max",
             max_steps=999,
             system_prompt=ONBOARDING_SYSTEM_PROMPT,
-            tools=None,
+            tools=registry,
+            subagents=subagent_map,
         )
         self._agent = Agent(cfg, self._llm_client)
         self._messages = []
@@ -473,6 +506,25 @@ class SetupScreen(Screen):
             )
             try:
                 self._state.store.save_profile(profile)
+            except Exception:
+                pass
+
+            # Save onboarding conversation log
+            try:
+                log_dir = Path(paths.data_dir()) / "onboarding"
+                log_dir.mkdir(parents=True, exist_ok=True)
+                ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                log_path = log_dir / f"{ts}.json"
+                log_data = {
+                    "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+                    "model": "deepseek-v4-pro",
+                    "reasoning": "max",
+                    "messages": [
+                        {"role": m.role, "content": m.content}
+                        for m in self._messages
+                    ],
+                }
+                log_path.write_text(json.dumps(log_data, indent=2, ensure_ascii=False), encoding="utf-8")
             except Exception:
                 pass
 

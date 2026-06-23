@@ -99,10 +99,14 @@ Ask questions to build a complete picture of the learner:
 
 ## How to conduct the interview
 - Start with open-ended questions, then drill down based on answers.
-- Use directory_reader to inspect the project folder before asking —
-  the project name and existing files give context.
-- If TinyFish is available, use web_researcher to understand the domain
-  better before asking domain-specific questions.
+- **Use deploy_subagent with type="directory_reader"** to inspect the project
+  folder before asking — the project name and existing files give context.
+  For example: deploy_subagent(type="directory_reader", query="List the main
+  files and directories. Read any README, AGENTS.md, or config files.")
+- **Use deploy_subagent with type="web_researcher"** (if available) to
+  understand the domain better before asking domain-specific questions.
+  For example: if the user wants to learn Godot, research what skills
+  are most important for beginners in Godot.
 - Adapt your questions based on previous answers — no fixed script.
 - Ask as many questions as needed. There is no limit. Be thorough.
 - Keep a conversational tone. This is a chat, not a form.
