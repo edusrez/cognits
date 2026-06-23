@@ -82,23 +82,27 @@ export function createSetupTree(n: string) {
   setViewportMap(reconcile({
     [l]: {
       tabs: [
-        { id: "setup", label: "Setup", hidden: false },
-        { id: "files", label: "Files", hidden: false },
-        { id: "sessions", label: "Sessions", hidden: false },
+        { id: "files", label: "Files", hidden: true },
+        { id: "sessions", label: "Sessions", hidden: true },
       ],
-      activeTabId: "setup",
+      activeTabId: "files",
     },
     [rll]: {
       tabs: [
-        { id: "write", label: "Write", hidden: false },
+        { id: "setup", label: "Setup", hidden: false },
+      ],
+      activeTabId: "setup",
+    },
+    [rlr]: {
+      tabs: [
+        { id: "write", label: "Write", hidden: true },
       ],
       activeTabId: "write",
     },
-    [rlr]: { tabs: [], activeTabId: null },
     [rr]: {
       tabs: [
-        { id: "settings", label: "Settings", hidden: false },
-        { id: "learnit", label: ".cognits", hidden: false },
+        { id: "settings", label: "Settings", hidden: true },
+        { id: "learnit", label: ".cognits", hidden: true },
       ],
       activeTabId: "settings",
     },
@@ -121,7 +125,7 @@ export function createSetupTree(n: string) {
       parentId: r,
       direction: "v",
       children: [rll, rlr],
-      fractions: [4, 1],
+      fractions: [3, 1],
     },
   }))
 }
@@ -229,6 +233,17 @@ export function setFraction(splitId: ViewportId, index: 0 | 1, value: number) {
 
 export function activateTab(vpId: ViewportId, tabId: string) {
   setViewportMap(vpId, "activeTabId", tabId)
+}
+
+export function setTabHidden(vpId: ViewportId, tabId: string, hidden: boolean) {
+  setViewportMap(
+    produce((m) => {
+      const vp = m[vpId]
+      if (!vp) return
+      const tab = vp.tabs.find((t) => t.id === tabId)
+      if (tab) tab.hidden = hidden
+    }),
+  )
 }
 
 export function setTabLabel(vpId: ViewportId, tabId: string, label: string) {

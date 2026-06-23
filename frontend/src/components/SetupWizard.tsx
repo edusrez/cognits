@@ -1,7 +1,7 @@
-import { createSignal, createEffect, Show, For, onCleanup } from "solid-js"
+import { createSignal, Show, For, onCleanup } from "solid-js"
 import { setupStep, setSetupStep, setupMessages, setSetupMessages, setupStreaming, setSetupStreaming, finishSetup } from "../stores/setup-store"
 import { llmApiKey, loadConfig } from "../stores/settings-store"
-import { createDefaultTree } from "../stores/viewport-tree-store"
+import { createDefaultTree, setTabHidden, addDynamicTab } from "../stores/viewport-tree-store"
 import type { ChatMessage } from "../lib/chat-stream"
 import MarkdownView from "./MarkdownView"
 
@@ -10,12 +10,6 @@ export default function SetupWizard() {
   const [error, setError] = createSignal("")
   let scrollRef!: HTMLDivElement
   let abortCtrl: AbortController | null = null
-
-  createEffect(() => {
-    if (setupStep() === "apikeys" && llmApiKey()) {
-      setSetupStep("onboarding")
-    }
-  })
 
   onCleanup(() => {
     if (abortCtrl) abortCtrl.abort()
@@ -30,8 +24,10 @@ export default function SetupWizard() {
   }
 
   function openSettings() {
-    const el = document.querySelector("[data-tab-id='settings']") as HTMLElement | null
-    el?.click()
+    const vpId = "111"
+    setTabHidden(vpId, "settings", false)
+    setTabHidden(vpId, "learnit", false)
+    addDynamicTab(vpId, { id: "settings:apikeys", label: "Settings (API Keys)", hidden: false })
   }
 
   async function startOnboarding() {
@@ -218,23 +214,34 @@ export default function SetupWizard() {
       <Show when={setupStep() === "apikeys"}>
         <div class="flex-1 flex flex-col items-center justify-center gap-4 px-4">
           <div class="text-center max-w-md">
-            <h2 class="text-base font-semibold mb-3">Configure your AI Provider</h2>
-            <p class="text-[#6a6a6a] mb-3 text-xs">
-              Open the Settings tab and add your DeepSeek API key.
-              Optionally, add a TinyFish API key for web research.
+            <h2 class="text-base font-semibold mb-3">API Keys Required</h2>
+            <p class="text-[#6a6a6a] mb-2 text-xs">
+              Cognits needs an API key from an AI provider to work.
+              Click below to open the Settings tab on the right side of the screen.
+            </p>
+            <p class="text-[#6a6a6a] mb-2 text-xs">
+              In Settings you'll find the <span class="text-white">API Keys</span> section.
+              Enter your DeepSeek API key there. Optionally, add a TinyFish key for web research.
             </p>
             <p class="text-[#6a6a6a] text-xs">
-              The key is encrypted and stored only on your machine.
+              Your keys are encrypted and stored only on your machine.
             </p>
           </div>
           <button
-            class="px-6 py-2 border border-white/20 hover:bg-white/10 transition-colors"
+            class="px-6 py-2 border border-white/20 hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             onClick={openSettings}
           >
             Open Settings →
           </button>
-          <Show when={llmApiKey()}>
-            <p class="text-green-400 text-xs">API key configured. Advancing...</p>
+          <button
+            class="px-6 py-2 border border-white/20 hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            disabled={!llmApiKey()}
+            onClick={() => setSetupStep("onboarding")}
+          >
+            Continue to Interview →
+          </button>
+          <Show when={!llmApiKey()}>
+            <p class="text-[#6a6a6a] text-xs">Configure your API key in Settings to continue.</p>
           </Show>
         </div>
       </Show>

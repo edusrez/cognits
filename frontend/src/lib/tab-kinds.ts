@@ -11,6 +11,7 @@
  *  derives its labels from this map so there is exactly one source of truth. */
 export const TAB_LABELS: Record<string, string> = {
   setup: "Setup",
+  apikeys: "API Keys",
   files: "Files",
   sessions: "Sessions",
   chat: "Chat",

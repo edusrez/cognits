@@ -11,6 +11,7 @@ import SliderField from "../SliderField"
 import Dropdown from "../Dropdown"
 import CollapsibleSection from "../CollapsibleSection"
 import "./chat-sections"   // side-effect: registers chat:info/agent/subagents/shared-data
+import "./apikeys-sections" // side-effect: registers apikeys:main
 import "./pdf-sections"    // side-effect: registers pdf:ai-vision
 import "./general-sections" // side-effect: registers settings:link-prompt + general
 import {
