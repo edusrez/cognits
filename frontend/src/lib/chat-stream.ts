@@ -4,6 +4,7 @@ export interface ChatMessage {
   reasoning?: string
   reportId?: string
   reportTitle?: string
+  tags?: string[]
 }
 
 export interface ChatUsage {

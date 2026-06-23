@@ -235,7 +235,7 @@ def register(app: FastAPI, st) -> None:
         sa = SessionAgent(sid, storage_messages)
         st.active_agents[sid] = sa
         sa.task = asyncio.create_task(
-            _run_agent(st, sa, cfg, sid, model, reasoning, system_prompt, llm_messages, incoming)
+            _run_agent(st, sa, cfg, sid, model, reasoning, system_prompt, llm_messages, incoming, agent_id)
         )
 
         return Response(status_code=202)
@@ -327,6 +327,7 @@ async def _run_agent(
     system_prompt: str,
     llm_messages: list[Message],
     incoming: list[dict],
+    agent_id: str,
 ) -> None:
     acc = {"content": "", "reasoning": ""}
     llm_client = DeepSeekClient(cfg.llm_api_key)
