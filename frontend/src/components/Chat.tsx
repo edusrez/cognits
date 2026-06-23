@@ -1,10 +1,11 @@
 import { For, Index, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
 import "../highlight-theme.css"
-import { currentMessages as messages, isStreaming, currentToolStatus, currentChatError, sessionUsage, mainSessionPromptTokens, toolFaviconsBySession } from "../stores/chat-store"
-import { activeSessionId } from "../stores/session-store"
+import { currentMessages as messages, isStreaming, currentToolStatus, currentChatError, sessionUsage, mainSessionPromptTokens, toolFaviconsBySession, sendMessage } from "../stores/chat-store"
+import { activeSessionId, createNewSession } from "../stores/session-store"
 import { chatFontSize, setChatFontSize, saveConfig, displayThinking, llmApiKey } from "../stores/settings-store"
 import { typewriterSpeed } from "../stores/settings-store"
 import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
+import { isSetupActive, setupStep } from "../stores/setup-store"
 import ContextMenu from "./ContextMenu"
 import MarkdownView from "./MarkdownView"
 import { copyToClipboard } from "../lib/clipboard"
@@ -13,6 +14,7 @@ import { useTypewriter } from "../lib/useTypewriter"
 export default function Chat(props: { viewportId?: string }) {
   let scrollRef!: HTMLDivElement
   const [autoScroll, setAutoScroll] = createSignal(true)
+  const [interviewStarted, setInterviewStarted] = createSignal(false)
 
   const chatMsgMenu = createMemo(() => {
     const m = ctxMenu()
@@ -71,6 +73,20 @@ export default function Chat(props: { viewportId?: string }) {
     const msgs = messages()
     const last = msgs[msgs.length - 1]
     if (last && last.role === "assistant" && last.content === "") setAutoScroll(true)
+  })
+
+  createEffect(() => {
+    if (
+      isSetupActive() &&
+      setupStep() === "onboarding" &&
+      !activeSessionId() &&
+      !interviewStarted()
+    ) {
+      setInterviewStarted(true)
+      createNewSession().then(() => {
+        sendMessage("Start the onboarding interview. Ask your first question.")
+      })
+    }
   })
 
   return (

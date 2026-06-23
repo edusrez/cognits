@@ -1,7 +1,7 @@
 import { Show } from "solid-js"
 import { setupStep, setSetupStep, finishSetup } from "../stores/setup-store"
 import { llmApiKey } from "../stores/settings-store"
-import { setTabHidden } from "../stores/viewport-tree-store"
+import { setTabHidden, setLinkedViewport } from "../stores/viewport-tree-store"
 
 export default function SetupWizard() {
 
@@ -13,6 +13,7 @@ export default function SetupWizard() {
     setTabHidden("1100", "setup", true)
     setTabHidden("1100", "chat", false)
     setTabHidden("1101", "write", false)
+    setLinkedViewport("1100")
     setSetupStep("onboarding")
   }
 

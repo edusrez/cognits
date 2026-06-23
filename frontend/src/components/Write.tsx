@@ -1,11 +1,18 @@
 import { createMemo } from "solid-js"
-import { sendMessage, isStreaming } from "../stores/chat-store"
+import { sendMessage, isStreaming, currentMessages } from "../stores/chat-store"
+import { activeSessionId } from "../stores/session-store"
 import { writeLangs, llmApiKey } from "../stores/settings-store"
+import { isSetupActive, setupStep } from "../stores/setup-store"
 
 export default function Write() {
   const lang = createMemo(() => writeLangs()[0] || "en")
   const spellcheck = createMemo(() => writeLangs().length > 0)
   const hasApiKey = createMemo(() => llmApiKey() !== "")
+  const locked = createMemo(() =>
+    isStreaming() ||
+    !hasApiKey() ||
+    (isSetupActive() && setupStep() === "onboarding" && !activeSessionId())
+  )
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Enter") {
@@ -35,8 +42,8 @@ export default function Write() {
         spellcheck={spellcheck()}
         lang={lang()}
         class="border border-white/20 px-3 py-3 text-[13px] bg-transparent text-[#e0e0e0] w-full h-full resize-none outline-none disabled:opacity-50"
-        placeholder={!hasApiKey() ? "Configure an API key in Settings before chatting" : isStreaming() ? "AI is responding..." : "Type your message... (Enter to send, Shift+Enter for new line)"}
-        disabled={isStreaming() || !hasApiKey()}
+        placeholder={!hasApiKey() ? "Configure an API key in Settings before chatting" : locked() ? "AI is responding..." : "Type your message... (Enter to send, Shift+Enter for new line)"}
+        disabled={locked()}
       />
     </div>
   )
