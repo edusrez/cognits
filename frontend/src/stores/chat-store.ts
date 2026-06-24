@@ -174,14 +174,7 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
     onHistory(snap: HistorySnapshot) {
       writeBuffer = ""
       if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
-      let finalMsgs = snap.messages
-      if (snap.agentActive) {
-        const liveMsg: ChatMessage = { role: "assistant", content: snap.liveContent }
-        if (snap.liveReasoning) liveMsg.reasoning = snap.liveReasoning
-        if (snap.liveReportId) liveMsg.reportId = snap.liveReportId
-        if (snap.liveReportTitle) liveMsg.reportTitle = snap.liveReportTitle
-        finalMsgs = [...snap.messages, liveMsg]
-      }
+      const finalMsgs = snap.messages
       batch(() => {
         setMessages(finalMsgs)
         setIsStreaming(snap.agentActive)
