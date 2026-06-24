@@ -379,7 +379,6 @@ export async function sendMessage(content: string) {
 
   try {
     await startChat(sid, messages)
-    broadcastAgentStarted(sid)
   } catch (e) {
     setStreamState(sid, { active: false, thinking: false })
     const msg = e instanceof Error ? e.message : ""
@@ -389,8 +388,6 @@ export async function sendMessage(content: string) {
     subscribeToSession(sid)
     return
   }
-
-  subscribeToSession(sid)
 }
 
 export async function cancelStreaming() {
@@ -413,5 +410,4 @@ export async function sendHiddenMessage(content: string) {
   if (!sid) return
   setStreamState(sid, { active: true, thinking: true })
   await startChat(sid, [{ role: "hidden_user", content }])
-  subscribeToSession(sid)
 }

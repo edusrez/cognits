@@ -132,20 +132,21 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 const mdCache = new Map<string, string>()
 const MD_CACHE_MAX = 300
 
-export function renderMarkdown(text: string): string {
-  const hit = mdCache.get(text)
+export function renderMarkdown(text: string, skipRemend = false): string {
+  const safe = skipRemend ? text : remend(text)
+  const hit = mdCache.get(safe)
   if (hit !== undefined) {
-    mdCache.delete(text)
-    mdCache.set(text, hit)
+    mdCache.delete(safe)
+    mdCache.set(safe, hit)
     return hit
   }
-  const html = DOMPurify.sanitize(marked.parse(remend(text), { async: false }),
+  const html = DOMPurify.sanitize(marked.parse(safe, { async: false }),
     { ADD_ATTR: ["id"] },
   )
   if (mdCache.size >= MD_CACHE_MAX) {
     mdCache.delete(mdCache.keys().next().value!)
   }
-  mdCache.set(text, html)
+  mdCache.set(safe, html)
   return html
 }
 
@@ -157,10 +158,10 @@ export function renderMarkdown(text: string): string {
 export function renderMarkdownStreaming(text: string): string {
   let idx = text.lastIndexOf("\n\n")
   while (idx > 0) {
-    const prefix = text.slice(0, idx)
+    const prefix = remend(text.slice(0, idx))
     const fences = (prefix.match(/```/g) ?? []).length
     if (fences % 2 === 0) {
-      return renderMarkdown(prefix) + renderMarkdown(text.slice(idx))
+      return renderMarkdown(prefix) + renderMarkdown(text.slice(idx), true)
     }
     idx = text.lastIndexOf("\n\n", idx - 1)
   }
