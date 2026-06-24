@@ -137,12 +137,6 @@ function drainBuffer(now: number) {
   if (chunk) {
     batch(() => setStreamingContent(prev => prev + chunk))
   }
-  // Catch-up: burst mode when buffer grows too large (model outpacing render)
-  if (writeBuffer.length > 200) {
-    const fast = writeBuffer.slice(0, 10)
-    writeBuffer = writeBuffer.slice(10)
-    batch(() => setStreamingContent(prev => prev + fast))
-  }
   if (writeBuffer.length > 0) {
     rafId = requestAnimationFrame(drainBuffer)
   } else {
