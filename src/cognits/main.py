@@ -205,7 +205,7 @@ class CognitsTUI(App):
         # assets never blocks Textual's render loop.
         self._server_thread = threading.Thread(
             target=lambda: asyncio.run(self._run_server()),
-            daemon=True,
+            daemon=False,
         )
         self._server_thread.start()
 
@@ -308,7 +308,10 @@ class CognitsTUI(App):
         # Textual (it doesn't exist as a handler), so cleanup never ran.
         if self._server_thread is not None:
             self._server.should_exit = True
-            self._server_thread.join(timeout=5)
+            self._server_thread.join(timeout=8)
+            if self._server_thread.is_alive():
+                self._server.force_exit = True
+                self._server_thread.join(timeout=2)
         # The lifespan finally block should have called these, but if the
         # server-thread join timed out the lifespan may not have completed.
         # shutdown() is idempotent and terminates the warm-cache subprocess.

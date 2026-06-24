@@ -95,6 +95,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
             yield
         except asyncio.CancelledError:
             pass
+        await state.drain_agents(timeout=5)
         if state.rag is not None:
             state.rag.shutdown()
         if state.docling_engine is not None:
