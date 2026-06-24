@@ -66,7 +66,9 @@ export default function App() {
       if (!isSetupActive()) {
         placeSessionTabs(defaultChatViewport(), defaultWriteViewport())
       }
-      loadSessionMessages(sid)
+      if (!(isSetupActive() && setupStep() === "onboarding")) {
+        loadSessionMessages(sid)
+      }
       loadSessionConfig(sid)
       if (isSetupActive() && setupStep() === "onboarding" && !interviewMessageSent()) {
         setInterviewMessageSent(true)
