@@ -119,26 +119,40 @@ export async function cancelStreaming() {
   }
 }
 
-// ── write buffer + rAF drain ────────────────────────────────────────────
-// Tokens accumulate here (non-reactive) and are drained to streamingContent
-// at display refresh rate (~60fps capped). Adapts automatically to any Hz.
+// ── write buffer + adaptive rAF drain ──────────────────────────────────
+// Tokens accumulate here (non-reactive). The drain speed adapts to the
+// buffer depth: fast (~500 chars/s) when full, slow (~50 chars/s) when
+// nearly empty — preserving a typewriter effect all the way to the end.
+// On "done" the buffer drains to empty, then commits atomically.
 
 let writeBuffer = ""
 let rafId: number | null = null
 let lastFrameTime = 0
-const MS_PER_CHAR = 3
+let streamEnding = false
+
+const MIN_BUFFER = 20   // chars — below this, switch to slow pace
+const SLOW_MS = 20      // ms/char in slow mode (~50 chars/s)
+const FAST_MS = 2       // ms/char in fast mode  (~500 chars/s)
 
 function drainBuffer(now: number) {
   const elapsed = lastFrameTime ? now - lastFrameTime : 16.67
   lastFrameTime = now
-  const count = Math.max(1, Math.floor(elapsed / MS_PER_CHAR))
+
+  const msPerChar = writeBuffer.length >= MIN_BUFFER ? FAST_MS : SLOW_MS
+  const count = Math.max(1, Math.floor(elapsed / msPerChar))
   const chunk = writeBuffer.slice(0, count)
-  writeBuffer = writeBuffer.slice(count)
+  writeBuffer = writeBuffer.slice(chunk.length)
+
   if (chunk) {
     batch(() => setStreamingContent(prev => prev + chunk))
   }
+
   if (writeBuffer.length > 0) {
     rafId = requestAnimationFrame(drainBuffer)
+  } else if (streamEnding) {
+    streamEnding = false
+    rafId = null
+    commitStream()
   } else {
     rafId = null
   }
@@ -151,13 +165,26 @@ function startDrain() {
 }
 
 function flushBuffer() {
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId)
-    rafId = null
-  }
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
   if (writeBuffer) {
     batch(() => setStreamingContent(prev => prev + writeBuffer))
     writeBuffer = ""
+  }
+}
+
+function commitStream() {
+  const content = streamingContent()
+  if (content) {
+    batch(() => {
+      setMessages(prev => [...prev, { role: "assistant", content }])
+      setStreamingContent("")
+      setStreamingReasoning("")
+      setIsStreaming(false)
+      setToolStatus(null)
+    })
+  } else {
+    setIsStreaming(false)
+    setToolStatus(null)
   }
 }
 
@@ -167,6 +194,7 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
   return {
     onHistory(snap: HistorySnapshot) {
       writeBuffer = ""
+      streamEnding = false
       if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
       const finalMsgs = snap.messages
       batch(() => {
@@ -251,7 +279,8 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
       setChatError(message)
     },
     onDone() {
-      return finalizeStream(controller)
+      streamEnding = true
+      if (writeBuffer.length === 0) commitStream()
     },
     onError() {
       if (streamController === controller) {
@@ -269,8 +298,8 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
 }
 
 async function finalizeStream(controller: AbortController) {
-  // Drain buffer and commit in a single atomic batch — avoids an intermediate
-  // render where StreamingMarkdown shows the full text before MarkdownView picks it up.
+  // Safety net for retry timeout / connection loss.
+  // Normal stream end goes through onDone → natural drain → commitStream.
   if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
   const remaining = writeBuffer
   writeBuffer = ""
