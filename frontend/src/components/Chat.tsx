@@ -10,6 +10,8 @@ import MarkdownView from "./MarkdownView"
 import StreamingMarkdown from "./StreamingMarkdown"
 import { copyToClipboard } from "../lib/clipboard"
 
+const animatedRefs = new WeakSet<object>()
+
 export default function Chat(props: { viewportId?: string }) {
   let scrollRef!: HTMLDivElement
   const [autoScroll, setAutoScroll] = createSignal(true)
@@ -99,6 +101,8 @@ export default function Chat(props: { viewportId?: string }) {
         {(msg) => {
           let msgRef!: HTMLDivElement
           onMount(() => {
+            if (animatedRefs.has(msg)) return
+            animatedRefs.add(msg)
             msgRef.animate(
               [{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "translateY(0)" }],
               { duration: 200, easing: "cubic-bezier(0.16, 1, 0.3, 1)", fill: "both" },

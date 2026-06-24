@@ -269,9 +269,12 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
 }
 
 async function finalizeStream(controller: AbortController) {
-  // Commit remaining streaming content
-  flushBuffer()
-  const content = streamingContent()
+  // Drain buffer and commit in a single atomic batch — avoids an intermediate
+  // render where StreamingMarkdown shows the full text before MarkdownView picks it up.
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
+  const remaining = writeBuffer
+  writeBuffer = ""
+  const content = streamingContent() + remaining
   if (content) {
     batch(() => {
       setMessages(prev => [...prev, { role: "assistant", content }])
