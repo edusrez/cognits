@@ -115,7 +115,9 @@ try {
   syncChannel.onmessage = (e: MessageEvent) => {
     const data = e.data
     if (data?.type === "AGENT_STARTED" && data.sessionId === activeSessionId()) {
-      subscribeToSession(data.sessionId)
+      if (!streamController || streamController.signal.aborted) {
+        subscribeToSession(data.sessionId)
+      }
     }
   }
 } catch {
@@ -388,6 +390,8 @@ export async function sendMessage(content: string) {
     subscribeToSession(sid)
     return
   }
+
+  subscribeToSession(sid)
 }
 
 export async function cancelStreaming() {
@@ -410,4 +414,5 @@ export async function sendHiddenMessage(content: string) {
   if (!sid) return
   setStreamState(sid, { active: true, thinking: true })
   await startChat(sid, [{ role: "hidden_user", content }])
+  subscribeToSession(sid)
 }
