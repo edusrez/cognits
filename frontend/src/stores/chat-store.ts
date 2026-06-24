@@ -241,6 +241,17 @@ function createStreamCallbacks(sid: string, controller: AbortController): Stream
       }
     },
     onToolEnd(_data: any) {},
+    onToolStart(_data: any) {
+      flushPendingTokens()
+      setMessagesBySession((prev) => {
+        const ses = prev[sid] ?? []
+        const last = ses[ses.length - 1]
+        if (last && last.role === "assistant" && last.content) {
+          return { ...prev, [sid]: [...ses, { role: "assistant" as const, content: "" }] }
+        }
+        return prev
+      })
+    },
     onSessionRenamed(_data: { name: string }) {
       import("../stores/session-store").then((m) => m.loadSessions())
     },
@@ -298,12 +309,16 @@ async function finalizeStream(sid: string, controller: AbortController) {
     if (dbMsgs.length > 0) {
       setMessagesBySession((prev) => {
         const current = prev[sid] ?? []
-        const reconciled = dbMsgs.map((dbMsg, i) => {
+        const minLen = Math.min(current.length, dbMsgs.length)
+        const reconciled: ChatMessage[] = []
+        for (let i = 0; i < minLen; i++) {
           const cur = current[i]
-          if (!cur) return dbMsg
-          if (dbMsg.content.length > cur.content.length) return dbMsg
-          return cur
-        })
+          const db = dbMsgs[i]
+          reconciled.push(db.content.length > cur.content.length ? db : cur)
+        }
+        if (current.length > minLen) {
+          reconciled.push(...current.slice(minLen))
+        }
         return { ...prev, [sid]: capMessages(reconciled) }
       })
     }
