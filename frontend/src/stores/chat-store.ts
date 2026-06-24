@@ -119,11 +119,61 @@ export async function cancelStreaming() {
   }
 }
 
+// ── write buffer + rAF drain ────────────────────────────────────────────
+// Tokens accumulate here (non-reactive) and are drained to streamingContent
+// at display refresh rate (~60fps capped). Adapts automatically to any Hz.
+
+let writeBuffer = ""
+let rafId: number | null = null
+let lastFrameTime = 0
+const MS_PER_CHAR = 3
+
+function drainBuffer(now: number) {
+  const elapsed = lastFrameTime ? now - lastFrameTime : 16.67
+  lastFrameTime = now
+  const count = Math.max(1, Math.floor(elapsed / MS_PER_CHAR))
+  const chunk = writeBuffer.slice(0, count)
+  writeBuffer = writeBuffer.slice(count)
+  if (chunk) {
+    batch(() => setStreamingContent(prev => prev + chunk))
+  }
+  // Catch-up: burst mode when buffer grows too large (model outpacing render)
+  if (writeBuffer.length > 200) {
+    const fast = writeBuffer.slice(0, 10)
+    writeBuffer = writeBuffer.slice(10)
+    batch(() => setStreamingContent(prev => prev + fast))
+  }
+  if (writeBuffer.length > 0) {
+    rafId = requestAnimationFrame(drainBuffer)
+  } else {
+    rafId = null
+  }
+}
+
+function startDrain() {
+  if (rafId !== null) return
+  lastFrameTime = 0
+  rafId = requestAnimationFrame(drainBuffer)
+}
+
+function flushBuffer() {
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  if (writeBuffer) {
+    batch(() => setStreamingContent(prev => prev + writeBuffer))
+    writeBuffer = ""
+  }
+}
+
 // ── SSE callbacks ─────────────────────────────────────────────────────────
 
 function createStreamCallbacks(controller: AbortController): StreamCallbacks {
   return {
     onHistory(snap: HistorySnapshot) {
+      writeBuffer = ""
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
       let finalMsgs = snap.messages
       if (snap.agentActive) {
         const liveMsg: ChatMessage = { role: "assistant", content: snap.liveContent }
@@ -147,7 +197,8 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
     },
     onToken(token: string) {
       if (isThinking()) setIsThinking(false)
-      setStreamingContent(prev => prev + token)
+      writeBuffer += token
+      startDrain()
     },
     onUsage(u: ChatUsage) {
       setUsage(prev => ({
@@ -169,6 +220,7 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
     onToolStart() {
       // Commit current streaming content as a completed message,
       // start a fresh accumulator for post-tool content.
+      flushBuffer()
       const cur = streamingContent()
       const reason = streamingReasoning()
       if (cur) {
@@ -183,6 +235,7 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
       import("../stores/session-store").then(m => m.loadSessions())
     },
     onSubagentEnd(data) {
+      flushBuffer()
       const cur = streamingContent()
       if (cur) {
         batch(() => {
@@ -207,6 +260,7 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
       })
     },
     onServerError(message: string) {
+      flushBuffer()
       setChatError(message)
     },
     onDone() {
@@ -229,6 +283,7 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
 
 async function finalizeStream(controller: AbortController) {
   // Commit remaining streaming content
+  flushBuffer()
   const content = streamingContent()
   if (content) {
     batch(() => {

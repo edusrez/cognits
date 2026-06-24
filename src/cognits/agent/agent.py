@@ -120,9 +120,10 @@ class Agent:
                 )
                 for idx in sorted(tool_accs)
             ]
-            messages.append(
-                Message(role=ROLE_ASSISTANT, content=content, tool_calls=tool_calls)
-            )
+            if content or tool_calls:
+                messages.append(
+                    Message(role=ROLE_ASSISTANT, content=content, tool_calls=tool_calls)
+                )
 
             for tc in tool_calls:
                 tool = cfg.tools.get(tc.name) if cfg.tools is not None else None
