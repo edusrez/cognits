@@ -33,7 +33,6 @@ import clojure from "highlight.js/lib/languages/clojure"
 import csharp from "highlight.js/lib/languages/csharp"
 import graphql from "highlight.js/lib/languages/graphql"
 import protobuf from "highlight.js/lib/languages/protobuf"
-import remend from "remend"
 import DOMPurify from "dompurify"
 
 hljs.registerLanguage("javascript", javascript)
@@ -132,40 +131,21 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 const mdCache = new Map<string, string>()
 const MD_CACHE_MAX = 300
 
-export function renderMarkdown(text: string, skipRemend = false): string {
-  const safe = skipRemend ? text : remend(text)
-  const hit = mdCache.get(safe)
+export function renderMarkdown(text: string): string {
+  const hit = mdCache.get(text)
   if (hit !== undefined) {
-    mdCache.delete(safe)
-    mdCache.set(safe, hit)
+    mdCache.delete(text)
+    mdCache.set(text, hit)
     return hit
   }
-  const html = DOMPurify.sanitize(marked.parse(safe, { async: false }),
+  const html = DOMPurify.sanitize(marked.parse(text, { async: false }),
     { ADD_ATTR: ["id"] },
   )
   if (mdCache.size >= MD_CACHE_MAX) {
     mdCache.delete(mdCache.keys().next().value!)
   }
-  mdCache.set(safe, html)
+  mdCache.set(text, html)
   return html
-}
-
-// For the message that's growing: split off a stable prefix (always hits the
-// cache) from the volatile tail, cutting at the last paragraph that doesn't
-// fall inside a code fence. Cost per flush: O(last block).
-// When the stream ends, a normal full render runs and the difference
-// (e.g. a list split in two) disappears.
-export function renderMarkdownStreaming(text: string): string {
-  let idx = text.lastIndexOf("\n\n")
-  while (idx > 0) {
-    const prefix = remend(text.slice(0, idx))
-    const fences = (prefix.match(/```/g) ?? []).length
-    if (fences % 2 === 0) {
-      return renderMarkdown(prefix) + renderMarkdown(text.slice(idx), true)
-    }
-    idx = text.lastIndexOf("\n\n", idx - 1)
-  }
-  return renderMarkdown(text)
 }
 
 // For FTS search highlighted titles: only highlight markup (<b>/<mark>) is

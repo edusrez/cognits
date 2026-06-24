@@ -1,20 +1,20 @@
-import { For, Index, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
+import { For, Show, createSignal, createEffect, createMemo, onMount } from "solid-js"
 import "../highlight-theme.css"
-import { currentMessages as messages, isStreaming, currentToolStatus, currentChatError, sessionUsage, mainSessionPromptTokens, toolFaviconsBySession } from "../stores/chat-store"
+import { currentMessages as messages, isStreaming, streamingContent, currentToolStatus, currentChatError, sessionUsage, mainSessionPromptTokens, toolFavicons } from "../stores/chat-store"
 import { activeSessionId, createNewSession } from "../stores/session-store"
 import { chatFontSize, setChatFontSize, saveConfig, displayThinking, llmApiKey } from "../stores/settings-store"
-import { typewriterSpeed } from "../stores/settings-store"
 import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
 import { isSetupActive, setupStep } from "../stores/setup-store"
 import ContextMenu from "./ContextMenu"
 import MarkdownView from "./MarkdownView"
+import StreamingMarkdown from "./StreamingMarkdown"
 import { copyToClipboard } from "../lib/clipboard"
-import { useTypewriter } from "../lib/useTypewriter"
 
 export default function Chat(props: { viewportId?: string }) {
   let scrollRef!: HTMLDivElement
   const [autoScroll, setAutoScroll] = createSignal(true)
   const [interviewStarted, setInterviewStarted] = createSignal(false)
+  const [displayedFavicons, setDisplayedFavicons] = createSignal<string[]>([])
 
   const chatMsgMenu = createMemo(() => {
     const m = ctxMenu()
@@ -22,50 +22,34 @@ export default function Chat(props: { viewportId?: string }) {
     return null
   })
 
-  const animated = new Set<number>()
-
-  const [displayedFavicons, setDisplayedFavicons] = createSignal<string[]>([])
-
   createEffect(() => {
     const sid = activeSessionId()
     if (!sid) return
-    const target = toolFaviconsBySession()[sid] ?? []
+    const target = toolFavicons() ?? []
     const current = displayedFavicons()
-
-    if (target.length === 0) {
-      setDisplayedFavicons([])
-      return
-    }
-
-    // Compute new items that haven't been revealed yet
+    if (target.length === 0) { setDisplayedFavicons([]); return }
     const newItems = target.slice(current.length)
     if (newItems.length === 0) return
-
     let cancelled = false
-    onCleanup(() => { cancelled = true })
-
     const reveal = async () => {
       for (const src of newItems) {
         if (cancelled) return
         await new Promise((r) => setTimeout(r, 200))
         if (cancelled) return
         setDisplayedFavicons((prev) => {
-          // Only append if target still includes this src
-          const latest = toolFaviconsBySession()[sid!] ?? []
-          if (latest.length > prev.length) {
-            return [...prev, src]
-          }
+          const latest = toolFavicons() ?? []
+          if (latest.length > prev.length) return [...prev, src]
           return prev
         })
       }
     }
-
     reveal()
   })
 
   createEffect(() => {
     if (!autoScroll()) return
     messages()
+    streamingContent()
     scrollRef.scrollTop = scrollRef.scrollHeight
   })
 
@@ -83,7 +67,7 @@ export default function Chat(props: { viewportId?: string }) {
       !interviewStarted()
     ) {
       setInterviewStarted(true)
-      createNewSession() // triggers App.tsx effect → sends first message there
+      createNewSession()
     }
   })
 
@@ -111,37 +95,27 @@ export default function Chat(props: { viewportId?: string }) {
         }}
         onTouchMove={() => setAutoScroll(false)}
        >
-      <Index each={messages()}>
-        {(msg, idx) => {
-          const i = () => idx
+      <For each={messages()}>
+        {(msg) => {
           let msgRef!: HTMLDivElement
-          if (!animated.has(i())) {
-            animated.add(i())
-            onMount(() => {
-              msgRef.animate(
-                [
-                  { opacity: 0, transform: "translateY(8px)" },
-                  { opacity: 1, transform: "translateY(0)" },
-                ],
-                { duration: 200, easing: "cubic-bezier(0.16, 1, 0.3, 1)", fill: "both" },
-              )
-            })
-          }
-          const sid = activeSessionId()
-          const isLast = () => msg().role === "assistant" && isStreaming() && i() === messages().length - 1
-          const typed = isLast() && sid ? useTypewriter(`${sid}-${i()}`, () => messages()[messages().length - 1].content, typewriterSpeed) : null
+          onMount(() => {
+            msgRef.animate(
+              [{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "translateY(0)" }],
+              { duration: 200, easing: "cubic-bezier(0.16, 1, 0.3, 1)", fill: "both" },
+            )
+          })
           return (
             <div
               ref={msgRef}
               class="mb-3"
-              classList={{ "flex justify-end": msg().role === "user" }}
+              classList={{ "flex justify-end": msg.role === "user" }}
               onContextMenu={(e) => {
-                if (!msg().content) return
+                if (!msg.content) return
                 e.preventDefault()
                 e.stopPropagation()
                 setCtxMenu({
                   kind: "chat-message",
-                  content: msg().content,
+                  content: msg.content,
                   x: e.clientX,
                   y: e.clientY,
                 })
@@ -150,47 +124,31 @@ export default function Chat(props: { viewportId?: string }) {
               <div
                 classList={{
                   "border border-white/20 px-3 py-1.5 whitespace-pre-wrap break-words bg-white/5 max-w-[85%]":
-                    msg().role === "user",
-                  "py-1 chat-markdown w-full": msg().role === "assistant",
+                    msg.role === "user",
+                  "py-1 chat-markdown w-full": msg.role === "assistant",
                 }}
               >
-                <Show when={msg().role === "assistant" && msg().reasoning && !isStreaming() && displayThinking()}>
+                <Show when={msg.role === "assistant" && msg.reasoning && displayThinking()}>
                   <div class="thinking-block pb-2">
-                    <div class="thinking-content whitespace-pre-wrap">
-                      {msg().reasoning}
-                    </div>
+                    <div class="thinking-content whitespace-pre-wrap">{msg.reasoning}</div>
                   </div>
                 </Show>
 
-                {msg().role === "assistant"
-                  ? <MarkdownView content={typed ? typed() : msg().content} streaming={isStreaming() && i() === messages().length - 1} />
-                  : msg().content}
+                {msg.role === "assistant"
+                  ? <MarkdownView content={msg.content} />
+                  : msg.content}
 
-                <Show when={msg().role === "assistant" && i() === messages().length - 1 && currentToolStatus()}>
-                  <div
-                    style={{ "font-size": `${Math.max(10, chatFontSize() * 0.8)}px` }}
-                    class="text-[#5a5a5a] italic mt-1 flex items-center gap-1.5"
-                  >
-                    <span>{currentToolStatus()}</span>
-                    <For each={displayedFavicons()}>
-                      {(src) => (
-                        <img src={src} class="w-3.5 h-3.5 animate-fade-in" alt="" />
-                      )}
-                    </For>
-                  </div>
-                </Show>
-
-                <Show when={msg().reportId && msg().reportTitle}>
+                <Show when={msg.reportId && msg.reportTitle}>
                   <div
                     class="mt-2 border border-white/20 px-3 py-2 cursor-pointer hover:bg-white/5"
                     onClick={() => {
                       const vpId = props.viewportId
                       if (vpId) {
-                        import("../stores/report-store").then((m) => m.openReportInViewport(vpId, msg().reportId!))
+                        import("../stores/report-store").then((m) => m.openReportInViewport(vpId, msg.reportId!))
                       }
                     }}
                   >
-                    <div class="text-[#e0e0e0] text-[13px]">{msg().reportTitle}</div>
+                    <div class="text-[#e0e0e0] text-[13px]">{msg.reportTitle}</div>
                     <div class="flex justify-between text-[#6a6a6a] text-[11px] mt-1">
                       <span>Read full →</span>
                     </div>
@@ -200,7 +158,26 @@ export default function Chat(props: { viewportId?: string }) {
             </div>
           )
         }}
-      </Index>
+      </For>
+
+      {/* Streaming message: rendered separately, never mutated inside messages[] */}
+      <Show when={isStreaming()}>
+        <div class="mb-3 py-1 chat-markdown w-full">
+          <StreamingMarkdown content={streamingContent()} />
+        </div>
+      </Show>
+
+      <Show when={currentToolStatus()}>
+        <div
+          style={{ "font-size": `${Math.max(10, chatFontSize() * 0.8)}px` }}
+          class="text-[#5a5a5a] italic mt-1 flex items-center gap-1.5"
+        >
+          <span>{currentToolStatus()}</span>
+          <For each={displayedFavicons()}>
+            {(src) => <img src={src} class="w-3.5 h-3.5 animate-fade-in" alt="" />}
+          </For>
+        </div>
+      </Show>
 
       <Show when={currentChatError()}>
         {(err) => (

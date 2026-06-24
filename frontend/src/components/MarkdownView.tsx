@@ -1,10 +1,8 @@
 import { createMemo } from "solid-js"
-import { renderMarkdown, renderMarkdownStreaming } from "../lib/markdown"
+import { renderMarkdown } from "../lib/markdown"
 
-export default function MarkdownView(props: { content: string; streaming?: boolean }) {
-  const html = createMemo(() =>
-    props.streaming ? renderMarkdownStreaming(props.content) : renderMarkdown(props.content),
-  )
+export default function MarkdownView(props: { content: string }) {
+  const html = createMemo(() => renderMarkdown(props.content))
 
   function onClick(e: MouseEvent) {
     const anchor = (e.target as HTMLElement).closest("a[href^='#']")

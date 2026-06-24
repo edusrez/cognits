@@ -1,5 +1,5 @@
 import { createMemo } from "solid-js"
-import { sendMessage, isStreaming, currentMessages } from "../stores/chat-store"
+import { sendMessage, isStreaming } from "../stores/chat-store"
 import { activeSessionId } from "../stores/session-store"
 import { writeLangs, llmApiKey } from "../stores/settings-store"
 import { isSetupActive, setupStep } from "../stores/setup-store"
