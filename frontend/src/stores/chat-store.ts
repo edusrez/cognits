@@ -198,14 +198,31 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
   return {
     onHistory(snap: HistorySnapshot) {
       if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
-      const hasLive = !!(snap.liveContent)
-      const finalMsgs = snap.messages
+      let finalMsgs = snap.messages
+      let hasLive = !!(snap.liveContent)
+
+      // INACTIVE path: agent already finished.  Extract the last assistant
+      // message from the snapshot and route it through the buffer drain so
+      // it appears with the typewriter instead of instantly.
+      if (!snap.agentActive && !hasLive && finalMsgs.length) {
+        const last = finalMsgs[finalMsgs.length - 1]
+        if (last.role === "assistant" && last.content) {
+          writeBuffer = last.content
+          finalMsgs = finalMsgs.slice(0, -1)
+          hasLive = true
+        } else {
+          writeBuffer = ""
+        }
+      } else {
+        writeBuffer = snap.liveContent ?? ""
+      }
+
       streamEnding = hasLive && !snap.agentActive
-      writeBuffer = snap.liveContent ?? ""
+
       batch(() => {
         setMessages(finalMsgs)
         setIsStreaming(snap.agentActive || hasLive)
-        setIsThinking(snap.agentActive && !hasLive)
+        setIsThinking(false)
         setStreamingContent("")
         setStreamingReasoning(snap.liveReasoning ?? "")
         setToolStatus(snap.toolStatus)
