@@ -34,18 +34,21 @@ export const conversationStarted = createMemo(() => messages().length > 0)
 // ── SSE connection ────────────────────────────────────────────────────────
 let streamController: AbortController | null = null
 let connectedSid: string | null = null
+let streamActive = false
 
 const MAX_STREAM_RETRIES = 3
 
 export function subscribeToSession(sid: string, attempt: number = 0) {
-  if (connectedSid === sid && streamController && !streamController.signal.aborted) return
+  if (connectedSid === sid && streamActive) return
   connectedSid = sid
+  streamActive = true
   streamController?.abort()
   const controller = new AbortController()
   streamController = controller
 
   streamSession(sid, createStreamCallbacks(controller), controller.signal)
     .then(({ completed }) => {
+      streamActive = false
       if (completed || streamController !== controller) return
       if (attempt < MAX_STREAM_RETRIES) {
         setTimeout(() => {
@@ -56,6 +59,7 @@ export function subscribeToSession(sid: string, attempt: number = 0) {
       }
     })
     .catch(() => {
+      streamActive = false
       if (streamController === controller) {
         streamController = null
         connectedSid = null
