@@ -10,7 +10,7 @@ import MarkdownView from "./MarkdownView"
 import StreamingMarkdown from "./StreamingMarkdown"
 import { copyToClipboard } from "../lib/clipboard"
 
-const animatedRefs = new WeakSet<object>()
+const animatedKeys = new Set<string>()
 
 export default function Chat(props: { viewportId?: string }) {
   let scrollRef!: HTMLDivElement
@@ -101,8 +101,9 @@ export default function Chat(props: { viewportId?: string }) {
         {(msg) => {
           let msgRef!: HTMLDivElement
           onMount(() => {
-            if (animatedRefs.has(msg)) return
-            animatedRefs.add(msg)
+            const key = `${msg.role}|${msg.content.slice(0, 80)}`
+            if (animatedKeys.has(key)) return
+            animatedKeys.add(key)
             msgRef.animate(
               [{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "translateY(0)" }],
               { duration: 200, easing: "cubic-bezier(0.16, 1, 0.3, 1)", fill: "both" },

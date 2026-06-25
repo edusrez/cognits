@@ -76,10 +76,12 @@ export async function sendMessage(content: string) {
   const userMsg: ChatMessage = { role: "user", content }
   const newMsgs = [...cur, userMsg]
 
-  setChatError(null)
-  setIsStreaming(true)
-  setIsThinking(true)
-  setMessages(newMsgs)
+  batch(() => {
+    setChatError(null)
+    setIsStreaming(true)
+    setIsThinking(true)
+    setMessages(newMsgs)
+  })
 
   try {
     await startChat(sid, newMsgs)
@@ -100,8 +102,10 @@ export async function sendMessage(content: string) {
 export async function sendHiddenMessage(content: string) {
   const sid = activeSessionId()
   if (!sid) return
-  setIsStreaming(true)
-  setIsThinking(true)
+  batch(() => {
+    setIsStreaming(true)
+    setIsThinking(true)
+  })
   await startChat(sid, [{ role: "hidden_user", content }])
   subscribeToSession(sid)
 }
@@ -193,19 +197,20 @@ function commitStream() {
 function createStreamCallbacks(controller: AbortController): StreamCallbacks {
   return {
     onHistory(snap: HistorySnapshot) {
-      writeBuffer = ""
       streamEnding = false
       if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
+      writeBuffer = snap.liveContent ?? ""
       const finalMsgs = snap.messages
       batch(() => {
         setMessages(finalMsgs)
         setIsStreaming(snap.agentActive)
         setIsThinking(snap.agentActive && !snap.liveContent)
-        setStreamingContent(snap.liveContent ?? "")
+        setStreamingContent("")
         setStreamingReasoning(snap.liveReasoning ?? "")
         setToolStatus(snap.toolStatus)
         if (snap.toolFavicons) setToolFavicons(snap.toolFavicons)
       })
+      if (writeBuffer) startDrain()
     },
     onReasoning(token: string) {
       setStreamingReasoning(prev => prev + token)
