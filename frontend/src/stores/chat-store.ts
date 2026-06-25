@@ -197,14 +197,15 @@ function commitStream() {
 function createStreamCallbacks(controller: AbortController): StreamCallbacks {
   return {
     onHistory(snap: HistorySnapshot) {
-      streamEnding = false
       if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
-      writeBuffer = snap.liveContent ?? ""
+      const hasLive = !!(snap.liveContent)
       const finalMsgs = snap.messages
+      streamEnding = hasLive && !snap.agentActive
+      writeBuffer = snap.liveContent ?? ""
       batch(() => {
         setMessages(finalMsgs)
-        setIsStreaming(snap.agentActive)
-        setIsThinking(snap.agentActive && !snap.liveContent)
+        setIsStreaming(snap.agentActive || hasLive)
+        setIsThinking(snap.agentActive && !hasLive)
         setStreamingContent("")
         setStreamingReasoning(snap.liveReasoning ?? "")
         setToolStatus(snap.toolStatus)
