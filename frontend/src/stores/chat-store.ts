@@ -48,6 +48,30 @@ function stopFlush() {
   }
 }
 
+function replayTypewriter(text: string) {
+  let i = 0
+  const timer = setInterval(() => {
+    if (i < text.length) {
+      batch(() => setStreamingContent(prev => prev + text[i]))
+      i++
+    } else {
+      clearInterval(timer)
+      const content = streamingContent() + text.slice(i)
+      if (content) {
+        batch(() => {
+          setMessages(prev => [...prev, { role: "assistant", content }])
+          setStreamingContent("")
+          setIsStreaming(false)
+          setToolStatus(null)
+        })
+      } else {
+        setIsStreaming(false)
+        setToolStatus(null)
+      }
+    }
+  }, 20) // 50 chars/sec
+}
+
 // ── connection ────────────────────────────────────────────────────────────
 const connection = new ChatConnection()
 
@@ -117,6 +141,27 @@ function createCallbacks(): StreamCallbacks {
     onHistory(snap: HistorySnapshot) {
       stopFlush()
       tokenBuffer = ""
+
+      // INACTIVE path: agent already finished.  Replay the assistant response
+      // through the typewriter so it doesn't appear all at once.
+      if (!snap.agentActive && !snap.liveContent && snap.messages.length) {
+        const last = snap.messages[snap.messages.length - 1]
+        if (last.role === "assistant" && last.content) {
+          const text = last.content
+          batch(() => {
+            setMessages(snap.messages.slice(0, -1))
+            setIsStreaming(true)
+            setIsThinking(false)
+            setStreamingContent("")
+            setStreamingReasoning("")
+            setToolStatus(snap.toolStatus)
+            if (snap.toolFavicons) setToolFavicons(snap.toolFavicons)
+          })
+          replayTypewriter(text)
+          return
+        }
+      }
+
       batch(() => {
         setMessages(snap.messages)
         setIsStreaming(snap.agentActive || !!snap.liveContent)

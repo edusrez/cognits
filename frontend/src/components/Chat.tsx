@@ -1,6 +1,6 @@
 import { For, Show, createSignal, createEffect, createMemo, onMount } from "solid-js"
 import "../highlight-theme.css"
-import { currentMessages as messages, isStreaming, streamingContent, currentToolStatus, currentChatError, toolFavicons } from "../stores/chat-store"
+import { currentMessages as messages, isStreaming, streamingContent, currentToolStatus, currentChatError, toolFavicons, type ChatMessage } from "../stores/chat-store"
 import { activeSessionId, createNewSession } from "../stores/session-store"
 import { chatFontSize, setChatFontSize, saveConfig, displayThinking, llmApiKey } from "../stores/settings-store"
 import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
@@ -17,12 +17,13 @@ export default function Chat(props: { viewportId?: string }) {
   const [interviewStarted, setInterviewStarted] = createSignal(false)
   const [displayedFavicons, setDisplayedFavicons] = createSignal<string[]>([])
 
+  const syntheticMsg: ChatMessage = { role: "assistant", content: "" }
+
   const displayedMessages = createMemo(() => {
     const msgs = messages()
     if (!isStreaming()) return msgs
-    const content = streamingContent()
-    if (!content) return msgs
-    return [...msgs, { role: "assistant" as const, content }]
+    syntheticMsg.content = streamingContent()
+    return [...msgs, syntheticMsg]
   })
 
   const chatMsgMenu = createMemo(() => {
