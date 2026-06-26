@@ -1,13 +1,12 @@
 import { For, Show, createSignal, createEffect, createMemo, onMount } from "solid-js"
 import "../highlight-theme.css"
-import { currentMessages as messages, isStreaming, streamingContent, currentToolStatus, currentChatError, sessionUsage, mainSessionPromptTokens, toolFavicons } from "../stores/chat-store"
+import { currentMessages as messages, isStreaming, streamingContent, currentToolStatus, currentChatError, toolFavicons } from "../stores/chat-store"
 import { activeSessionId, createNewSession } from "../stores/session-store"
 import { chatFontSize, setChatFontSize, saveConfig, displayThinking, llmApiKey } from "../stores/settings-store"
 import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
 import { isSetupActive, setupStep } from "../stores/setup-store"
 import ContextMenu from "./ContextMenu"
-import MarkdownView from "./MarkdownView"
-import StreamingMarkdown from "./StreamingMarkdown"
+import StreamingMessage from "./StreamingMessage"
 import { copyToClipboard } from "../lib/clipboard"
 
 const animatedKeys = new Set<string>()
@@ -18,10 +17,17 @@ export default function Chat(props: { viewportId?: string }) {
   const [interviewStarted, setInterviewStarted] = createSignal(false)
   const [displayedFavicons, setDisplayedFavicons] = createSignal<string[]>([])
 
+  const displayedMessages = createMemo(() => {
+    const msgs = messages()
+    if (!isStreaming()) return msgs
+    const content = streamingContent()
+    if (!content) return msgs
+    return [...msgs, { role: "assistant" as const, content }]
+  })
+
   const chatMsgMenu = createMemo(() => {
     const m = ctxMenu()
-    if (m?.kind === "chat-message") return m
-    return null
+    return m?.kind === "chat-message" ? m : null
   })
 
   createEffect(() => {
@@ -36,12 +42,11 @@ export default function Chat(props: { viewportId?: string }) {
     const reveal = async () => {
       for (const src of newItems) {
         if (cancelled) return
-        await new Promise((r) => setTimeout(r, 200))
+        await new Promise(r => setTimeout(r, 200))
         if (cancelled) return
-        setDisplayedFavicons((prev) => {
+        setDisplayedFavicons(prev => {
           const latest = toolFavicons() ?? []
-          if (latest.length > prev.length) return [...prev, src]
-          return prev
+          return latest.length > prev.length ? [...prev, src] : prev
         })
       }
     }
@@ -53,12 +58,6 @@ export default function Chat(props: { viewportId?: string }) {
     messages()
     streamingContent()
     scrollRef.scrollTop = scrollRef.scrollHeight
-  })
-
-  createEffect(() => {
-    const msgs = messages()
-    const last = msgs[msgs.length - 1]
-    if (last && last.role === "assistant" && last.content === "") setAutoScroll(true)
   })
 
   createEffect(() => {
@@ -80,12 +79,12 @@ export default function Chat(props: { viewportId?: string }) {
         data-scrollable
         class="flex-1 overflow-y-auto overflow-x-hidden px-3 py-2"
         style={{ "font-size": `${chatFontSize()}px` }}
-        onContextMenu={(e) => {
+        onContextMenu={e => {
           if (e.target !== scrollRef) return
           e.preventDefault()
           setCtxMenu(null)
         }}
-        onWheel={(e) => {
+        onWheel={e => {
           if (e.shiftKey) {
             e.preventDefault()
             const delta = e.deltaY > 0 ? -1 : 1
@@ -97,10 +96,14 @@ export default function Chat(props: { viewportId?: string }) {
         }}
         onTouchMove={() => setAutoScroll(false)}
        >
-      <For each={messages()}>
-        {(msg) => {
+      <For each={displayedMessages()}>
+        {(msg, idx) => {
           let msgRef!: HTMLDivElement
+          const isLast = () => !isStreaming() && idx() === displayedMessages().length - 1
+          const isStreamingMsg = () => isStreaming() && idx() === displayedMessages().length - 1
+
           onMount(() => {
+            if (isStreamingMsg()) return
             const key = `${msg.role}|${msg.content.slice(0, 80)}`
             if (animatedKeys.has(key)) return
             animatedKeys.add(key)
@@ -109,28 +112,23 @@ export default function Chat(props: { viewportId?: string }) {
               { duration: 200, easing: "cubic-bezier(0.16, 1, 0.3, 1)", fill: "both" },
             )
           })
+
           return (
             <div
               ref={msgRef}
               class="mb-3"
               classList={{ "flex justify-end": msg.role === "user" }}
-              onContextMenu={(e) => {
+              onContextMenu={e => {
                 if (!msg.content) return
                 e.preventDefault()
                 e.stopPropagation()
-                setCtxMenu({
-                  kind: "chat-message",
-                  content: msg.content,
-                  x: e.clientX,
-                  y: e.clientY,
-                })
+                setCtxMenu({ kind: "chat-message", content: msg.content, x: e.clientX, y: e.clientY })
               }}
             >
               <div
                 classList={{
-                  "border border-white/20 px-3 py-1.5 whitespace-pre-wrap break-words bg-white/5 max-w-[85%]":
-                    msg.role === "user",
-                  "py-1 chat-markdown w-full": msg.role === "assistant",
+                  "border border-white/20 px-3 py-1.5 whitespace-pre-wrap break-words bg-white/5 max-w-[85%]": msg.role === "user",
+                  "py-1 w-full": msg.role === "assistant",
                 }}
               >
                 <Show when={msg.role === "assistant" && msg.reasoning && displayThinking()}>
@@ -140,7 +138,7 @@ export default function Chat(props: { viewportId?: string }) {
                 </Show>
 
                 {msg.role === "assistant"
-                  ? <MarkdownView content={msg.content} />
+                  ? <StreamingMessage content={msg.content} streaming={isStreamingMsg()} />
                   : msg.content}
 
                 <Show when={msg.reportId && msg.reportTitle}>
@@ -149,13 +147,13 @@ export default function Chat(props: { viewportId?: string }) {
                     onClick={() => {
                       const vpId = props.viewportId
                       if (vpId) {
-                        import("../stores/report-store").then((m) => m.openReportInViewport(vpId, msg.reportId!))
+                        import("../stores/report-store").then(m => m.openReportInViewport(vpId, msg.reportId!))
                       }
                     }}
                   >
                     <div class="text-[#e0e0e0] text-[13px]">{msg.reportTitle}</div>
                     <div class="flex justify-between text-[#6a6a6a] text-[11px] mt-1">
-                      <span>Read full →</span>
+                      <span>Read full &rarr;</span>
                     </div>
                   </div>
                 </Show>
@@ -165,13 +163,6 @@ export default function Chat(props: { viewportId?: string }) {
         }}
       </For>
 
-      {/* Streaming message: rendered separately, never mutated inside messages[] */}
-      <Show when={isStreaming()}>
-        <div class="mb-3 py-1 chat-markdown w-full">
-          <StreamingMarkdown content={streamingContent()} />
-        </div>
-      </Show>
-
       <Show when={currentToolStatus()}>
         <div
           style={{ "font-size": `${Math.max(10, chatFontSize() * 0.8)}px` }}
@@ -179,21 +170,21 @@ export default function Chat(props: { viewportId?: string }) {
         >
           <span>{currentToolStatus()}</span>
           <For each={displayedFavicons()}>
-            {(src) => <img src={src} class="w-3.5 h-3.5 animate-fade-in" alt="" />}
+            {src => <img src={src} class="w-3.5 h-3.5 animate-fade-in" alt="" />}
           </For>
         </div>
       </Show>
 
       <Show when={currentChatError()}>
-        {(err) => (
+        {err => (
           <div class="mb-3 border border-red-500/40 bg-red-500/10 text-red-300 px-3 py-2 text-[0.9em] whitespace-pre-wrap break-words">
             Agent error: {err()}
           </div>
         )}
       </Show>
 
-      <Show when={!llmApiKey()}>
-        <div class="text-[#8b949e] flex items-center justify-center h-full text-[0.9em]">
+      <Show when={messages().length === 0 && !llmApiKey() && !isSetupActive()}>
+        <div class="text-[#8b949e] text-center text-[0.9em]">
           Configure an API key in Settings before chatting.
         </div>
       </Show>
@@ -205,7 +196,7 @@ export default function Chat(props: { viewportId?: string }) {
       </Show>
 
       <Show when={chatMsgMenu()}>
-        {(m) => (
+        {m => (
           <ContextMenu
             x={m().x}
             y={m().y}
@@ -213,19 +204,15 @@ export default function Chat(props: { viewportId?: string }) {
             items={[
               {
                 label: "Copy Markdown",
-                onClick: () => {
-                  const text = m().content
-                  setCtxMenu(null)
-                  copyToClipboard(text)
-                },
+                onClick: () => { setCtxMenu(null); copyToClipboard(m().content) },
               },
               {
                 label: "Copy Conversation",
                 onClick: () => {
                   setCtxMenu(null)
                   const md = messages()
-                    .filter((msg) => msg.content)
-                    .map((m) => `**${m.role === "user" ? "User" : "Agent"}:** ${m.content}`)
+                    .filter(m => m.content)
+                    .map(m => `**${m.role === "user" ? "User" : "Agent"}:** ${m.content}`)
                     .join("\n\n---\n\n")
                   copyToClipboard(md)
                 },
@@ -239,10 +226,7 @@ export default function Chat(props: { viewportId?: string }) {
       <Show when={!autoScroll() && messages().length > 0}>
         <button
           class="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
-          onClick={() => {
-            scrollRef.scrollTop = scrollRef.scrollHeight
-            setAutoScroll(true)
-          }}
+          onClick={() => { scrollRef.scrollTop = scrollRef.scrollHeight; setAutoScroll(true) }}
         >
           &darr; Ir abajo
         </button>

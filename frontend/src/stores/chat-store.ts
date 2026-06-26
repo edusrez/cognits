@@ -1,85 +1,69 @@
-import { createSignal, createMemo, batch } from "solid-js"
-import { startChat, streamSession, type ChatMessage, type ChatUsage, type StreamCallbacks, type HistorySnapshot } from "../lib/chat-stream"
+import { createSignal, batch } from "solid-js"
+import { startChat, type ChatMessage, type ChatUsage, type StreamCallbacks, type HistorySnapshot } from "../lib/chat-stream"
 import { activeSessionId } from "./session-store"
 import { setTabHidden } from "./viewport-tree-store"
+import { ChatConnection } from "./chat-connection"
 
 export type { ChatMessage, ChatUsage }
 
-// ── committed messages (history) ──────────────────────────────────────────
+// ── committed messages ───────────────────────────────────────────────────
 export const [messages, setMessages] = createSignal<ChatMessage[]>([])
 
-// ── live streaming accumulator (never mutated inside messages[]) ──────────
+// ── live streaming ───────────────────────────────────────────────────────
 export const [streamingContent, setStreamingContent] = createSignal("")
 export const [streamingReasoning, setStreamingReasoning] = createSignal("")
 export const [isStreaming, setIsStreaming] = createSignal(false)
 export const [isThinking, setIsThinking] = createSignal(false)
 
-// ── tool / error / usage state ────────────────────────────────────────────
+// ── tool / error / usage ─────────────────────────────────────────────────
 export const [toolStatus, setToolStatus] = createSignal<string | null>(null)
 export const [toolFavicons, setToolFavicons] = createSignal<string[]>([])
 export const [chatError, setChatError] = createSignal<string | null>(null)
 export const [usage, setUsage] = createSignal<ChatUsage | null>(null)
 export const [mainPromptTokens, setMainPromptTokens] = createSignal(0)
 
-// Derive current-session values (no per-session maps needed)
-const _currentSession = createMemo(() => activeSessionId())
+// ── current-session derived ──────────────────────────────────────────────
+export const currentMessages = () => activeSessionId() ? messages() : []
+export const currentToolStatus = () => activeSessionId() ? toolStatus() : null
+export const currentChatError = () => activeSessionId() ? chatError() : null
+export const sessionUsage = () => activeSessionId() ? usage() : null
+export const mainSessionPromptTokens = () => activeSessionId() ? mainPromptTokens() : 0
+export const conversationStarted = () => messages().length > 0
 
-export const currentMessages = createMemo(() => _currentSession() ? messages() : [])
-export const currentToolStatus = createMemo(() => _currentSession() ? toolStatus() : null)
-export const currentChatError = createMemo(() => _currentSession() ? chatError() : null)
-export const sessionUsage = createMemo(() => _currentSession() ? usage() : null)
-export const mainSessionPromptTokens = createMemo(() => _currentSession() ? mainPromptTokens() : 0)
-export const conversationStarted = createMemo(() => messages().length > 0)
+// ── token buffering (50ms fixed batch) ────────────────────────────────────
+let tokenBuffer = ""
+let flushTimer: ReturnType<typeof setInterval> | null = null
 
-// ── SSE connection ────────────────────────────────────────────────────────
-let streamController: AbortController | null = null
-let connectedSid: string | null = null
-let streamActive = false
-
-const MAX_STREAM_RETRIES = 3
-
-export function subscribeToSession(sid: string, attempt: number = 0) {
-  if (connectedSid === sid && streamActive) return
-  connectedSid = sid
-  streamActive = true
-  streamController?.abort()
-  const controller = new AbortController()
-  streamController = controller
-
-  streamSession(sid, createStreamCallbacks(controller), controller.signal)
-    .then(({ completed }) => {
-      streamActive = false
-      if (completed || streamController !== controller) return
-      if (attempt < MAX_STREAM_RETRIES) {
-        setTimeout(() => {
-          if (streamController === controller) subscribeToSession(sid, attempt + 1)
-        }, 1000)
-      } else {
-        finalizeStream(controller)
-      }
-    })
-    .catch(() => {
-      streamActive = false
-      if (streamController === controller) {
-        streamController = null
-        connectedSid = null
-        setIsStreaming(false)
-        setIsThinking(false)
-      }
-    })
+function flushTokens() {
+  if (!tokenBuffer) return
+  const batch_ = tokenBuffer
+  tokenBuffer = ""
+  batch(() => setStreamingContent(prev => prev + batch_))
 }
 
-export function loadSessionMessages(sessionId: string) {
-  subscribeToSession(sessionId)
+function stopFlush() {
+  if (flushTimer !== null) {
+    clearInterval(flushTimer)
+    flushTimer = null
+  }
 }
 
-// ── sending messages ──────────────────────────────────────────────────────
+// ── connection ────────────────────────────────────────────────────────────
+const connection = new ChatConnection()
+
+export function loadSessionMessages(sessionId: string): void {
+  connection.connect(sessionId, createCallbacks())
+}
+
+export function subscribeToSession(sid: string): void {
+  connection.connect(sid, createCallbacks())
+}
+
+// ── send / cancel ─────────────────────────────────────────────────────────
 
 export async function sendMessage(content: string) {
   const sid = activeSessionId()
-  if (!sid) return
-  if (isStreaming()) return
-
+  if (!sid || isStreaming()) return
   const cur = messages()
   const userMsg: ChatMessage = { role: "user", content }
   const newMsgs = [...cur, userMsg]
@@ -103,17 +87,13 @@ export async function sendMessage(content: string) {
     subscribeToSession(sid)
     return
   }
-
   subscribeToSession(sid)
 }
 
 export async function sendHiddenMessage(content: string) {
   const sid = activeSessionId()
   if (!sid) return
-  batch(() => {
-    setIsStreaming(true)
-    setIsThinking(true)
-  })
+  batch(() => { setIsStreaming(true); setIsThinking(true) })
   await startChat(sid, [{ role: "hidden_user", content }])
   subscribeToSession(sid)
 }
@@ -125,126 +105,37 @@ export async function cancelStreaming() {
   try {
     await fetch(`/api/sessions/${encodeURIComponent(sid)}/agent`, { method: "DELETE" })
   } catch {
-    streamController?.abort()
-    streamController = null
+    connection.disconnect()
     setIsStreaming(false)
   }
 }
 
-// ── write buffer + adaptive rAF drain ──────────────────────────────────
-// Tokens accumulate here (non-reactive). The drain speed adapts to the
-// buffer depth: moderate (~83 chars/s) when full, slow (~33 chars/s) when
-// nearly empty — producing a visible, satisfying typewriter effect.
-// On "done" the buffer drains to empty, then commits atomically.
+// ── callbacks ─────────────────────────────────────────────────────────────
 
-let writeBuffer = ""
-let rafId: number | null = null
-let lastFrameTime = 0
-let streamEnding = false
-
-const MIN_BUFFER = 80   // chars — below this, switch to slow pace
-const SLOW_MS = 30      // ms/char in slow mode (~33 chars/s)
-const FAST_MS = 12      // ms/char in fast mode  (~83 chars/s)
-
-function drainBuffer(now: number) {
-  const elapsed = lastFrameTime ? now - lastFrameTime : 16.67
-  lastFrameTime = now
-
-  const msPerChar = writeBuffer.length >= MIN_BUFFER ? FAST_MS : SLOW_MS
-  const count = Math.max(1, Math.floor(elapsed / msPerChar))
-  const chunk = writeBuffer.slice(0, count)
-  writeBuffer = writeBuffer.slice(chunk.length)
-
-  if (chunk) {
-    batch(() => setStreamingContent(prev => prev + chunk))
-  }
-
-  if (writeBuffer.length > 0) {
-    rafId = requestAnimationFrame(drainBuffer)
-  } else if (streamEnding) {
-    streamEnding = false
-    rafId = null
-    commitStream()
-  } else {
-    rafId = null
-  }
-}
-
-function startDrain() {
-  if (rafId !== null) return
-  lastFrameTime = 0
-  rafId = requestAnimationFrame(drainBuffer)
-}
-
-function flushBuffer() {
-  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
-  if (writeBuffer) {
-    batch(() => setStreamingContent(prev => prev + writeBuffer))
-    writeBuffer = ""
-  }
-}
-
-function commitStream() {
-  const content = streamingContent()
-  if (content) {
-    batch(() => {
-      setMessages(prev => [...prev, { role: "assistant", content }])
-      setStreamingContent("")
-      setStreamingReasoning("")
-      setIsStreaming(false)
-      setToolStatus(null)
-    })
-  } else {
-    setIsStreaming(false)
-    setToolStatus(null)
-  }
-}
-
-// ── SSE callbacks ─────────────────────────────────────────────────────────
-
-function createStreamCallbacks(controller: AbortController): StreamCallbacks {
+function createCallbacks(): StreamCallbacks {
   return {
     onHistory(snap: HistorySnapshot) {
-      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
-      let finalMsgs = snap.messages
-      let hasLive = !!(snap.liveContent)
-
-      // INACTIVE path: agent already finished.  Extract the last assistant
-      // message from the snapshot and route it through the buffer drain so
-      // it appears with the typewriter instead of instantly.
-      if (!snap.agentActive && !hasLive && finalMsgs.length) {
-        const last = finalMsgs[finalMsgs.length - 1]
-        if (last.role === "assistant" && last.content) {
-          writeBuffer = last.content
-          finalMsgs = finalMsgs.slice(0, -1)
-          hasLive = true
-        } else {
-          writeBuffer = ""
-        }
-      } else {
-        writeBuffer = snap.liveContent ?? ""
-      }
-
-      streamEnding = hasLive && !snap.agentActive
-
+      stopFlush()
+      tokenBuffer = ""
       batch(() => {
-        setMessages(finalMsgs)
-        setIsStreaming(snap.agentActive || hasLive)
-        setIsThinking(false)
-        setStreamingContent("")
+        setMessages(snap.messages)
+        setIsStreaming(snap.agentActive || !!snap.liveContent)
+        setIsThinking(snap.agentActive && !snap.liveContent)
+        setStreamingContent(snap.liveContent ?? "")
         setStreamingReasoning(snap.liveReasoning ?? "")
         setToolStatus(snap.toolStatus)
         if (snap.toolFavicons) setToolFavicons(snap.toolFavicons)
       })
-      if (writeBuffer) startDrain()
     },
     onReasoning(token: string) {
       setStreamingReasoning(prev => prev + token)
     },
     onToken(token: string) {
       if (isThinking()) setIsThinking(false)
-      writeBuffer += token
-      startDrain()
+      tokenBuffer += token
+      if (flushTimer === null) {
+        flushTimer = setInterval(flushTokens, 50)
+      }
     },
     onUsage(u: ChatUsage) {
       setUsage(prev => ({
@@ -264,9 +155,7 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
     },
     onToolEnd() {},
     onToolStart() {
-      // Commit current streaming content as a completed message,
-      // start a fresh accumulator for post-tool content.
-      flushBuffer()
+      stopFlush()
       const cur = streamingContent()
       const reason = streamingReasoning()
       if (cur) {
@@ -281,7 +170,7 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
       import("../stores/session-store").then(m => m.loadSessions())
     },
     onSubagentEnd(data) {
-      flushBuffer()
+      stopFlush()
       const cur = streamingContent()
       if (cur) {
         batch(() => {
@@ -306,19 +195,30 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
       })
     },
     onServerError(message: string) {
-      flushBuffer()
+      stopFlush()
       setChatError(message)
     },
     onDone() {
-      streamEnding = true
-      if (writeBuffer.length === 0) commitStream()
+      stopFlush()
+      flushTokens()
+      const content = streamingContent()
+      if (content) {
+        batch(() => {
+          setMessages(prev => [...prev, { role: "assistant", content }])
+          setStreamingContent("")
+          setStreamingReasoning("")
+          setIsStreaming(false)
+          setToolStatus(null)
+        })
+      } else {
+        setIsStreaming(false)
+        setToolStatus(null)
+      }
     },
     onError() {
-      if (streamController === controller) {
-        streamController = null
-        setIsStreaming(false)
-        setIsThinking(false)
-      }
+      connection.disconnect()
+      setIsStreaming(false)
+      setIsThinking(false)
     },
     onUIAction(data: any) {
       if (data?.action === "toggle_tab") {
@@ -326,26 +226,4 @@ function createStreamCallbacks(controller: AbortController): StreamCallbacks {
       }
     },
   }
-}
-
-async function finalizeStream(controller: AbortController) {
-  // Safety net for retry timeout / connection loss.
-  // Normal stream end goes through onDone → natural drain → commitStream.
-  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null }
-  const remaining = writeBuffer
-  writeBuffer = ""
-  const content = streamingContent() + remaining
-  if (content) {
-    batch(() => {
-      setMessages(prev => [...prev, { role: "assistant", content }])
-      setStreamingContent("")
-      setStreamingReasoning("")
-      setIsStreaming(false)
-      setToolStatus(null)
-    })
-  } else {
-    setIsStreaming(false)
-    setToolStatus(null)
-  }
-  if (streamController === controller) streamController = null
 }
