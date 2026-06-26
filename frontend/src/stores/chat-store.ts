@@ -133,8 +133,8 @@ export async function cancelStreaming() {
 
 // ── write buffer + adaptive rAF drain ──────────────────────────────────
 // Tokens accumulate here (non-reactive). The drain speed adapts to the
-// buffer depth: fast (~500 chars/s) when full, slow (~50 chars/s) when
-// nearly empty — preserving a typewriter effect all the way to the end.
+// buffer depth: moderate (~83 chars/s) when full, slow (~33 chars/s) when
+// nearly empty — producing a visible, satisfying typewriter effect.
 // On "done" the buffer drains to empty, then commits atomically.
 
 let writeBuffer = ""
@@ -142,9 +142,9 @@ let rafId: number | null = null
 let lastFrameTime = 0
 let streamEnding = false
 
-const MIN_BUFFER = 20   // chars — below this, switch to slow pace
-const SLOW_MS = 20      // ms/char in slow mode (~50 chars/s)
-const FAST_MS = 2       // ms/char in fast mode  (~500 chars/s)
+const MIN_BUFFER = 80   // chars — below this, switch to slow pace
+const SLOW_MS = 30      // ms/char in slow mode (~33 chars/s)
+const FAST_MS = 12      // ms/char in fast mode  (~83 chars/s)
 
 function drainBuffer(now: number) {
   const elapsed = lastFrameTime ? now - lastFrameTime : 16.67
