@@ -208,17 +208,33 @@ class CognitsTUI(App):
         # Run uvicorn in its own thread + event loop so serving static
         # assets never blocks Textual's render loop.
         self._server_thread = threading.Thread(
-            target=lambda: asyncio.run(self._run_server()),
+            target=self._run_server_thread,
             daemon=False,
         )
         self._server_thread.start()
 
         self.run_worker(self._check_rag())
 
+    def _run_server_thread(self) -> None:
+        try:
+            asyncio.run(self._run_server())
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            try:
+                self.call_from_thread(self.exit)
+            except Exception:
+                pass
+
     # -- Server --------------------------------------------------------------
 
     async def _run_server(self) -> None:
-        await self._server.serve()
+        try:
+            await self._server.serve()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            raise
 
     # -- Loading phase -------------------------------------------------------
 
@@ -555,7 +571,7 @@ def main() -> None:
         app,
         host=host,
         port=port,
-        log_level="error",
+        log_level="warning",
         access_log=False,
     )
     server = _Server(config)

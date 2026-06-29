@@ -91,6 +91,7 @@ export function createSetupTree(n: string) {
     [rlr]: {
       tabs: [
         { id: "write", label: "Write", hidden: true },
+        { id: "setup", label: "Setup", hidden: true },
       ],
       activeTabId: "write",
     },

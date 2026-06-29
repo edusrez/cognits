@@ -102,6 +102,12 @@ export async function initDesktops() {
   }
 }
 
+export function launchCognitsDesktop() {
+  createDefaultTree("1")
+  setDesktops([snapshotTree()])
+  persistDesktops()
+}
+
 export function desktopCount(): number {
   return desktops().length
 }

@@ -2,7 +2,9 @@ import { Show } from "solid-js"
 import { setupStep, setSetupStep, finishSetup } from "../stores/setup-store"
 import { llmApiKey } from "../stores/settings-store"
 import { keyValid } from "./settings/apikeys-sections"
-import { setTabHidden, setLinkedViewport, activateTab } from "../stores/viewport-tree-store"
+import { setTabHidden, setLinkedViewport, activateTab, createDefaultTree, snapshotTree } from "../stores/viewport-tree-store"
+import { launchCognitsDesktop } from "../stores/desktop-store"
+import { activeSessionId, setActiveSessionId, loadSessions } from "../stores/session-store"
 
 export default function SetupWizard() {
 
@@ -17,6 +19,18 @@ export default function SetupWizard() {
     setTabHidden("1101", "write", false)
     setLinkedViewport("1100")
     setSetupStep("onboarding")
+  }
+
+  function launchCognits() {
+    const sid = activeSessionId()
+    launchCognitsDesktop()
+    finishSetup()
+    if (sid) {
+      fetch(`/api/sessions/${encodeURIComponent(sid)}`, { method: "DELETE" })
+        .then(() => loadSessions())
+        .catch(() => {})
+      setActiveSessionId(null)
+    }
   }
 
   return (
@@ -84,26 +98,15 @@ export default function SetupWizard() {
             </p>
             <p class="text-[#6a6a6a] text-xs">
               The AI will interview you to build your learning profile.
-              When enough information is gathered, it will present a summary
-              and you can return here to launch Cognits.
+              When the interview is complete, setup will finish automatically.
             </p>
           </div>
-          <button
-            class="px-6 py-2 border border-white/20 hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            onClick={() => {
-              setSetupStep("done")
-              finishSetup()
-            }}
-          >
-            Skip Interview & Launch →
-          </button>
         </div>
       </Show>
 
       <Show when={setupStep() === "done"}>
         <div class="flex-1 flex flex-col items-center justify-center gap-4 px-4">
           <div class="text-center">
-            <h2 class="text-lg font-bold text-green-400 mb-3">Profile Created!</h2>
             <p class="text-[#6a6a6a] max-w-md text-xs">
               Your learning profile has been saved. The AI will now
               personalize every session based on your background,
@@ -112,9 +115,9 @@ export default function SetupWizard() {
           </div>
           <button
             class="px-6 py-2 border border-white/20 hover:bg-white/10 transition-colors"
-            onClick={finishSetup}
+            onClick={launchCognits}
           >
-            Launch Cognits →
+            Start using Cognits →
           </button>
         </div>
       </Show>

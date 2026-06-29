@@ -125,7 +125,7 @@ class Agent:
                     Message(role=ROLE_ASSISTANT, content=content, tool_calls=tool_calls)
                 )
 
-            for tc in tool_calls:
+            async def _exec_tool(tc: ToolCall) -> str:
                 tool = cfg.tools.get(tc.name) if cfg.tools is not None else None
                 if tool is None:
                     raise AgentError(f"agent: unknown tool: {tc.name}")
@@ -145,7 +145,11 @@ class Agent:
                     result = json.dumps({"error": str(e)}, ensure_ascii=False)
 
                 emit({"type": "tool_end", "data": {"tool": tc.name, "id": tc.id}})
+                return result
 
+            results = await asyncio.gather(*(_exec_tool(tc) for tc in tool_calls))
+
+            for tc, result in zip(tool_calls, results):
                 messages.append(
                     Message(role=ROLE_TOOL, content=result, tool_call_id=tc.id)
                 )

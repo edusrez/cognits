@@ -8,7 +8,7 @@ import { getSettingsScope } from "../lib/settings-sections"
 import { dragState, initiateTabDrag } from "../drag/drag-state"
 import { activeSessionId } from "../stores/session-store"
 import { linkingMode, hiddenBasicTabs } from "../stores/settings-store"
-import { isSetupActive } from "../stores/setup-store"
+import { isSetupActive, setupStep } from "../stores/setup-store"
 import ContextMenu from "./ContextMenu"
 import TabBar from "./TabBar"
 
@@ -22,9 +22,16 @@ export default function Viewport(props: {
 
   const visibleTabs = createMemo(() => {
     const base = props.data.tabs.filter(
-      (t) =>
-        (!t.hidden || activeSessionId() !== null) &&
-        !hiddenBasicTabs().has(t.id),
+      (t) => {
+        if (isSetupActive() && setupStep() === "done") {
+          if (t.id === "write") return false
+          if (t.id === "setup") {
+            return props.data.tabs.some(tab => tab.id === "write")
+          }
+        }
+        return (!t.hidden || (activeSessionId() !== null && !isSetupActive())) &&
+          !hiddenBasicTabs().has(t.id)
+      },
     )
     if (!ds().isDragging) return base
     return base.filter((t) => t.id !== ds().tabId)

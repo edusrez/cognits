@@ -2,7 +2,7 @@ import { createSignal, createMemo, batch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { startChat, type ChatMessage, type ChatUsage, type StreamCallbacks, type HistorySnapshot } from "../lib/chat-stream"
 import { activeSessionId } from "./session-store"
-import { setTabHidden } from "./viewport-tree-store"
+import { setTabHidden, activateTab } from "./viewport-tree-store"
 import { ChatConnection } from "./chat-connection"
 
 export type { ChatMessage, ChatUsage }
@@ -14,14 +14,24 @@ export const [streamingReasoning, setStreamingReasoning] = createSignal("")
 export const [isStreaming, setIsStreaming] = createSignal(false)
 export const [isThinking, setIsThinking] = createSignal(false)
 
-export const [toolStatus, setToolStatus] = createSignal<string | null>(null)
-export const [toolFavicons, setToolFavicons] = createSignal<string[]>([])
+const AGENT_LABELS: Record<string, string> = {
+  web_researcher: "Web Researcher",
+  documentalist: "Documentalist",
+  session_analyzer: "Session Analyzer",
+  directory_reader: "Directory Reader",
+  system_support: "System Support",
+  "": "Agent",
+}
+
+export const [toolStatus, setToolStatus] = createSignal<Record<string, string>>({})
+export const [toolFaviconsByAgent, setToolFaviconsByAgent] = createSignal<Record<string, string[]>>({})
 export const [chatError, setChatError] = createSignal<string | null>(null)
 export const [usage, setUsage] = createSignal<ChatUsage | null>(null)
 export const [mainPromptTokens, setMainPromptTokens] = createSignal(0)
 
 export const currentMessages = createMemo(() => activeSessionId() ? messages : ([] as ChatMessage[]))
-export const currentToolStatus = createMemo(() => activeSessionId() ? toolStatus() : null)
+export const currentToolStatus = createMemo(() => activeSessionId() ? toolStatus() : {})
+export const currentFavicons = createMemo(() => activeSessionId() ? toolFaviconsByAgent() : {})
 export const currentChatError = createMemo(() => activeSessionId() ? chatError() : null)
 export const sessionUsage = createMemo(() => activeSessionId() ? usage() : null)
 export const mainSessionPromptTokens = createMemo(() => activeSessionId() ? mainPromptTokens() : 0)
@@ -143,8 +153,8 @@ function createCallbacks(): StreamCallbacks {
         setIsThinking(snap.agentActive && !snap.liveContent)
         setStreamingContent(snap.liveContent ?? "")
         setStreamingReasoning(snap.liveReasoning ?? "")
-        setToolStatus(snap.toolStatus)
-        if (snap.toolFavicons) setToolFavicons(snap.toolFavicons)
+        if (snap.toolStatus) setToolStatus({ Agent: snap.toolStatus })
+        if (snap.toolFavicons) setToolFaviconsByAgent({ Agent: snap.toolFavicons })
       })
     },
 
@@ -172,8 +182,19 @@ function createCallbacks(): StreamCallbacks {
     },
 
     onToolProgress(data: any) {
-      setToolStatus(data?.message || null)
-      if (data?.favicons) setToolFavicons(data.favicons)
+      const agent = AGENT_LABELS[data?.agent] ?? "Agent"
+      const msg = data?.message || ""
+      const favicons = data?.favicons
+      if (msg) {
+        setToolStatus(prev => {
+          const next = { ...prev }
+          next[agent] = msg
+          return next
+        })
+      }
+      if (Array.isArray(favicons)) {
+        setToolFaviconsByAgent(prev => ({ ...prev, [agent]: favicons }))
+      }
     },
 
     onToolEnd() {},
@@ -204,8 +225,7 @@ function createCallbacks(): StreamCallbacks {
           setStreamingContent("")
         })
       }
-      setToolStatus(null)
-      setToolFavicons([])
+      setToolStatus({}); setToolFaviconsByAgent({})
       import("../stores/report-store").then(m => m.loadReport(data.reportId))
       import("../stores/learnit-store").then(ls => ls.refetchReports())
       const len = messages.length
@@ -220,6 +240,7 @@ function createCallbacks(): StreamCallbacks {
     onServerError(message: string) {
       stopDrain()
       pendingBuffer = ""
+      setToolStatus({}); setToolFaviconsByAgent({})
       setChatError(message)
     },
 
@@ -232,11 +253,11 @@ function createCallbacks(): StreamCallbacks {
           setStreamingContent("")
           setStreamingReasoning("")
           setIsStreaming(false)
-          setToolStatus(null)
+          setToolStatus({}); setToolFaviconsByAgent({})
         })
       } else {
         setIsStreaming(false)
-        setToolStatus(null)
+        setToolStatus({}); setToolFaviconsByAgent({})
       }
     },
 
@@ -250,6 +271,15 @@ function createCallbacks(): StreamCallbacks {
       if (data?.action === "toggle_tab") {
         setTabHidden(data.viewportId, data.tabId, data.hidden)
       }
+    },
+
+    onSetupComplete() {
+      setTabHidden("1101", "write", true)
+      setTabHidden("1101", "setup", false)
+      activateTab("1101", "setup")
+      import("../stores/setup-store").then(m => {
+        m.setSetupStep("done")
+      })
     },
   }
 }

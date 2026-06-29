@@ -1,6 +1,6 @@
 import { For, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
 import "../highlight-theme.css"
-import { currentMessages as messages, isStreaming, streamingContent, streamingReasoning, currentToolStatus, currentChatError, toolFavicons, type ChatMessage } from "../stores/chat-store"
+import { currentMessages as messages, isStreaming, streamingContent, streamingReasoning, currentToolStatus, currentFavicons, currentChatError, type ChatMessage } from "../stores/chat-store"
 import { activeSessionId, createNewSession } from "../stores/session-store"
 import { chatFontSize, setChatFontSize, saveConfig, displayThinking, llmApiKey } from "../stores/settings-store"
 import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
@@ -14,7 +14,6 @@ export default function Chat(props: { viewportId?: string }) {
   let anchorRef!: HTMLDivElement
   const [autoScroll, setAutoScroll] = createSignal(true)
   const [interviewStarted, setInterviewStarted] = createSignal(false)
-  const [displayedFavicons, setDisplayedFavicons] = createSignal<string[]>([])
 
   const chatMsgMenu = createMemo(() => {
     const m = ctxMenu()
@@ -30,29 +29,6 @@ export default function Chat(props: { viewportId?: string }) {
     )
     observer.observe(anchorRef)
     onCleanup(() => observer.disconnect())
-  })
-
-  createEffect(() => {
-    const sid = activeSessionId()
-    if (!sid) return
-    const target = toolFavicons() ?? []
-    const current = displayedFavicons()
-    if (target.length === 0) { setDisplayedFavicons([]); return }
-    const newItems = target.slice(current.length)
-    if (newItems.length === 0) return
-    let cancelled = false
-    const reveal = async () => {
-      for (const src of newItems) {
-        if (cancelled) return
-        await new Promise(r => setTimeout(r, 200))
-        if (cancelled) return
-        setDisplayedFavicons(prev => {
-          const latest = toolFavicons() ?? []
-          return latest.length > prev.length ? [...prev, src] : prev
-        })
-      }
-    }
-    reveal()
   })
 
   createEffect(() => {
@@ -151,14 +127,25 @@ export default function Chat(props: { viewportId?: string }) {
           </div>
         </Show>
 
-        <Show when={currentToolStatus()}>
+        <Show when={Object.keys(currentToolStatus()).length > 0}>
           <div
             style={{ "font-size": `${Math.max(10, chatFontSize() * 0.8)}px` }}
-            class="text-[#5a5a5a] italic mt-1 flex items-center gap-1.5"
+            class="text-[#5a5a5a] italic mt-1 flex flex-col gap-0.5"
           >
-            <span>{currentToolStatus()}</span>
-            <For each={displayedFavicons()}>
-              {src => <img src={src} class="w-3.5 h-3.5 animate-fade-in" alt="" />}
+            <For each={Object.entries(currentToolStatus())}>
+              {([agent, status]) => {
+                const isAnimated = status.endsWith("...")
+                const cleanStatus = isAnimated ? status.replace(/\.\.\.$/, "") : status
+                const favicons = currentFavicons()[agent] ?? []
+                return (
+                  <div class="flex items-center gap-1.5">
+                    <span class="inline-block min-w-[220px]" classList={{ "animate-dots": isAnimated }}>{agent}: {cleanStatus}</span>
+                    <For each={favicons}>
+                      {src => <img src={src} class="w-3.5 h-3.5 animate-fade-in" alt="" />}
+                    </For>
+                  </div>
+                )
+              }}
             </For>
           </div>
         </Show>

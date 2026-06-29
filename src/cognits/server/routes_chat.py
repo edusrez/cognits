@@ -380,8 +380,8 @@ async def _run_agent(
                 if isinstance(msg, str):
                     if msg:
                         agent = data.get("agent", "") if isinstance(data, dict) else ""
-                        label = AGENT_LABELS.get(agent, agent) if agent else ""
-                        status = f"{label}: {msg}" if label else msg
+                        data["agent"] = agent
+                        status = msg
                         # "Thinking..." and "Writing..." clear favicons but
                         # only update the visible status when no icons are
                         # still animating on the frontend.

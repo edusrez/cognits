@@ -149,6 +149,12 @@ class DeploySubagent(Tool):
                 agent = data.get("agent", cfg.name) if isinstance(data, dict) else cfg.name
                 self.emit({"type": "tool_progress", "data": {"message": msg, "agent": agent}})
                 return
+            if t == "tool_progress":
+                data = ev.get("data")
+                if isinstance(data, dict) and "agent" not in data:
+                    data["agent"] = cfg.name
+                self.emit(ev)
+                return
             if ev.get("type") == "usage" and isinstance(ev.get("data"), dict):
                 ev["data"]["source"] = "subagent"
             self.emit(ev)
