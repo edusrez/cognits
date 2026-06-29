@@ -172,6 +172,7 @@ BASE_SCHEMA = """
         status_enum TEXT NOT NULL DEFAULT 'not_seen',
         retrievability REAL,
         stability REAL,
+        difficulty REAL,
         reps INTEGER NOT NULL DEFAULT 0,
         lapses INTEGER NOT NULL DEFAULT 0,
         last_review TEXT,
@@ -367,6 +368,7 @@ class LearnerState:
     status_enum: str = "not_seen"
     retrievability: float | None = None
     stability: float | None = None
+    difficulty: float | None = None
     reps: int = 0
     lapses: int = 0
     last_review: str | None = None
@@ -909,9 +911,9 @@ class ReportStore:
             self._conn.execute(
                 """INSERT INTO learner_state
                        (skill_id, alpha, beta, p_mastery, status_enum,
-                        retrievability, stability, reps, lapses,
+                        retrievability, stability, difficulty, reps, lapses,
                         last_review, next_review)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(skill_id) DO UPDATE SET
                        alpha         = excluded.alpha,
                        beta          = excluded.beta,
@@ -919,6 +921,7 @@ class ReportStore:
                        status_enum   = excluded.status_enum,
                        retrievability= excluded.retrievability,
                        stability     = excluded.stability,
+                       difficulty    = excluded.difficulty,
                        reps          = excluded.reps,
                        lapses        = excluded.lapses,
                        last_review   = excluded.last_review,
@@ -926,7 +929,8 @@ class ReportStore:
                        updated_at    = datetime('now')""",
                 (
                     st.skill_id, st.alpha, st.beta, st.p_mastery, st.status_enum,
-                    st.retrievability, st.stability, st.reps, st.lapses,
+                    st.retrievability, st.stability, st.difficulty,
+                    st.reps, st.lapses,
                     st.last_review, st.next_review,
                 ),
             )
@@ -935,7 +939,7 @@ class ReportStore:
         with self._lock:
             row = self._conn.execute(
                 """SELECT skill_id, alpha, beta, p_mastery, status_enum,
-                          retrievability, stability, reps, lapses,
+                          retrievability, stability, difficulty, reps, lapses,
                           last_review, next_review, updated_at
                    FROM learner_state WHERE skill_id = ?""",
                 (skill_id,),
@@ -945,9 +949,9 @@ class ReportStore:
         return LearnerState(
             skill_id=row[0], alpha=row[1], beta=row[2], p_mastery=row[3],
             status_enum=row[4],
-            retrievability=row[5], stability=row[6],
-            reps=row[7], lapses=row[8],
-            last_review=row[9], next_review=row[10], updated_at=row[11],
+            retrievability=row[5], stability=row[6], difficulty=row[7],
+            reps=row[8], lapses=row[9],
+            last_review=row[10], next_review=row[11], updated_at=row[12],
         )
 
     # --- session config ---
