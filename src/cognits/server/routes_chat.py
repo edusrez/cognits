@@ -23,6 +23,7 @@ from cognits.agent.subagents import (
     documentalist_config,
     researcher_config,
     session_analyzer_config,
+    skill_planner_config,
 )
 from cognits.agent.tool_deploy import DeploySubagent
 from cognits.llm.deepseek import DeepSeekClient
@@ -45,6 +46,7 @@ AGENT_LABELS = {
     "documentalist": "Documentalist",
     "session_analyzer": "Session Analyzer",
     "directory_reader": "Directory Reader",
+    "skill_planner": "Skill Planner",
     "system_support": "System Support",
 }
 
@@ -504,6 +506,39 @@ async def _run_agent(
                 temperature=doc_temperature or None,
                 top_p=doc_top_p or None,
                 system_prompt_override=doc_prompt,
+            )
+
+        # Skill Planner: builds the learner's skill tree by iterating with
+        # web_researcher. Requires TinyFish (the planner descends recursively
+        # into prerequisites via web research); if no key is configured we
+        # simply don't expose the subagent — the user can build the tree
+        # later from the Settings panel after configuring one.
+        if cfg.tinyfish_api_key:
+            planner_cfg = subagent_cfgs.get("skill_planner")
+            planner_model = (planner_cfg.model if planner_cfg else "") or DEFAULT_MODEL
+            planner_reasoning = planner_cfg.reasoning if planner_cfg else "max"
+            planner_max_steps = planner_cfg.max_steps if planner_cfg else 0
+            if planner_max_steps <= 0:
+                planner_max_steps = DEFAULT_ORCHESTRATOR_MAX_STEPS  # 999
+            planner_max_tokens = planner_cfg.max_tokens if planner_cfg else 0
+            planner_temperature = planner_cfg.temperature if planner_cfg else 0.0
+            planner_top_p = planner_cfg.top_p if planner_cfg else 0.0
+            planner_prompt = cfg.agent_overrides.get("skill_planner") or None
+            subagent_map["skill_planner"] = skill_planner_config(
+                planner_model,
+                planner_reasoning,
+                planner_max_steps,
+                llm_client,
+                st.rag if st.rag is not None and st.rag.error is None else None,
+                tf_client,
+                st.report_store,
+                lambda: sid,
+                process_event,
+                max_tokens=planner_max_tokens or None,
+                temperature=planner_temperature or None,
+                top_p=planner_top_p or None,
+                system_prompt_override=planner_prompt,
+                tinyfish_api_key=cfg.tinyfish_api_key,
             )
 
         registry = Registry()

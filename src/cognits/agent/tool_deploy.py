@@ -71,12 +71,15 @@ class DeploySubagent(Tool):
     name = "deploy_subagent"
     description = (
         "Deploy a subagent to perform research or analysis. "
-        "Use web_researcher for web research with sources."
+        "Use web_researcher for web research with sources, "
+        "directory_reader to inspect the project folder, "
+        "skill_planner to build or refresh the learner's skill tree "
+        "by iterating with web_researcher."
     )
     schema = {
         "type": "object",
         "properties": {
-            "type": {"type": "string", "enum": ["web_researcher", "directory_reader"]},
+            "type": {"type": "string", "enum": ["web_researcher", "directory_reader", "skill_planner"]},
             "query": {"type": "string", "description": "Task description for the subagent"},
             "thoroughness": {
                 "type": "string",
@@ -105,7 +108,16 @@ class DeploySubagent(Tool):
                 import dataclasses
                 cfg = dataclasses.replace(cfg, model="deepseek-v4-pro", reasoning="max")
 
-        if subagent_type == "web_researcher" and not self.tinyfish_api_key:
+        if subagent_type == "skill_planner":
+            # The planner iterates with web_researcher and needs the Pro
+            # model + max reasoning for deep recursive decomposition. The
+            # config normally already carries these values, but overriding
+            # here protects against caller-supplied overrides that would
+            # cripple it (e.g. a flash default).
+            import dataclasses
+            cfg = dataclasses.replace(cfg, model="deepseek-v4-pro", reasoning="max")
+
+        if subagent_type in ("web_researcher", "skill_planner") and not self.tinyfish_api_key:
             return tool_error(
                 "TinyFish API key not configured. Please configure it in Settings."
             )

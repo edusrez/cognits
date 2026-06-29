@@ -5,6 +5,7 @@ from cognits.agent.subagents import (
     DOCUMENTALIST_SYSTEM_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
     SESSION_ANALYZER_SYSTEM_PROMPT,
+    SKILL_PLANNER_SYSTEM_PROMPT,
 )
 
 DEFAULT_AGENT_ID = "orchestrator"
@@ -137,6 +138,11 @@ DEFAULT_AGENTS = [
         "id": "directory_reader",
         "name": "Directory Reader",
         "systemPrompt": DIRECTORY_READER_SYSTEM_PROMPT,
+    },
+    {
+        "id": "skill_planner",
+        "name": "Skill Planner",
+        "systemPrompt": SKILL_PLANNER_SYSTEM_PROMPT,
     },
     {
         "id": "system_support",
