@@ -520,8 +520,8 @@ async def _run_agent(
         )
 
         if agent_id == "system_support":
-            from cognits.agent.tool_ui import ToggleTabVisibility
-            registry.register(ToggleTabVisibility(emit=process_event))
+            from cognits.agent.tool_ui import FinishSetup
+            registry.register(FinishSetup(emit=process_event, store=st.store))
 
         max_steps = cfg.max_steps or DEFAULT_ORCHESTRATOR_MAX_STEPS
         ag = Agent(

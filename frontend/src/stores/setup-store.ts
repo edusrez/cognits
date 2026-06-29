@@ -1,14 +1,9 @@
 import { createSignal, createMemo } from "solid-js"
-import type { ChatMessage } from "../lib/chat-stream"
-import { llmApiKey, configLoaded } from "./settings-store"
-
-const SETUP_KEY = "cognits_setup"
+import { configLoaded } from "./settings-store"
 
 const [setupStarted, setSetupStarted] = createSignal(false)
 export const [setupStep, setSetupStep] = createSignal<"welcome" | "apikeys" | "onboarding" | "done">("welcome")
-export const [setupMessages, setSetupMessages] = createSignal<ChatMessage[]>([])
-export const [setupStreaming, setSetupStreaming] = createSignal(false)
-export const [setupComplete, setSetupComplete] = createSignal(false)
+const [setupComplete, setSetupComplete] = createSignal(false)
 export const [interviewMessageSent, setInterviewMessageSent] = createSignal(false)
 
 export const isSetupActive = createMemo(() => {
@@ -19,24 +14,32 @@ export const isSetupActive = createMemo(() => {
 
 export function beginSetup() {
   setSetupStarted(true)
-  try { localStorage.setItem(SETUP_KEY, "1") } catch {}
 }
 
 export function finishSetup() {
   setSetupComplete(true)
-  try { localStorage.removeItem(SETUP_KEY) } catch {}
 }
 
-export function isSetupIncomplete(): boolean {
-  try { return localStorage.getItem(SETUP_KEY) === "1" } catch {}
-  return false
-}
+export async function initSetup() {
+  let hasProfile = false
+  try {
+    const res = await fetch("/api/profile")
+    if (res.ok) {
+      const profile = await res.json()
+      if (profile.declared?.background?.trim()) {
+        hasProfile = true
+      }
+    }
+  } catch {}
 
-export function resetSetup() {
-  setSetupStarted(false)
-  setSetupStep("welcome")
-  setSetupMessages([])
-  setSetupStreaming(false)
-  setSetupComplete(false)
-  try { localStorage.removeItem(SETUP_KEY) } catch {}
+  if (hasProfile) {
+    finishSetup()
+    return
+  }
+
+  try {
+    await fetch("/api/setup/state", { method: "DELETE" })
+  } catch {}
+
+  beginSetup()
 }

@@ -12,8 +12,35 @@ import {
 } from "../../stores/settings-store"
 import { isSetupActive } from "../../stores/setup-store"
 
+export const [keyValid, setKeyValid] = createSignal<null | boolean>(null)
+
 const apikeysMatch = (ctx: SectionContext) =>
   (ctx.scoped && ctx.tabId === "apikeys") || isSetupActive()
+
+let testTimer: ReturnType<typeof setTimeout> | null = null
+
+function testKey(key: string) {
+  if (testTimer) clearTimeout(testTimer)
+  setKeyValid(null)
+  if (!key.trim()) return
+  testTimer = setTimeout(async () => {
+    try {
+      const res = await fetch("/api/config/test-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: key }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setKeyValid(data.valid === true)
+      } else {
+        setKeyValid(false)
+      }
+    } catch {
+      setKeyValid(false)
+    }
+  }, 500)
+}
 
 registerSection({
   id: "apikeys:main",
@@ -23,7 +50,7 @@ registerSection({
     const [showTf, setShowTf] = createSignal(false)
 
     return (
-      <CollapsibleSection title="API Keys">
+      <CollapsibleSection title="API Keys" defaultOpen={isSetupActive()}>
         <div class="flex flex-col gap-2.5">
           <div class="flex flex-col gap-1">
             <label class="text-[#9a9a9a] text-[13px]">AI Provider</label>
@@ -40,7 +67,7 @@ registerSection({
               <input
                 type={showKey() ? "text" : "password"}
                 value={llmApiKey()}
-                onInput={(e) => { setLLMApiKey(e.currentTarget.value); saveConfig() }}
+                onInput={(e) => { setLLMApiKey(e.currentTarget.value); saveConfig(); testKey(e.currentTarget.value) }}
                 class="flex-1 bg-transparent border border-white/20 px-2 py-1 text-[13px] text-[#e0e0e0] outline-hidden focus:border-white/40"
                 placeholder="sk-..."
               />
@@ -61,6 +88,12 @@ registerSection({
                   </svg>
                 )}
               </button>
+              {keyValid() === true && (
+                <span class="text-green-400 text-[13px] flex items-center px-1">✓</span>
+              )}
+              {keyValid() === false && (
+                <span class="text-red-400 text-[13px] flex items-center px-1">✗</span>
+              )}
             </div>
           </div>
 

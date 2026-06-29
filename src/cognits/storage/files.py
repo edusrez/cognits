@@ -285,6 +285,31 @@ class Store:
         data = json.dumps(profile.to_json(), indent=2, ensure_ascii=False).encode("utf-8")
         write_file_atomic(self._profile_path(), data)
 
+    def reset_setup_state(self) -> None:
+        if self._profile_path().exists():
+            self._profile_path().unlink()
+        sessions_dir = self._sessions_dir()
+        if sessions_dir.exists():
+            for f in sessions_dir.iterdir():
+                if f.is_file():
+                    f.unlink()
+        order_path = self._order_path()
+        if order_path.exists():
+            order_path.unlink()
+        db_path = self.base_path / "cognits.db"
+        if db_path.exists():
+            db_path.unlink()
+        legacy_db = self.base_path / "learnit.db"
+        if legacy_db.exists():
+            legacy_db.unlink()
+        try:
+            cfg = self.load_config()
+        except Exception:
+            cfg = Config()
+        cfg.llm_api_key = ""
+        cfg.tinyfish_api_key = ""
+        self.save_config(cfg)
+
     # --- sessions ---
 
     def _sessions_dir(self) -> Path:

@@ -105,3 +105,46 @@ def register(app: FastAPI, st) -> None:
         except Exception as e:
             return text_error(str(e), 500)
         return Response(status_code=204)
+
+    @app.delete("/api/setup/state")
+    async def delete_setup_state():
+        if st.store is None:
+            return text_error("store not initialized", 500)
+        try:
+            await asyncio.to_thread(st.store.reset_setup_state)
+        except Exception as e:
+            return text_error(str(e), 500)
+        st.cached_config = None
+        return Response(status_code=204)
+
+    @app.post("/api/config/test-key")
+    async def test_key(request: Request):
+        try:
+            body = await request.json()
+            api_key = body.get("apiKey", "")
+        except (json.JSONDecodeError, ValueError):
+            return text_error("invalid body", 400)
+        if not api_key:
+            return JSONResponse({"valid": False, "error": "No API key provided"})
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=15.0, write=10.0, pool=10.0)) as client:
+                resp = await client.post(
+                    "https://api.deepseek.com/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": "deepseek-chat",
+                        "messages": [{"role": "user", "content": "Hi"}],
+                        "max_tokens": 1,
+                        "stream": False,
+                    },
+                )
+            if resp.status_code == 200:
+                return JSONResponse({"valid": True, "error": ""})
+            if resp.status_code == 401:
+                return JSONResponse({"valid": False, "error": "Invalid API key"})
+            if resp.status_code == 402:
+                return JSONResponse({"valid": False, "error": "Insufficient balance"})
+            return JSONResponse({"valid": False, "error": f"HTTP {resp.status_code}"})
+        except Exception as e:
+            return JSONResponse({"valid": False, "error": f"Connection error: {e}"})

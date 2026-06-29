@@ -112,7 +112,6 @@ def create_app(state: AppState | None = None) -> FastAPI:
         routes_notes,
         routes_reports,
         routes_sessions,
-        routes_setup,
         routes_stream,
     )
 
@@ -124,7 +123,6 @@ def create_app(state: AppState | None = None) -> FastAPI:
     routes_reports.register(app, state)
     routes_chat.register(app, state)
     routes_stream.register(app, state)
-    routes_setup.register(app, state)
 
     # The frontend catch-all goes last: Starlette resolves routes in
     # registration order and /api/* must win.

@@ -15,7 +15,7 @@ import { activeSessionId } from "./stores/session-store"
 import { loadConfig, defaultChatViewport, defaultWriteViewport, loadSessionConfig, linkedViewport } from "./stores/settings-store"
 import { loadSessionMessages, sendHiddenMessage } from "./stores/chat-store"
 import { initDesktops } from "./stores/desktop-store"
-import { isSetupActive, setupStep, interviewMessageSent, setInterviewMessageSent } from "./stores/setup-store"
+import { isSetupActive, setupStep, interviewMessageSent, setInterviewMessageSent, initSetup } from "./stores/setup-store"
 import { setDisplayThinking, saveConfig } from "./stores/settings-store"
 import Viewport from "./components/Viewport"
 import DragOverlay, { ListDragOverlay } from "./components/DragOverlay"
@@ -118,7 +118,10 @@ export default function App() {
 
   onMount(async () => {
     await loadConfig()
-    // initDesktops runs AFTER config is loaded so isSetupActive is reliable.
+    await initSetup()
+    if (isSetupActive()) {
+      await loadConfig()
+    }
     await initDesktops()
 
     // Keyboard dispatch — order preserves the original monolithic handler.

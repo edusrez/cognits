@@ -12,6 +12,7 @@ import atexit
 import logging
 import os
 import shutil
+import signal
 import sys
 import threading
 import time
@@ -201,6 +202,9 @@ class CognitsTUI(App):
     def on_mount(self) -> None:
         self.register_theme(COGNITS_THEME)
         self.theme = "cognits-dark"
+
+        signal.signal(signal.SIGHUP, lambda *_: self.exit())
+
         # Run uvicorn in its own thread + event loop so serving static
         # assets never blocks Textual's render loop.
         self._server_thread = threading.Thread(
@@ -499,14 +503,20 @@ def main() -> None:
         or "127.0.0.1"
     )
 
-    if force:
+    if args.fresh or force:
         _kill_port(port)
-        time.sleep(0.5)  # let the OS release the port
+        time.sleep(0.5)
 
     if not _port_available(host, port):
-        print(f"Port {port} already in use — is Cognits already running?",
-              file=sys.stderr)
-        raise SystemExit(1)
+        # Retry up to 4s — the killed process may still be in TIME_WAIT.
+        for _ in range(8):
+            time.sleep(0.5)
+            if _port_available(host, port):
+                break
+        else:
+            print(f"Port {port} already in use — is Cognits already running?",
+                  file=sys.stderr)
+            raise SystemExit(1)
 
     _cleanup_legacy_sidecar()
 
@@ -566,6 +576,7 @@ def _cleanup_legacy_sidecar() -> None:
 def _port_available(host: str, port: int) -> bool:
     import socket
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         s.bind((host, port))
     except OSError:
@@ -595,12 +606,11 @@ def _kill_port(port: int) -> bool:
                         capture_output=True,
                     )
         else:
-            try:
-                subprocess.run(
-                    f"fuser -k {port}/tcp",
-                    shell=True, capture_output=True, timeout=5,
-                )
-            except Exception:
+            result = subprocess.run(
+                f"fuser -k {port}/tcp",
+                shell=True, capture_output=True, timeout=5,
+            )
+            if result.returncode != 0:
                 subprocess.run(
                     f"lsof -ti :{port} | xargs kill -9",
                     shell=True, capture_output=True,

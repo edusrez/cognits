@@ -1,6 +1,7 @@
 import { Show } from "solid-js"
 import { setupStep, setSetupStep, finishSetup } from "../stores/setup-store"
 import { llmApiKey } from "../stores/settings-store"
+import { keyValid } from "./settings/apikeys-sections"
 import { setTabHidden, setLinkedViewport, activateTab } from "../stores/viewport-tree-store"
 
 export default function SetupWizard() {
@@ -62,13 +63,13 @@ export default function SetupWizard() {
           </button>
           <button
             class="px-6 py-2 border border-white/20 hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            disabled={!llmApiKey()}
+            disabled={!keyValid()}
             onClick={beginInterview}
           >
             Continue to Interview →
           </button>
-          <Show when={!llmApiKey()}>
-            <p class="text-[#6a6a6a] text-xs">Configure your API key in Settings to continue.</p>
+          <Show when={!keyValid()}>
+            <p class="text-[#6a6a6a] text-xs">Enter a valid API key in Settings to continue.</p>
           </Show>
         </div>
       </Show>

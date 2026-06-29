@@ -105,7 +105,17 @@ export async function sendHiddenMessage(content: string) {
   const sid = activeSessionId()
   if (!sid) return
   batch(() => { setIsStreaming(true); setIsThinking(true) })
-  await startChat(sid, [{ role: "hidden_user", content }])
+  try {
+    await startChat(sid, [{ role: "hidden_user", content }])
+  } catch (e) {
+    setIsStreaming(false)
+    setIsThinking(false)
+    const msg = e instanceof Error ? e.message : ""
+    if (msg === "HTTP 401") {
+      setChatError("API key not configured. Please configure it in Settings.")
+    }
+    return
+  }
   subscribeToSession(sid)
 }
 
