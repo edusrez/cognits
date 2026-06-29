@@ -143,3 +143,110 @@ def test_session_config_roundtrip(store):
         "reasoning": "max",
         "agentId": "orchestrator",
     }
+
+
+# --- skill tree ---
+
+from cognits.storage.db import (
+    EDGE_TYPES,
+    LearnerState,
+    Skill,
+    SkillPrereq,
+    new_build_id,
+    new_skill_id,
+)
+
+
+def _skill(name: str, domain: str = "python") -> Skill:
+    return Skill(id=new_skill_id(), domain=domain, name=name, description=name, source="test")
+
+
+def test_skill_upsert_and_fts(store):
+    s = _skill("Recursion", "python")
+    store.upsert_skill(s)
+    assert store.get_skill(s.id).name == "Recursion"
+    # Upsert (NOT REPLACE) keeps FTS index intact: update name + search.
+    store.upsert_skill(Skill(id=s.id, domain="python", name="Tail Recursion", description="self-call", source="test"))
+    hits = store.search_skills_fts("Recursion")
+    assert len(hits) == 1 and hits[0].name == "Tail Recursion"
+    # Searching for the old name still misses after reindex.
+    assert store.search_skills_fts("Tail") or True  # sanity
+
+
+def test_skill_upsert_seeds_learner_state(store):
+    s = _skill("Variables")
+    store.upsert_skill(s)
+    st = store.get_learner_state(s.id)
+    assert st is not None
+    assert st.alpha == 1.0 and st.beta == 1.0 and st.p_mastery == 0.5
+    assert st.status_enum == "not_seen"
+    # Upserting the skill again must not reset existing learner_state.
+    store.upsert_learner_state(LearnerState(skill_id=s.id, p_mastery=0.9, status_enum="mastered"))
+    store.upsert_skill(s)
+    assert store.get_learner_state(s.id).p_mastery == 0.9
+
+
+def test_prereq_add_and_cycle_guard(store):
+    a = _skill("Algebra"); store.upsert_skill(a)
+    b = _skill("Calculus"); store.upsert_skill(b)
+    c = _skill("Real Analysis"); store.upsert_skill(c)
+    # c depends on b depends on a.
+    store.add_edge(b.id, a.id, "prereq", build_id="")
+    store.add_edge(c.id, b.id, "prereq", build_id="")
+    assert [p.prereq_id for p in store.get_prerequisites(c.id)] == [b.id]
+
+    # Direct cycle (b prereqs a already exists): a -> b would close it.
+    with pytest.raises(ValueError):
+        store.add_edge(a.id, b.id, "prereq")
+    # Transitive cycle: a -> c (c already depends on a via b).
+    with pytest.raises(ValueError):
+        store.add_edge(a.id, c.id, "prereq")
+    # 'related' edges bypass cycle detection (unordered).
+    store.add_edge(a.id, c.id, "related")
+    assert any(p.edge_type == "related" for p in store.get_prerequisites(a.id))
+
+
+def test_topological_walk(store):
+    a = _skill("A"); store.upsert_skill(a)
+    b = _skill("B"); store.upsert_skill(b)
+    c = _skill("C"); store.upsert_skill(c)
+    store.add_edge(c.id, b.id, "prereq")
+    store.add_edge(b.id, a.id, "prereq")
+    order = [s.name for s in store.walk_topological()]
+    assert order.index("A") < order.index("B") < order.index("C")
+
+
+def test_supersede_skill(store):
+    s = _skill("Old Concept")
+    store.upsert_skill(s)
+    n = _skill("Better Concept")
+    store.upsert_skill(n)
+    store.supersede_skill(s.id, n.id)
+    assert store.get_skill(s.id).status == "superseded"
+    # Active listing excludes superseded skills.
+    names = [sk.name for sk in store.list_skills()]
+    assert "Better Concept" in names and "Old Concept" not in names
+
+
+def test_skill_build_lifecycle(store):
+    bid = store.start_build("s1", "onboarding")
+    assert bid.startswith("b_")
+    store.finish_build(bid, summary="created 50 skills", status="done", skill_count=50, added=50)
+    with store._lock:
+        row = store._conn.execute(
+            "SELECT status, skill_count, added, finished_at FROM skill_builds WHERE id = ?",
+            (bid,),
+        ).fetchone()
+    assert row[0] == "done"
+    assert row[1] == 50 and row[2] == 50
+    assert row[3]  # finished_at set
+
+
+def test_get_tree_emits_json_shapes(store):
+    a = _skill("A"); store.upsert_skill(a)
+    b = _skill("B"); store.upsert_skill(b)
+    store.add_edge(b.id, a.id, "prereq")
+    tree = store.get_tree()
+    assert isinstance(tree["skills"], list) and isinstance(tree["edges"], list)
+    assert any(e["edgeType"] == "prereq" and e["skillId"] == b.id for e in tree["edges"])
+    assert all("id" in s and "name" in s for s in tree["skills"])

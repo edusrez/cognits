@@ -85,6 +85,100 @@ BASE_SCHEMA = """
         INSERT INTO reports_fts(rowid, title, summary, content)
         VALUES (new.rowid, new.title, new.summary, new.content);
     END;
+
+    -- Skill tree: DAG of learnable concepts with typed prerequisites.
+    -- Each node carries provenance (source, superseded_by) so iterative
+    -- builds can supersede rather than delete (preserves history).
+    CREATE TABLE IF NOT EXISTS skills (
+        id TEXT PRIMARY KEY,
+        domain TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        bloom_level TEXT NOT NULL DEFAULT '',
+        difficulty REAL NOT NULL DEFAULT 0.5,
+        parent_skill_id TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        source TEXT NOT NULL DEFAULT '',
+        superseded_by TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_skills_domain ON skills(domain);
+    CREATE INDEX IF NOT EXISTS idx_skills_parent ON skills(parent_skill_id);
+
+    -- External-content FTS5 over skills (same pattern as reports_fts).
+    -- A TEXT PRIMARY KEY table still has an implicit rowid unless declared
+    -- WITHOUT ROWID, so content_rowid='rowid' works.
+    CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(
+        name, description,
+        content='skills',
+        content_rowid='rowid',
+        tokenize='unicode61'
+    );
+    CREATE TRIGGER IF NOT EXISTS skills_fts_ai AFTER INSERT ON skills BEGIN
+        INSERT INTO skills_fts(rowid, name, description)
+        VALUES (new.rowid, new.name, new.description);
+    END;
+    CREATE TRIGGER IF NOT EXISTS skills_fts_ad AFTER DELETE ON skills BEGIN
+        INSERT INTO skills_fts(skills_fts, rowid, name, description)
+        VALUES ('delete', old.rowid, old.name, old.description);
+    END;
+    CREATE TRIGGER IF NOT EXISTS skills_fts_au AFTER UPDATE ON skills BEGIN
+        INSERT INTO skills_fts(skills_fts, rowid, name, description)
+        VALUES ('delete', old.rowid, old.name, old.description);
+        INSERT INTO skills_fts(rowid, name, description)
+        VALUES (new.rowid, new.name, new.description);
+    END;
+
+    -- Typed edges between skills. PK (skill_id, prereq_id, edge_type)
+    -- allows the same pair to coexist as both prereq and related.
+    CREATE TABLE IF NOT EXISTS skill_prerequisites (
+        skill_id TEXT NOT NULL,
+        prereq_id TEXT NOT NULL,
+        edge_type TEXT NOT NULL CHECK (edge_type IN ('prereq','coreq','related')),
+        proof_query TEXT NOT NULL DEFAULT '',
+        build_id TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (skill_id, prereq_id, edge_type),
+        FOREIGN KEY (skill_id) REFERENCES skills(id),
+        FOREIGN KEY (prereq_id) REFERENCES skills(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_prereqs_skill ON skill_prerequisites(skill_id);
+    CREATE INDEX IF NOT EXISTS idx_prereqs_prereq ON skill_prerequisites(prereq_id);
+
+    -- One row per skill_planner pass. Allows diffing builds and tracking
+    -- what the planner added/modified/superseded in each iteration.
+    CREATE TABLE IF NOT EXISTS skill_builds (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        trigger TEXT NOT NULL DEFAULT '',
+        skill_count INTEGER NOT NULL DEFAULT 0,
+        added INTEGER NOT NULL DEFAULT 0,
+        modified INTEGER NOT NULL DEFAULT 0,
+        superseded INTEGER NOT NULL DEFAULT 0,
+        started_at TEXT NOT NULL DEFAULT (datetime('now')),
+        finished_at TEXT,
+        status TEXT NOT NULL DEFAULT 'running',
+        summary TEXT NOT NULL DEFAULT ''
+    );
+
+    -- Per-skill mastery state (BKT Beta priors + FSRS schedule). Updated by
+    -- the future evaluator subagent; v0.0.6 only seeds rows on first insert.
+    CREATE TABLE IF NOT EXISTS learner_state (
+        skill_id TEXT PRIMARY KEY,
+        alpha REAL NOT NULL DEFAULT 1.0,
+        beta REAL NOT NULL DEFAULT 1.0,
+        p_mastery REAL NOT NULL DEFAULT 0.5,
+        status_enum TEXT NOT NULL DEFAULT 'not_seen',
+        retrievability REAL,
+        stability REAL,
+        reps INTEGER NOT NULL DEFAULT 0,
+        lapses INTEGER NOT NULL DEFAULT 0,
+        last_review TEXT,
+        next_review TEXT,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (skill_id) REFERENCES skills(id)
+    );
 """
 
 
@@ -182,12 +276,143 @@ class Note:
         }
 
 
+@dataclass
+class Skill:
+    id: str = ""
+    domain: str = ""
+    name: str = ""
+    description: str = ""
+    bloom_level: str = ""
+    difficulty: float = 0.5
+    parent_skill_id: str = ""
+    status: str = "active"
+    source: str = ""
+    superseded_by: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_json(self) -> dict:
+        return {
+            "id": self.id,
+            "domain": self.domain,
+            "name": self.name,
+            "description": self.description,
+            "bloomLevel": self.bloom_level,
+            "difficulty": self.difficulty,
+            "parentSkillId": self.parent_skill_id,
+            "status": self.status,
+            "source": self.source,
+            "supersededBy": self.superseded_by,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at,
+        }
+
+
+@dataclass
+class SkillPrereq:
+    skill_id: str = ""
+    prereq_id: str = ""
+    edge_type: str = "prereq"
+    proof_query: str = ""
+    build_id: str = ""
+    created_at: str = ""
+
+    def to_json(self) -> dict:
+        return {
+            "skillId": self.skill_id,
+            "prereqId": self.prereq_id,
+            "edgeType": self.edge_type,
+            "proofQuery": self.proof_query,
+            "buildId": self.build_id,
+            "createdAt": self.created_at,
+        }
+
+
+@dataclass
+class SkillBuild:
+    id: str = ""
+    session_id: str = ""
+    trigger: str = ""
+    skill_count: int = 0
+    added: int = 0
+    modified: int = 0
+    superseded: int = 0
+    started_at: str = ""
+    finished_at: str = ""
+    status: str = "running"
+    summary: str = ""
+
+    def to_json(self) -> dict:
+        return {
+            "id": self.id,
+            "sessionId": self.session_id,
+            "trigger": self.trigger,
+            "skillCount": self.skill_count,
+            "added": self.added,
+            "modified": self.modified,
+            "superseded": self.superseded,
+            "startedAt": self.started_at,
+            "finishedAt": self.finished_at,
+            "status": self.status,
+            "summary": self.summary,
+        }
+
+
+@dataclass
+class LearnerState:
+    skill_id: str = ""
+    alpha: float = 1.0
+    beta: float = 1.0
+    p_mastery: float = 0.5
+    status_enum: str = "not_seen"
+    retrievability: float | None = None
+    stability: float | None = None
+    reps: int = 0
+    lapses: int = 0
+    last_review: str | None = None
+    next_review: str | None = None
+    updated_at: str = ""
+
+    def to_json(self) -> dict:
+        return {
+            "skillId": self.skill_id,
+            "alpha": self.alpha,
+            "beta": self.beta,
+            "pMastery": self.p_mastery,
+            "statusEnum": self.status_enum,
+            "retrievability": self.retrievability,
+            "stability": self.stability,
+            "reps": self.reps,
+            "lapses": self.lapses,
+            "lastReview": self.last_review,
+            "nextReview": self.next_review,
+            "updatedAt": self.updated_at,
+        }
+
+
 def new_report_id() -> str:
     return "r_" + secrets.token_hex(8)
 
 
 def new_note_id() -> str:
     return "n_" + secrets.token_hex(8)
+
+
+def new_skill_id() -> str:
+    return "k_" + secrets.token_hex(8)
+
+
+def new_build_id() -> str:
+    return "b_" + secrets.token_hex(8)
+
+
+# Edges between skills: edge_type is 'prereq' (skill_id needs prereq_id
+# before being learnable), 'coreq' (taken together), or 'related'.
+EDGE_TYPES = ("prereq", "coreq", "related")
+
+# Learner-state status progression (see learner/model.py for the policy):
+# not_seen -> exploring -> practicing -> proficient -> mastered -> decaying
+SKILL_STATUS = ("not_seen", "exploring", "practicing", "proficient", "mastered", "decaying")
 
 
 def escape_like(s: str) -> str:
@@ -423,6 +648,307 @@ class ReportStore:
     def delete_report(self, report_id: str) -> None:
         with self._lock:
             self._conn.execute("DELETE FROM reports WHERE id = ?", (report_id,))
+
+    # --- skill tree ---
+
+    @staticmethod
+    def _row_to_skill(row: tuple) -> Skill:
+        return Skill(
+            id=row[0],
+            domain=row[1],
+            name=row[2],
+            description=row[3] or "",
+            bloom_level=row[4] or "",
+            difficulty=row[5],
+            parent_skill_id=row[6] or "",
+            status=row[7],
+            source=row[8] or "",
+            superseded_by=row[9],
+            created_at=row[10],
+            updated_at=row[11],
+        )
+
+    def start_build(self, session_id: str, trigger: str) -> str:
+        build_id = new_build_id()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO skill_builds (id, session_id, trigger) VALUES (?, ?, ?)",
+                (build_id, session_id, trigger),
+            )
+        return build_id
+
+    def finish_build(
+        self,
+        build_id: str,
+        summary: str = "",
+        status: str = "done",
+        skill_count: int | None = None,
+        added: int | None = None,
+        modified: int | None = None,
+        superseded: int | None = None,
+    ) -> None:
+        sets = ["finished_at = datetime('now')", "status = ?", "summary = ?"]
+        args: list = [status, summary]
+        for col, val in (
+            ("skill_count", skill_count),
+            ("added", added),
+            ("modified", modified),
+            ("superseded", superseded),
+        ):
+            if val is not None:
+                sets.append(f"{col} = ?")
+                args.append(val)
+        args.append(build_id)
+        with self._lock:
+            self._conn.execute(
+                f"UPDATE skill_builds SET {', '.join(sets)} WHERE id = ?",
+                args,
+            )
+
+    def upsert_skill(self, s: Skill) -> None:
+        # Upsert (not INSERT OR REPLACE): REPLACE would delete the row and
+        # reinsert without firing skills_fts_ad, corrupting the FTS index.
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO skills (id, domain, name, description, bloom_level,
+                                        difficulty, parent_skill_id, status, source)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       domain         = excluded.domain,
+                       name           = excluded.name,
+                       description    = excluded.description,
+                       bloom_level    = excluded.bloom_level,
+                       difficulty     = excluded.difficulty,
+                       parent_skill_id= excluded.parent_skill_id,
+                       status         = excluded.status,
+                       source         = excluded.source,
+                       updated_at     = datetime('now')""",
+                (
+                    s.id, s.domain, s.name, s.description, s.bloom_level,
+                    s.difficulty, s.parent_skill_id, s.status, s.source,
+                ),
+            )
+            # Seed learner_state on first insert (alpha=beta=1 -> Beta(1,1)
+            # prior, p_mastery=0.5). ON CONFLICT leaves an existing row alone.
+            self._conn.execute(
+                """INSERT INTO learner_state (skill_id) VALUES (?)
+                   ON CONFLICT(skill_id) DO NOTHING""",
+                (s.id,),
+            )
+
+    def get_skill(self, skill_id: str) -> Skill | None:
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT id, domain, name, description, bloom_level, difficulty,
+                          parent_skill_id, status, source, superseded_by,
+                          created_at, updated_at
+                   FROM skills WHERE id = ?""",
+                (skill_id,),
+            ).fetchone()
+        return self._row_to_skill(row) if row else None
+
+    def list_skills(self, domain: str | None = None) -> list[Skill]:
+        sql = """SELECT id, domain, name, description, bloom_level, difficulty,
+                        parent_skill_id, status, source, superseded_by,
+                        created_at, updated_at
+                 FROM skills WHERE status = 'active'"""
+        args: list = []
+        if domain:
+            sql += " AND domain = ?"
+            args.append(domain)
+        sql += " ORDER BY domain, name"
+        with self._lock:
+            rows = self._conn.execute(sql, args).fetchall()
+        return [self._row_to_skill(r) for r in rows]
+
+    def supersede_skill(self, skill_id: str, new_skill_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                """UPDATE skills
+                   SET status = 'superseded',
+                       superseded_by = ?,
+                       updated_at = datetime('now')
+                   WHERE id = ?""",
+                (new_skill_id, skill_id),
+            )
+
+    def _prereq_reaches(self, start_id: str, target_id: str) -> bool:
+        # Does target_id appear in the prereq-ancestor closure of start_id?
+        # If so, adding edge (target_id prereqs start_id) would form a cycle.
+        rows = self._conn.execute(
+            """WITH RECURSIVE chain(id) AS (
+                   SELECT prereq_id FROM skill_prerequisites
+                   WHERE skill_id = ? AND edge_type = 'prereq'
+                   UNION
+                   SELECT sp.prereq_id
+                   FROM skill_prerequisites sp
+                   JOIN chain ON sp.skill_id = chain.id
+                   WHERE sp.edge_type = 'prereq'
+               )
+               SELECT 1 FROM chain WHERE id = ? LIMIT 1""",
+            (start_id, target_id),
+        ).fetchone()
+        return rows is not None
+
+    def add_edge(
+        self,
+        skill_id: str,
+        prereq_id: str,
+        edge_type: str = "prereq",
+        proof_query: str = "",
+        build_id: str = "",
+    ) -> None:
+        if edge_type not in EDGE_TYPES:
+            raise ValueError(f"invalid edge_type: {edge_type}")
+        with self._lock:
+            # Cycle guard for 'prereq' edges: if prereq_id already depends
+            # (directly or transitively) on skill_id, refuse the edge.
+            if edge_type == "prereq" and self._prereq_reaches(prereq_id, skill_id):
+                raise ValueError(
+                    f"cycle detected: {prereq_id} already depends on {skill_id}"
+                )
+            self._conn.execute(
+                """INSERT INTO skill_prerequisites
+                       (skill_id, prereq_id, edge_type, proof_query, build_id)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(skill_id, prereq_id, edge_type) DO UPDATE SET
+                       proof_query = excluded.proof_query,
+                       build_id    = excluded.build_id""",
+                (skill_id, prereq_id, edge_type, proof_query, build_id),
+            )
+
+    def get_prerequisites(self, skill_id: str) -> list[SkillPrereq]:
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT skill_id, prereq_id, edge_type, proof_query, build_id, created_at
+                   FROM skill_prerequisites WHERE skill_id = ?""",
+                (skill_id,),
+            ).fetchall()
+        return [SkillPrereq(*r) for r in rows]
+
+    def get_tree(self) -> dict:
+        """Whole active tree: nodes + edges. For frontend rendering."""
+        with self._lock:
+            skill_rows = self._conn.execute(
+                """SELECT id, domain, name, description, bloom_level, difficulty,
+                          parent_skill_id, status, source, superseded_by,
+                          created_at, updated_at
+                   FROM skills WHERE status = 'active'
+                   ORDER BY domain, name"""
+            ).fetchall()
+            edge_rows = self._conn.execute(
+                """SELECT skill_id, prereq_id, edge_type, proof_query, build_id, created_at
+                   FROM skill_prerequisites
+                   ORDER BY skill_id, edge_type"""
+            ).fetchall()
+        return {
+            "skills": [self._row_to_skill(r).to_json() for r in skill_rows],
+            "edges": [SkillPrereq(*r).to_json() for r in edge_rows],
+        }
+
+    def walk_topological(self) -> list[Skill]:
+        """Kahn's algorithm over 'prereq' edges. Active skills only.
+        Returns skills in dependency order (prereqs first). If a cycle is
+        found in already-stored data, the participating skills are appended
+        at the end rather than raising."""
+        skills = self.list_skills()
+        by_id = {s.id: s for s in skills}
+        indeg: dict[str, int] = {s.id: 0 for s in skills}
+        adj: dict[str, list[str]] = {s.id: [] for s in skills}
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT skill_id, prereq_id FROM skill_prerequisites
+                   WHERE edge_type = 'prereq'"""
+            ).fetchall()
+        for skill_id, prereq_id in rows:
+            if skill_id in indeg and prereq_id in indeg:
+                indeg[skill_id] += 1
+                adj[prereq_id].append(skill_id)
+        ready = sorted([i for i, d in indeg.items() if d == 0])
+        out: list[Skill] = []
+        while ready:
+            n = ready.pop(0)
+            out.append(by_id[n])
+            for m in adj[n]:
+                indeg[m] -= 1
+                if indeg[m] == 0:
+                    ready.append(m)
+            ready.sort()
+        # Remaining (cycle participants): append deterministically so the
+        # caller still sees everything.
+        if len(out) < len(skills):
+            stuck = sorted(i for i, d in indeg.items() if d > 0)
+            out.extend(by_id[i] for i in stuck)
+        return out
+
+    def search_skills_fts(self, search: str, limit: int = 20) -> list[Skill]:
+        fts_query = build_fts5_query(search)
+        if not fts_query:
+            return []
+        if limit < 1 or limit > 100:
+            limit = 20
+        with self._lock:
+            rows = self._conn.execute(
+                f"""SELECT s.id, s.domain, s.name, s.description, s.bloom_level,
+                           s.difficulty, s.parent_skill_id, s.status, s.source,
+                           s.superseded_by, s.created_at, s.updated_at,
+                           bm25(skills_fts, 10.0, 1.0) AS score
+                    FROM skills_fts
+                    JOIN skills s ON s.rowid = skills_fts.rowid
+                    WHERE skills_fts MATCH ?
+                    ORDER BY score
+                    LIMIT ?""",
+                (fts_query, limit),
+            ).fetchall()
+        return [self._row_to_skill(r[:12]) for r in rows]
+
+    # --- learner state ---
+
+    def upsert_learner_state(self, st: LearnerState) -> None:
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO learner_state
+                       (skill_id, alpha, beta, p_mastery, status_enum,
+                        retrievability, stability, reps, lapses,
+                        last_review, next_review)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(skill_id) DO UPDATE SET
+                       alpha         = excluded.alpha,
+                       beta          = excluded.beta,
+                       p_mastery     = excluded.p_mastery,
+                       status_enum   = excluded.status_enum,
+                       retrievability= excluded.retrievability,
+                       stability     = excluded.stability,
+                       reps          = excluded.reps,
+                       lapses        = excluded.lapses,
+                       last_review   = excluded.last_review,
+                       next_review   = excluded.next_review,
+                       updated_at    = datetime('now')""",
+                (
+                    st.skill_id, st.alpha, st.beta, st.p_mastery, st.status_enum,
+                    st.retrievability, st.stability, st.reps, st.lapses,
+                    st.last_review, st.next_review,
+                ),
+            )
+
+    def get_learner_state(self, skill_id: str) -> LearnerState | None:
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT skill_id, alpha, beta, p_mastery, status_enum,
+                          retrievability, stability, reps, lapses,
+                          last_review, next_review, updated_at
+                   FROM learner_state WHERE skill_id = ?""",
+                (skill_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return LearnerState(
+            skill_id=row[0], alpha=row[1], beta=row[2], p_mastery=row[3],
+            status_enum=row[4],
+            retrievability=row[5], stability=row[6],
+            reps=row[7], lapses=row[8],
+            last_review=row[9], next_review=row[10], updated_at=row[11],
+        )
 
     # --- session config ---
 
