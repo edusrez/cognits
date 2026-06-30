@@ -616,7 +616,7 @@ Columna `tree_version INTEGER NOT NULL DEFAULT 1` en la tabla `skills`. Incremen
 
 ---
 
-## 12. Estado Actual (Fases 1-4 completadas)
+## 12. Estado Actual (Fases 1-13 completadas)
 
 | Fase | Commit | Qué se hizo |
 |---|---|---|
@@ -627,8 +627,20 @@ Columna `tree_version INTEGER NOT NULL DEFAULT 1` en la tabla `skills`. Incremen
 | fix | `f4ff00a` | Prompts en inglés (anti-regresión) |
 | fix | `1e799bc` | Onboarding default English greeting |
 | fix | `fa630c3` | Labels Skill Planner / Web Researcher en banner |
+| 5 | `25f4121` | soft_prereq + tree_version + skill_planner prohibe timing |
+| 6 | `33bc387` | API /api/skills + /api/skills/tree + /api/skills/:id/state |
+| 7 | `c19edae` | DB: study_plans + study_plan_items tables + store methods |
+| 8 | `0c15187` | Study Planner: deterministic algorithm + plan_study tool + subagente |
+| 9 | `35c5be7` | Orchestrator planning mode: knowledge frontier + create_learning_session |
+| 10 | `c448c4b` | Frontend: two session buttons — free vs learning |
+| 11 | `63ce761` | Evaluator subagente: update_mastery + resume_token + 2-phase |
+| 12 | `a36f419` | Maestro: teacher subagent + pedagogical plans + skill_id wiring |
+| 12.fix | `184548e` | Frontend: skillId in SessionConfig type |
+| 13 | `c3f36f1` | Wiring: learning sessions activate teacher automatically |
 
-**Suite: 92/92 verde.** `cognits 0.0.6` instalado y funcional (onboarding → skill tree construction → chat libre).
+**Suite: 177/177 verde.** `cognits 0.0.6` instalado y funcional end-to-end:
+onboarding → skill tree → planning chat → pedagogical plan → learning session
+→ Maestro Socratic teaching → Evaluator 2-phase assessment → mastery update.
 
 ---
 
