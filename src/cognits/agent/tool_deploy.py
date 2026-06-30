@@ -22,6 +22,7 @@ SUBAGENT_LABELS: dict[str, str] = {
     "web_researcher": "Web Researcher",
     "directory_reader": "Directory Reader",
     "skill_planner": "Skill Planner",
+    "study_planner": "Study Planner",
 }
 
 
@@ -83,12 +84,13 @@ class DeploySubagent(Tool):
         "Use web_researcher for web research with sources, "
         "directory_reader to inspect the project folder, "
         "skill_planner to build or refresh the learner's skill tree "
-        "by iterating with web_researcher."
+        "by iterating with web_researcher, "
+        "study_planner to generate a study plan from the skill tree."
     )
     schema = {
         "type": "object",
         "properties": {
-            "type": {"type": "string", "enum": ["web_researcher", "directory_reader", "skill_planner"]},
+            "type": {"type": "string", "enum": ["web_researcher", "directory_reader", "skill_planner", "study_planner"]},
             "query": {"type": "string", "description": "Task description for the subagent"},
             "thoroughness": {
                 "type": "string",

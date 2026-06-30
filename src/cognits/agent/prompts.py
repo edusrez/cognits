@@ -6,6 +6,7 @@ from cognits.agent.subagents import (
     RESEARCHER_SYSTEM_PROMPT,
     SESSION_ANALYZER_SYSTEM_PROMPT,
     SKILL_PLANNER_SYSTEM_PROMPT,
+    STUDY_PLANNER_SYSTEM_PROMPT,
 )
 
 DEFAULT_AGENT_ID = "orchestrator"
@@ -177,6 +178,11 @@ DEFAULT_AGENTS = [
         "id": "skill_planner",
         "name": "Skill Planner",
         "systemPrompt": SKILL_PLANNER_SYSTEM_PROMPT,
+    },
+    {
+        "id": "study_planner",
+        "name": "Study Planner",
+        "systemPrompt": STUDY_PLANNER_SYSTEM_PROMPT,
     },
     {
         "id": "system_support",

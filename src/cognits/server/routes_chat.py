@@ -24,6 +24,7 @@ from cognits.agent.subagents import (
     researcher_config,
     session_analyzer_config,
     skill_planner_config,
+    study_planner_config,
 )
 from cognits.agent.tool_deploy import DeploySubagent
 from cognits.llm.deepseek import DeepSeekClient
@@ -47,6 +48,7 @@ AGENT_LABELS = {
     "session_analyzer": "Session Analyzer",
     "directory_reader": "Directory Reader",
     "skill_planner": "Skill Planner",
+    "study_planner": "Study Planner",
     "system_support": "System Support",
 }
 
@@ -540,6 +542,22 @@ async def _run_agent(
                 system_prompt_override=planner_prompt,
                 tinyfish_api_key=cfg.tinyfish_api_key,
             )
+
+        # Study Planner: deterministic algorithm (no TinyFish, no RAG).
+        # Always available — the planner calls plan_study which uses the
+        # skill tree + learner states already in the DB. Because requests
+        # are rare and cheap, use the orchestrator's model/reasoning with
+        # a low max_steps (the planner calls one tool then summarises).
+        sp_cfg = subagent_cfgs.get("study_planner")
+        sp_model = (sp_cfg.model if sp_cfg else "") or DEFAULT_MODEL
+        sp_reasoning = sp_cfg.reasoning if sp_cfg else reasoning
+        sp_max_steps = sp_cfg.max_steps if sp_cfg else 10
+        sp_prompt = cfg.agent_overrides.get("study_planner") or None
+        subagent_map["study_planner"] = study_planner_config(
+            sp_model, sp_reasoning, sp_max_steps,
+            st.report_store, lambda: sid, process_event,
+            system_prompt_override=sp_prompt,
+        )
 
         registry = Registry()
         deploy_subagent_tool = DeploySubagent(
