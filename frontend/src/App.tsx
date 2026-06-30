@@ -73,7 +73,7 @@ export default function App() {
         setDisplayThinking(false)
         saveConfig()
         setTimeout(() => {
-          sendHiddenMessage("Start the onboarding interview. Ask your first question.")
+          sendHiddenMessage("Start the onboarding interview. Greet the user in English and ask your first question about their background.")
         }, 100)
       }
     } else {

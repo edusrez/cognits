@@ -46,6 +46,8 @@ def test_system_support_prompt_describes_trigger_and_result_contract():
     # Mentions automatic invocation from finish_setup.
     assert "finish_setup" in SYSTEM_SUPPORT_PROMPT
     assert "skill tree" in SYSTEM_SUPPORT_PROMPT.lower() or "skill_tree" in SYSTEM_SUPPORT_PROMPT.lower()
+    # Regresión: la regla de idioma por defecto existe.
+    assert "default to English" in SYSTEM_SUPPORT_PROMPT
 
 
 # Spanish phrases that were hardcoded in an earlier revision. Kept as a
