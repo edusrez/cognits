@@ -542,21 +542,42 @@ async def _run_agent(
             )
 
         registry = Registry()
-        registry.register(
-            DeploySubagent(
-                llm_client=llm_client,
-                report_store=st.report_store,
-                subagents=subagent_map,
-                session_id=lambda: sid,
-                emit=process_event,
-                rag_engine=st.rag if st.rag is not None and st.rag.error is None else None,
-                tinyfish_api_key=cfg.tinyfish_api_key,
-            )
+        deploy_subagent_tool = DeploySubagent(
+            llm_client=llm_client,
+            report_store=st.report_store,
+            subagents=subagent_map,
+            session_id=lambda: sid,
+            emit=process_event,
+            rag_engine=st.rag if st.rag is not None and st.rag.error is None else None,
+            tinyfish_api_key=cfg.tinyfish_api_key,
         )
+        registry.register(deploy_subagent_tool)
 
         if agent_id == "system_support":
             from cognits.agent.tool_ui import FinishSetup
-            registry.register(FinishSetup(emit=process_event, store=st.store))
+
+            # Wire the skill_planner trigger inside finish_setup. When
+            # TinyFish is configured and skill_planner is in the subagent
+            # map, finish_setup will invoke deploy_subagent("skill_
+            # planner", query=<profile inline>) and wait for the tree
+            # pass to complete before returning. Otherwise the tool still
+            # saves the profile and emits setup_complete but reports the
+            # tree as not built.
+            skill_planner_deployer = None
+            if cfg.tinyfish_api_key and "skill_planner" in subagent_map:
+                async def _skill_planner_deployer(query: str) -> str:
+                    return await deploy_subagent_tool.execute(
+                        json.dumps({"type": "skill_planner", "query": query})
+                    )
+                skill_planner_deployer = _skill_planner_deployer
+
+            registry.register(
+                FinishSetup(
+                    emit=process_event,
+                    store=st.store,
+                    skill_planner_deployer=skill_planner_deployer,
+                )
+            )
 
         max_steps = cfg.max_steps or DEFAULT_ORCHESTRATOR_MAX_STEPS
         ag = Agent(
