@@ -48,6 +48,32 @@ def test_system_support_prompt_describes_trigger_and_result_contract():
     assert "skill tree" in SYSTEM_SUPPORT_PROMPT.lower() or "skill_tree" in SYSTEM_SUPPORT_PROMPT.lower()
 
 
+# Spanish phrases that were hardcoded in an earlier revision. Kept as a
+# regression guard so prompts stay in English and the agent adapts to the
+# user's language at runtime instead.
+_SPANISH_PHRASES = (
+    "He construido",
+    "Tu perfil está",
+    "pídemelo",
+    "haz click",
+    "pestaña",
+    "para comenzar",
+    "Razón",
+    "Configura",
+)
+
+
+@pytest.mark.parametrize("phrase", _SPANISH_PHRASES)
+def test_system_support_prompt_contains_no_hardcoded_spanish(phrase):
+    assert phrase not in SYSTEM_SUPPORT_PROMPT
+
+
+@pytest.mark.parametrize("phrase", _SPANISH_PHRASES)
+def test_skill_planner_prompt_contains_no_hardcoded_spanish(phrase):
+    from cognits.agent.subagents import SKILL_PLANNER_SYSTEM_PROMPT
+    assert phrase not in SKILL_PLANNER_SYSTEM_PROMPT
+
+
 # --- deployer-invocation tests --------------------------------------
 
 def _profile_args():
