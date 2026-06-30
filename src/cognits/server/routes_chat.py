@@ -82,6 +82,57 @@ def _build_profile_context(profile: StudentProfile) -> str:
     return "\n".join(parts)
 
 
+def _build_skills_summary(store, tree: dict) -> str:
+    """Build a compact skill tree summary for the planning mode prompt.
+
+    Format per skill::
+
+        • SkillName (domain) [status, p=0.78] — prereqs: A, B
+
+    Uses ``get_all_learner_states()`` for a single SELECT rather than N
+    per-skill calls.
+    """
+    skills = tree.get("skills", [])
+    if not skills:
+        return ""
+
+    edges = tree.get("edges", [])
+    # Build prereq lookup: skill_id -> list of prereq skill names.
+    prereq_names: dict[str, list[str]] = {}
+    id_to_name: dict[str, str] = {s["id"]: s["name"] for s in skills}
+    for e in edges:
+        etype = e.get("edgeType", "")
+        if etype not in ("prereq", "soft_prereq"):
+            continue
+        pid = e["prereqId"]
+        pname = id_to_name.get(pid, pid)
+        prereq_names.setdefault(e["skillId"], []).append(pname)
+
+    all_states = store.get_all_learner_states()
+
+    lines: list[str] = []
+    for s in skills:
+        sid = s["id"]
+        name = s.get("name", "")
+        domain = s.get("domain", "")
+        st = all_states.get(sid)
+        if st:
+            p = st.p_mastery
+            status = st.status_enum
+        else:
+            p = 0.0
+            status = "not_seen"
+
+        prereqs = prereq_names.get(sid, [])
+        prereqs_str = ", ".join(prereqs) if prereqs else "(none)"
+
+        lines.append(
+            f"• {name} ({domain}) [{status}, p={p:.2f}] — prereqs: {prereqs_str}"
+        )
+
+    return "\n".join(lines)
+
+
 def _extract_declared(text: str) -> dict:
     declared: dict = {}
     lines = text.split("\n")
@@ -236,6 +287,25 @@ def register(app: FastAPI, st) -> None:
                     system_prompt = default_agent_prompt("system_support")
             except Exception:
                 pass
+
+        # Inject compact skill tree context when in planning mode.
+        if st.report_store is not None:
+            is_planning = any(
+                m.get("role") == "hidden_user"
+                and "planning" in (m.get("content") or "").lower()
+                for m in incoming
+            )
+            if is_planning:
+                try:
+                    tree = await asyncio.to_thread(st.report_store.get_tree)
+                    if tree.get("skills"):
+                        summary = await asyncio.to_thread(
+                            _build_skills_summary, st.report_store, tree
+                        )
+                        if summary:
+                            system_prompt += "\n\n## Skill Tree Context\n\n" + summary
+                except Exception:
+                    pass
 
         llm_messages, storage_messages = build_chat_messages(cfg, incoming)
 
@@ -570,6 +640,14 @@ async def _run_agent(
             tinyfish_api_key=cfg.tinyfish_api_key,
         )
         registry.register(deploy_subagent_tool)
+
+        # CreateLearningSession: available for the orchestrator in
+        # planning mode. Emits an SSE event the frontend will handle
+        # (Fase 10) to create a new learning session.
+        from cognits.agent.tool_ui import CreateLearningSession
+        registry.register(
+            CreateLearningSession(emit=process_event, report_store=st.report_store)
+        )
 
         if agent_id == "system_support":
             from cognits.agent.tool_ui import FinishSetup

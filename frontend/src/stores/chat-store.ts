@@ -282,5 +282,10 @@ function createCallbacks(): StreamCallbacks {
         m.setSetupStep("done")
       })
     },
+    onCreateLearningSession(data: { skill_name: string }) {
+      // Fase 10: createNewSession() + save session config with
+      // agent_id="maestro".  For now, log to console.
+      console.log("create_learning_session", data)
+    },
   }
 }

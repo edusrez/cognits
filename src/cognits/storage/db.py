@@ -1093,6 +1093,27 @@ class ReportStore:
             last_review=row[10], next_review=row[11], updated_at=row[12],
         )
 
+    def get_all_learner_states(self) -> dict[str, LearnerState]:
+        """All learner states keyed by skill_id. Single SELECT, used by
+        the planning mode context injection."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT skill_id, alpha, beta, p_mastery, status_enum, "
+                "retrievability, stability, difficulty, reps, lapses, "
+                "last_review, next_review, updated_at FROM learner_state"
+            ).fetchall()
+        result: dict[str, LearnerState] = {}
+        for row in rows:
+            result[row[0]] = LearnerState(
+                skill_id=row[0], alpha=row[1], beta=row[2],
+                p_mastery=row[3], status_enum=row[4],
+                retrievability=row[5], stability=row[6],
+                difficulty=row[7], reps=row[8], lapses=row[9],
+                last_review=row[10], next_review=row[11],
+                updated_at=row[12],
+            )
+        return result
+
     # --- study plan ---
 
     @staticmethod

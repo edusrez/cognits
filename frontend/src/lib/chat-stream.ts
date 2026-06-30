@@ -47,6 +47,7 @@ export interface StreamCallbacks {
   onSessionRenamed?: (data: { name: string }) => void
   onUIAction?: (data: any) => void
   onSetupComplete?: (data: any) => void
+  onCreateLearningSession?: (data: { skill_name: string }) => void
 }
 
 export async function startChat(sessionId: string, messages: ChatMessage[]): Promise<void> {
@@ -155,6 +156,9 @@ export async function streamSession(
               break
             case "setup_complete":
               callbacks.onSetupComplete?.(json)
+              break
+            case "create_learning_session":
+              callbacks.onCreateLearningSession?.(json)
               break
             default: {
               const content = json.choices?.[0]?.delta?.content

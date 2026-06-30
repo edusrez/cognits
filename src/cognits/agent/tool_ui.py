@@ -67,6 +67,67 @@ class ToggleTabVisibility(Tool):
         }, ensure_ascii=False)
 
 
+class CreateLearningSession(Tool):
+    """Signal the frontend to create a new learning session for a
+    specific skill. The tool does NOT create the session directly — it
+    emits a ``create_learning_session`` SSE event. The frontend (Fase 10)
+    will listen and call POST /api/sessions + POST .../config with
+    agent_id="maestro"."""
+
+    def __init__(self, emit=None, report_store=None):
+        self.emit = emit
+        self.store = report_store
+
+    name = "create_learning_session"
+    description = (
+        "Signal the frontend to create a new learning session for a skill "
+        "the user has chosen to learn. Call this ONLY after the user has "
+        "explicitly confirmed they want to learn that skill. The UI will "
+        "transition to a new learning session automatically — do NOT "
+        "continue the conversation after calling this tool."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "skill_name": {
+                "type": "string",
+                "description": "Name of the skill the user wants to learn (must match an existing skill name in the tree).",
+            },
+        },
+        "required": ["skill_name"],
+    }
+
+    async def execute(self, raw_args: str) -> str:
+        try:
+            args = json.loads(raw_args)
+            skill_name = args["skill_name"].strip()
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            return tool_error(f"invalid args: {e}")
+
+        if not skill_name:
+            return tool_error("skill_name is required")
+
+        # Validate the skill exists in the tree.
+        if self.store is not None:
+            skills = await asyncio.to_thread(self.store.list_skills)
+            found = any(s.name.lower() == skill_name.lower() for s in skills)
+            if not found:
+                return tool_error(
+                    f"skill '{skill_name}' not found in the skill tree. "
+                    "Ask the user to choose a different skill."
+                )
+
+        if self.emit is not None:
+            self.emit({
+                "type": "create_learning_session",
+                "data": {"skill_name": skill_name},
+            })
+
+        return json.dumps({
+            "message": f"Learning session requested for '{skill_name}'. The UI will transition.",
+        }, ensure_ascii=False)
+
+
 class FinishSetup(Tool):
     def __init__(
         self,
