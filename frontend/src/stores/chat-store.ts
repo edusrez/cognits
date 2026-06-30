@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store"
 import { startChat, type ChatMessage, type ChatUsage, type StreamCallbacks, type HistorySnapshot } from "../lib/chat-stream"
 import { activeSessionId, createNewSession } from "./session-store"
 import { setTabHidden, activateTab } from "./viewport-tree-store"
-import { setSessionAgentId, saveSessionConfigAsync } from "./settings-store"
+import { setSessionAgentId, saveSessionConfigAsync, setSessionSkillId } from "./settings-store"
 import { ChatConnection } from "./chat-connection"
 
 export type { ChatMessage, ChatUsage }

@@ -33,6 +33,7 @@ export interface SessionConfig {
   model: string
   reasoning: string
   agentId: string
+  skillId: string
 }
 
 export interface LLMConfig {
