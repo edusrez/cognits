@@ -23,6 +23,7 @@ SUBAGENT_LABELS: dict[str, str] = {
     "directory_reader": "Directory Reader",
     "skill_planner": "Skill Planner",
     "study_planner": "Study Planner",
+    "evaluator": "Evaluator",
 }
 
 
@@ -69,6 +70,7 @@ class DeploySubagent(Tool):
         emit: Emit | None,
         rag_engine=None,
         tinyfish_api_key: str = "",
+        suspended_subagents: dict[str, list] | None = None,
     ):
         self.llm_client = llm_client
         self.report_store = report_store
@@ -77,6 +79,7 @@ class DeploySubagent(Tool):
         self.emit = emit
         self.rag_engine = rag_engine
         self.tinyfish_api_key = tinyfish_api_key
+        self.suspended_subagents = suspended_subagents if suspended_subagents is not None else {}
 
     name = "deploy_subagent"
     description = (
@@ -90,12 +93,16 @@ class DeploySubagent(Tool):
     schema = {
         "type": "object",
         "properties": {
-            "type": {"type": "string", "enum": ["web_researcher", "directory_reader", "skill_planner", "study_planner"]},
+            "type": {"type": "string", "enum": ["web_researcher", "directory_reader", "skill_planner", "study_planner", "evaluator"]},
             "query": {"type": "string", "description": "Task description for the subagent"},
             "thoroughness": {
                 "type": "string",
                 "enum": ["quick", "high", "max"],
                 "description": "Effort calibration for directory_reader. quick=surface, high=thorough, max=exhaustive (uses Pro model). Default: high.",
+            },
+            "resume_token": {
+                "type": "string",
+                "description": "Token from a previous deploy_subagent call to resume the same subagent session. Pass this to continue a paused conversation (e.g. Phase 2 of evaluation).",
             },
         },
         "required": ["type", "query"],
@@ -135,6 +142,23 @@ class DeploySubagent(Tool):
 
         sid = self.session_id() if self.session_id is not None else ""
         report_id = new_report_id()
+
+        resume_token = parsed.get("resume_token") or ""
+        if resume_token and self.suspended_subagents:
+            # Resume: pop the saved messages, append the new query, and
+            # create a fresh Agent with the combined history.  The saved
+            # messages already include the system prompt from Phase 1, so
+            # Agent.run() won't prepend it again (it only prepends when
+            # cfg.system_prompt is set AND the first message isn't system).
+            # We strip the old system before saving, so we prepend here.
+            saved = self.suspended_subagents.pop(resume_token, None)
+            if saved is None:
+                return tool_error(f"unknown or expired resume_token: {resume_token}")
+            import copy
+            messages = copy.deepcopy(list(saved))
+            messages.append(Message(role=ROLE_USER, content=query))
+        else:
+            messages = [Message(role=ROLE_USER, content=query)]
 
         subagent = Agent(cfg, self.llm_client)
 
@@ -204,7 +228,7 @@ class DeploySubagent(Tool):
             cfg.tools.set_emit(emit)
 
         try:
-            content = await subagent.run([Message(role=ROLE_USER, content=query)], emit)
+            content = await subagent.run(messages, emit)
         except asyncio.CancelledError:
             # Cancelled: no report, no indexing, no subagent_end. The parent
             # run stops cleanly when the cancellation propagates.
@@ -218,6 +242,18 @@ class DeploySubagent(Tool):
 
         title = extract_title(content, query)
         summary = extract_summary(content)
+
+        # Save accumulated messages for future resume if the subagent
+        # didn't already use a resume_token (Phase 1 → save for Phase 2).
+        # Resume messages are stripped of the leading system prompt so a
+        # fresh Agent.run() can prepend it again without duplication.
+        new_resume_token = ""
+        if not resume_token and subagent.last_messages and self.suspended_subagents is not None:
+            saved = subagent.last_messages
+            if saved and saved[0].role == "system":
+                saved = saved[1:]
+            new_resume_token = "resume_" + __import__("secrets").token_hex(8)
+            self.suspended_subagents[new_resume_token] = saved
 
         report = Report(
             id=report_id,
@@ -256,12 +292,12 @@ class DeploySubagent(Tool):
                 }
             )
 
-        return json.dumps(
-            {
-                "reportId": report_id,
-                "title": title,
-                "summary": summary,
-                "content": content,
-            },
-            ensure_ascii=False,
-        )
+        result = {
+            "reportId": report_id,
+            "title": title,
+            "summary": summary,
+            "content": content,
+        }
+        if new_resume_token:
+            result["resume_token"] = new_resume_token
+        return json.dumps(result, ensure_ascii=False)

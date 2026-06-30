@@ -21,6 +21,7 @@ from cognits.agent.prompts import DEFAULT_AGENT_ID, default_agent_prompt
 from cognits.agent.subagents import (
     directory_reader_config,
     documentalist_config,
+    evaluator_config,
     researcher_config,
     session_analyzer_config,
     skill_planner_config,
@@ -629,6 +630,28 @@ async def _run_agent(
             system_prompt_override=sp_prompt,
         )
 
+        # Evaluator: available ONLY when the Teacher agent is active (dormant
+        # until Phase 12). Builds evaluator_config with its own DeploySubagent
+        # (web_researcher fallback for source grounding) and UpdateMastery tool.
+        # Requires RAG (the evaluator's Phase 1 searches the knowledge base
+        # before falling back to web search).
+        if agent_id == "maestro" and tf_client is not None:
+            ev_cfg = subagent_cfgs.get("evaluator")
+            ev_model = (ev_cfg.model if ev_cfg else "") or DEFAULT_MODEL
+            ev_reasoning = ev_cfg.reasoning if ev_cfg else reasoning
+            ev_max_steps = ev_cfg.max_steps if ev_cfg else 100
+            ev_prompt = cfg.agent_overrides.get("evaluator") or None
+            subagent_map["evaluator"] = evaluator_config(
+                ev_model, ev_reasoning, ev_max_steps,
+                llm_client,
+                st.rag if st.rag is not None and st.rag.error is None else None,
+                tf_client,
+                st.report_store, lambda: sid, process_event,
+                system_prompt_override=ev_prompt,
+                tinyfish_api_key=cfg.tinyfish_api_key,
+                suspended_subagents=st.suspended_subagents,
+            )
+
         registry = Registry()
         deploy_subagent_tool = DeploySubagent(
             llm_client=llm_client,
@@ -638,6 +661,7 @@ async def _run_agent(
             emit=process_event,
             rag_engine=st.rag if st.rag is not None and st.rag.error is None else None,
             tinyfish_api_key=cfg.tinyfish_api_key,
+            suspended_subagents=st.suspended_subagents,
         )
         registry.register(deploy_subagent_tool)
 

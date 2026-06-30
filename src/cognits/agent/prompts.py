@@ -3,6 +3,7 @@
 from cognits.agent.subagents import (
     DIRECTORY_READER_SYSTEM_PROMPT,
     DOCUMENTALIST_SYSTEM_PROMPT,
+    EVALUATOR_SYSTEM_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
     SESSION_ANALYZER_SYSTEM_PROMPT,
     SKILL_PLANNER_SYSTEM_PROMPT,
@@ -217,6 +218,11 @@ DEFAULT_AGENTS = [
         "id": "study_planner",
         "name": "Study Planner",
         "systemPrompt": STUDY_PLANNER_SYSTEM_PROMPT,
+    },
+    {
+        "id": "evaluator",
+        "name": "Evaluator",
+        "systemPrompt": EVALUATOR_SYSTEM_PROMPT,
     },
     {
         "id": "system_support",

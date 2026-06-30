@@ -30,6 +30,8 @@ class AppState:
         self.cached_config: Config = Config()
         # session_id -> SessionAgent (server/session_agent.py)
         self.active_agents: dict[str, object] = {}
+        # resume_token -> paused subagent message history.
+        self.suspended_subagents: dict[str, object] = {}
         self.desktop_lock = asyncio.Lock()
         self.rag = None  # rag.engine.RagEngine, initialized in main
         self.docling_engine = None  # docling_engine.DoclingEngine

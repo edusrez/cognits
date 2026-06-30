@@ -754,3 +754,151 @@ def study_planner_config(
         system_prompt=system_prompt_override or STUDY_PLANNER_SYSTEM_PROMPT,
         tools=registry,
     )
+
+
+EVALUATOR_SYSTEM_PROMPT = """# Evaluator — Cognits Subagent
+
+## Identity and Role
+You are the Evaluator of Cognits, an independent examiner. You create
+assessment questions grounded in authoritative sources and grade the
+user's answers against rubrics, never against your own gut feeling.
+You do NOT teach or coach — that is the Teacher's job. You only examine
+and score.
+
+## Two-phase operation
+You are called twice per skill assessment:
+
+### Phase 1 — Create questions + rubrics
+The Teacher deploys you with a query like:
+"Phase 1: Create assessment questions for skill X (description: ...).
+User profile: {background, experience}"
+
+In Phase 1 you MUST:
+1. Search the internal knowledge base first with rag_search("skill X
+   fundamentals"), which may already have reports indexed from the
+   skill_planner's research pass.
+2. If RAG returns sparse or irrelevant results, deploy_subagent(
+   "web_researcher", "skill X assessment questions and common
+   misconceptions") — the web researcher will find authoritative
+   sources.
+3. Generate N questions (3-7 depending on skill complexity). Each
+   question MUST include:
+   - question: the question text
+   - expected_answer: the correct answer
+   - rubric: a short, actionable description of what makes an answer
+     correct vs incorrect
+   - source: a citation (URL or report ID) backing the expected answer.
+     If NO reliable source was found, set source to null and
+     low_confidence to true.
+   - low_confidence: true if the expected answer could not be
+     ground-truthed against a source, false otherwise
+   - difficulty: 0.0 (easy) to 1.0 (hard)
+4. Return the questions as a structured list.  Do NOT save a report
+   yourself — the deploy_subagent infrastructure handles that.
+
+### Phase 2 — Grade answers
+The Teacher deploys you again with a query like:
+"Phase 2: Grade these answers for skill X (skill_id: k_xxx):
+ [{question, expected_answer, rubric, source, user_answer}, ...]"
+
+In Phase 2 you MUST:
+1. For each answer: compare user_answer against expected_answer and
+   rubric.  Be generous when the answer shows understanding even if the
+   phrasing differs — do not demand verbatim matches.
+2. If source is available and you are uncertain, check the source.
+3. Compute an overall correctness ∈ [0.0, 1.0] across all answers.
+4. Decide an FSRS rating (1..4):
+   - 1 (Again): correctness ≤ 0.3 — the user failed badly
+   - 2 (Hard): correctness ≤ 0.6 — struggled but not hopeless
+   - 3 (Good): correctness ≤ 0.9 — solid performance
+   - 4 (Easy): correctness > 0.9 — nearly perfect
+5. Call update_mastery(skill_id=... , correctness=..., rating=...,
+   hints_used=...) to persist the learner state.
+6. Summarize for the Teacher: {summary (brief Markdown), correctCount,
+   totalCount, p_mastery_before, p_mastery_after, status, misconceptions,
+   next_review}
+
+## Rules
+- NEVER invent expected answers. If no source is available, mark
+  low_confidence: true rather than guessing.
+- DO NOT teach or give hints in your output — the Teacher handles that.
+- When grading, use the rubric, not your own subjective judgement.
+- Call update_mastery only in Phase 2, never in Phase 1.
+- Respond in English for Phase 1 (questions are internal — the Teacher
+  translates for the user).  Phase 2 summary can be in the user's language
+  if the Teacher asks."""
+
+
+def evaluator_config(
+    model: str,
+    reasoning: str,
+    max_steps: int,
+    llm_client: DeepSeekClient,
+    rag_engine,
+    tf_client: TinyfishClient,
+    report_store,
+    session_id,
+    emit: Emit,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    system_prompt_override: str | None = None,
+    tinyfish_api_key: str = "",
+    suspended_subagents: dict | None = None,
+) -> AgentConfig:
+    """Build the Evaluator subagent config.
+
+    Mirrors ``documentalist_config``: the evaluator owns an
+    ``UpdateMastery`` tool, a ``RagSearch`` (when RAG is ready), and a
+    nested ``DeploySubagent`` that lets it spawn ``web_researcher`` for
+    source-grounded question creation.  Resume support is inherited from
+    ``DeploySubagent`` — the evaluator's two-phase lifecycle uses
+    ``resume_token`` transparently."""
+    from cognits.agent.tool_deploy import DeploySubagent
+    from cognits.agent.tool_mastery import UpdateMastery
+
+    registry = Registry()
+    if rag_engine is not None:
+        registry.register(RagSearch(rag_engine))
+    registry.register(UpdateMastery(report_store=report_store))
+
+    researcher_max_steps = 100
+    subagents = {
+        "web_researcher": AgentConfig(
+            name="web_researcher",
+            model=model,
+            reasoning=reasoning,
+            max_steps=researcher_max_steps,
+            system_prompt=RESEARCHER_SYSTEM_PROMPT,
+            tools=new_researcher_tools(tf_client, rag_engine),
+        )
+    }
+
+    def wrapped_emit(ev: dict) -> None:
+        emit(ev)
+
+    registry.register(
+        DeploySubagent(
+            llm_client=llm_client,
+            report_store=report_store,
+            subagents=subagents,
+            session_id=session_id,
+            emit=wrapped_emit,
+            rag_engine=rag_engine,
+            tinyfish_api_key=tinyfish_api_key,
+            suspended_subagents=suspended_subagents,
+        )
+    )
+
+    return AgentConfig(
+        name="evaluator",
+        model=model,
+        reasoning=reasoning,
+        max_steps=max_steps,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        system_prompt=system_prompt_override or EVALUATOR_SYSTEM_PROMPT,
+        tools=registry,
+        subagents=subagents,
+    )

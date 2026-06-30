@@ -42,6 +42,10 @@ class Agent:
     def __init__(self, cfg: AgentConfig, llm_client: DeepSeekClient):
         self.cfg = cfg
         self.llm = llm_client
+        # Set by run() after a completed execution — contains the full
+        # accumulated message list (system + user + assistant + tools)
+        # so callers (e.g. DeploySubagent) can resume paused subagents.
+        self.last_messages: list[Message] | None = None
 
     async def run(self, messages: list[Message], emit: Emit) -> str:
         cfg = self.cfg
@@ -109,6 +113,9 @@ class Agent:
             content = "".join(content_parts)
 
             if not tool_accs or finish_reason != "tool_calls":
+                if content:
+                    messages.append(Message(role=ROLE_ASSISTANT, content=content))
+                self.last_messages = messages
                 return content
 
             tool_calls = [
