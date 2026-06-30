@@ -181,6 +181,42 @@ BASE_SCHEMA = """
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (skill_id) REFERENCES skills(id)
     );
+
+    -- One active study plan per user at a time (v0.0.6). Tree_version
+    -- is a snapshot so the planner can detect staleness when the tree
+    -- has been mutated since the plan was generated.
+    CREATE TABLE IF NOT EXISTS study_plans (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        tree_version INTEGER NOT NULL,
+        goal TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_study_plans_status ON study_plans(status);
+
+    -- Ordered list of learning sessions inside a plan. Items are never
+    -- deleted – status moves through pending -> in_progress -> done |
+    -- skipped | goal_removed so the planner can diff between plan
+    -- revisions.
+    CREATE TABLE IF NOT EXISTS study_plan_items (
+        id TEXT PRIMARY KEY,
+        plan_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        mode TEXT NOT NULL DEFAULT 'socratic',
+        status TEXT NOT NULL DEFAULT 'pending',
+        order_index INTEGER NOT NULL DEFAULT 0,
+        estimated_duration_min INTEGER,
+        actual_duration_min INTEGER,
+        learning_session_id TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (plan_id) REFERENCES study_plans(id),
+        FOREIGN KEY (skill_id) REFERENCES skills(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_plan_items_plan ON study_plan_items(plan_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_items_status ON study_plan_items(status);
 """
 
 
@@ -395,6 +431,58 @@ class LearnerState:
         }
 
 
+@dataclass
+class StudyPlan:
+    id: str = ""
+    session_id: str = ""
+    tree_version: int = 0
+    goal: str = ""
+    status: str = "active"
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_json(self) -> dict:
+        return {
+            "id": self.id,
+            "sessionId": self.session_id,
+            "treeVersion": self.tree_version,
+            "goal": self.goal,
+            "status": self.status,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at,
+        }
+
+
+@dataclass
+class StudyPlanItem:
+    id: str = ""
+    plan_id: str = ""
+    skill_id: str = ""
+    mode: str = "socratic"
+    status: str = "pending"
+    order_index: int = 0
+    estimated_duration_min: int | None = None
+    actual_duration_min: int | None = None
+    learning_session_id: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_json(self) -> dict:
+        return {
+            "id": self.id,
+            "planId": self.plan_id,
+            "skillId": self.skill_id,
+            "mode": self.mode,
+            "status": self.status,
+            "orderIndex": self.order_index,
+            "estimatedDurationMin": self.estimated_duration_min,
+            "actualDurationMin": self.actual_duration_min,
+            "learningSessionId": self.learning_session_id,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at,
+        }
+
+
 def new_report_id() -> str:
     return "r_" + secrets.token_hex(8)
 
@@ -411,9 +499,26 @@ def new_build_id() -> str:
     return "b_" + secrets.token_hex(8)
 
 
+def new_plan_id() -> str:
+    return "p_" + secrets.token_hex(8)
+
+
+def new_plan_item_id() -> str:
+    return "pi_" + secrets.token_hex(8)
+
+
 # Edges between skills: edge_type is 'prereq' (skill_id needs prereq_id
 # before being learnable), 'coreq' (taken together), or 'related'.
 EDGE_TYPES = ("prereq", "coreq", "related", "soft_prereq")
+
+# Study-plan lifecycle: one plan active at a time; old plans are superseded.
+PLAN_STATUS = ("active", "superseded")
+
+# Per-item progression. "goal_removed" preserves the row when the user
+# discards a tree branch (study planner uses it for diffing).
+PLAN_ITEM_STATUS = ("pending", "in_progress", "done", "skipped", "goal_removed")
+
+PLAN_ITEM_MODE = ("socratic", "exercise", "project")
 
 # Learner-state status progression (see learner/model.py for the policy):
 # not_seen -> exploring -> practicing -> proficient -> mastered -> decaying
@@ -987,6 +1092,160 @@ class ReportStore:
             reps=row[8], lapses=row[9],
             last_review=row[10], next_review=row[11], updated_at=row[12],
         )
+
+    # --- study plan ---
+
+    @staticmethod
+    def _row_to_plan(row: tuple) -> StudyPlan:
+        return StudyPlan(
+            id=row[0], session_id=row[1] or "", tree_version=row[2],
+            goal=row[3] or "", status=row[4], created_at=row[5], updated_at=row[6],
+        )
+
+    @staticmethod
+    def _row_to_plan_item(row: tuple) -> StudyPlanItem:
+        return StudyPlanItem(
+            id=row[0], plan_id=row[1], skill_id=row[2], mode=row[3],
+            status=row[4], order_index=row[5],
+            estimated_duration_min=row[6],
+            actual_duration_min=row[7],
+            learning_session_id=row[8], created_at=row[9], updated_at=row[10],
+        )
+
+    def create_plan(
+        self, tree_version: int, goal: str = "", session_id: str = ""
+    ) -> str:
+        plan_id = new_plan_id()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO study_plans (id, session_id, tree_version, goal) "
+                "VALUES (?, ?, ?, ?)",
+                (plan_id, session_id, tree_version, goal),
+            )
+        return plan_id
+
+    def supersede_plan(self, plan_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE study_plans SET status = 'superseded', "
+                "updated_at = datetime('now') WHERE id = ?",
+                (plan_id,),
+            )
+
+    def get_active_plan(self) -> StudyPlan | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, session_id, tree_version, goal, status, "
+                "created_at, updated_at FROM study_plans "
+                "WHERE status = 'active' ORDER BY created_at DESC, rowid DESC LIMIT 1"
+            ).fetchone()
+        return self._row_to_plan(row) if row else None
+
+    def add_plan_item(
+        self,
+        plan_id: str,
+        skill_id: str,
+        mode: str = "socratic",
+        order_index: int = 0,
+        estimated_duration_min: int | None = None,
+    ) -> str:
+        item_id = new_plan_item_id()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO study_plan_items "
+                "(id, plan_id, skill_id, mode, order_index, estimated_duration_min) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (item_id, plan_id, skill_id, mode, order_index, estimated_duration_min),
+            )
+        return item_id
+
+    def replace_plan_items(self, plan_id: str, items: list[StudyPlanItem]) -> None:
+        """Atomic wipe + reinsert of all items for a plan."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM study_plan_items WHERE plan_id = ?", (plan_id,)
+            )
+            self._conn.executemany(
+                "INSERT INTO study_plan_items "
+                "(id, plan_id, skill_id, mode, status, order_index, "
+                "estimated_duration_min, actual_duration_min, learning_session_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        item.id or new_plan_item_id(),
+                        plan_id,
+                        item.skill_id,
+                        item.mode,
+                        item.status,
+                        item.order_index,
+                        item.estimated_duration_min,
+                        item.actual_duration_min,
+                        item.learning_session_id,
+                    )
+                    for item in items
+                ],
+            )
+
+    def update_plan_item(
+        self,
+        item_id: str,
+        status: str | None = None,
+        learning_session_id: str | None = None,
+        actual_duration_min: int | None = None,
+    ) -> None:
+        """Patch one plan item. Pass None for fields you want to leave
+        untouched; pass an explicit value for fields you want to update."""
+        sets = ["updated_at = datetime('now')"]
+        args: list = []
+        for col, val in (
+            ("status", status),
+            ("learning_session_id", learning_session_id),
+            ("actual_duration_min", actual_duration_min),
+        ):
+            if val is not None:
+                sets.append(f"{col} = ?")
+                args.append(val)
+        if len(args) == 0:
+            return  # nothing to update
+        args.append(item_id)
+        with self._lock:
+            self._conn.execute(
+                f"UPDATE study_plan_items SET {', '.join(sets)} WHERE id = ?",
+                args,
+            )
+
+    def get_plan_items(self, plan_id: str) -> list[StudyPlanItem]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, plan_id, skill_id, mode, status, order_index, "
+                "estimated_duration_min, actual_duration_min, learning_session_id, "
+                "created_at, updated_at FROM study_plan_items "
+                "WHERE plan_id = ? ORDER BY order_index, created_at",
+                (plan_id,),
+            ).fetchall()
+        return [self._row_to_plan_item(r) for r in rows]
+
+    def get_plan_with_items(
+        self, plan_id: str
+    ) -> tuple[StudyPlan | None, list[StudyPlanItem]]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, session_id, tree_version, goal, status, "
+                "created_at, updated_at FROM study_plans WHERE id = ?",
+                (plan_id,),
+            ).fetchone()
+            plan = self._row_to_plan(row) if row else None
+            # Inline the items query — cannot call get_plan_items inside
+            # the same lock block (threading.Lock is not reentrant).
+            item_rows = self._conn.execute(
+                "SELECT id, plan_id, skill_id, mode, status, order_index, "
+                "estimated_duration_min, actual_duration_min, learning_session_id, "
+                "created_at, updated_at FROM study_plan_items "
+                "WHERE plan_id = ? ORDER BY order_index, created_at",
+                (plan_id,),
+            ).fetchall()
+            items = [self._row_to_plan_item(r) for r in item_rows]
+        return plan, items
 
     # --- session config ---
 

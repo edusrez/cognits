@@ -279,3 +279,115 @@ def test_bump_tree_version(store):
     store.supersede_skill(c.id, b.id)
     store.bump_tree_version()
     assert store.get_skill(c.id).tree_version == 2  # stays at 2, not 3
+
+
+# --- study plans ---
+
+from cognits.storage.db import (
+    StudyPlan,
+    StudyPlanItem,
+    new_plan_id,
+    new_plan_item_id,
+)
+
+
+def test_create_plan_defaults(store):
+    pid = store.create_plan(tree_version=1, goal="learn godot", session_id="s1")
+    assert pid.startswith("p_")
+    plan = store.get_active_plan()
+    assert plan is not None
+    assert plan.tree_version == 1
+    assert plan.goal == "learn godot"
+    assert plan.status == "active"
+    assert plan.to_json()["treeVersion"] == 1
+
+
+def test_supersede_plan(store):
+    pid = store.create_plan(tree_version=1)
+    assert store.get_active_plan() is not None
+    store.supersede_plan(pid)
+    assert store.get_active_plan() is None
+    plan, _ = store.get_plan_with_items(pid)
+    assert plan.status == "superseded"
+
+
+def test_get_active_plan_returns_most_recent(store):
+    pid1 = store.create_plan(tree_version=1, goal="first")
+    pid2 = store.create_plan(tree_version=2, goal="second")
+    # Both are 'active' (no superseding done); the most recent wins.
+    plan = store.get_active_plan()
+    assert plan.id == pid2
+
+
+def test_add_plan_item_defaults(store):
+    pid = store.create_plan(tree_version=1)
+    iid = store.add_plan_item(pid, "k_x", mode="socratic", order_index=0, estimated_duration_min=30)
+    assert iid.startswith("pi_")
+    items = store.get_plan_items(pid)
+    assert len(items) == 1
+    assert items[0].mode == "socratic"
+    assert items[0].status == "pending"
+    assert items[0].estimated_duration_min == 30
+
+
+def test_replace_plan_items_wipes_and_reinserts(store):
+    pid = store.create_plan(tree_version=1)
+    store.add_plan_item(pid, "k_a", order_index=0)
+    store.add_plan_item(pid, "k_b", order_index=1)
+    store.add_plan_item(pid, "k_c", order_index=2)
+    store.replace_plan_items(pid, [
+        StudyPlanItem(id=new_plan_item_id(), plan_id=pid, skill_id="k_d", mode="exercise", order_index=0),
+        StudyPlanItem(id=new_plan_item_id(), plan_id=pid, skill_id="k_e", mode="project", order_index=1),
+    ])
+    items = store.get_plan_items(pid)
+    assert len(items) == 2
+    assert items[0].skill_id == "k_d"
+    assert items[1].skill_id == "k_e"
+    assert items[0].mode == "exercise"
+
+
+def test_update_plan_item_patches_fields(store):
+    pid = store.create_plan(tree_version=1)
+    iid = store.add_plan_item(pid, "k_x")
+    store.update_plan_item(iid, status="done", actual_duration_min=45)
+    items = store.get_plan_items(pid)
+    assert items[0].status == "done"
+    assert items[0].actual_duration_min == 45
+    # Unpatched fields stay.
+    assert items[0].mode == "socratic"
+    # No-op when nothing to update.
+    store.update_plan_item(iid, status=None, learning_session_id=None, actual_duration_min=None)
+    items2 = store.get_plan_items(pid)
+    assert items2[0].status == "done"  # unchanged
+
+
+def test_get_plan_items_ordered(store):
+    pid = store.create_plan(tree_version=1)
+    store.add_plan_item(pid, "k_c", order_index=3)
+    store.add_plan_item(pid, "k_a", order_index=1)
+    store.add_plan_item(pid, "k_b", order_index=2)
+    items = store.get_plan_items(pid)
+    assert [i.order_index for i in items] == [1, 2, 3]
+    assert [i.skill_id for i in items] == ["k_a", "k_b", "k_c"]
+
+
+def test_get_plan_with_items_combines(store):
+    pid = store.create_plan(tree_version=1, goal="python")
+    store.add_plan_item(pid, "k_x")
+    plan, items = store.get_plan_with_items(pid)
+    assert plan.goal == "python"
+    assert len(items) == 1
+    assert items[0].plan_id == pid
+
+
+def test_plan_json_shapes(store):
+    pid = store.create_plan(tree_version=1)
+    store.add_plan_item(pid, "k_x")
+    plan, items = store.get_plan_with_items(pid)
+    j = plan.to_json()
+    for k in ("id", "treeVersion", "goal", "status", "createdAt", "updatedAt"):
+        assert k in j
+    ij = items[0].to_json()
+    for k in ("id", "planId", "skillId", "mode", "status", "orderIndex"):
+        assert k in ij
+    assert ij.get("learningSessionId") is None  # null when unset
