@@ -793,6 +793,15 @@ class ReportStore:
             ).fetchone()
             return row[0] if row else 1
 
+    def get_tree_version(self) -> int:
+        """Current tree_version (max across active skills). Returns 1 if no
+        skills exist yet. Used by the API and the Study Planner."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT MAX(tree_version) FROM skills WHERE status = 'active'"
+            ).fetchone()
+        return row[0] if row and row[0] is not None else 1
+
     def _prereq_reaches(self, start_id: str, target_id: str) -> bool:
         # Does target_id appear in the prereq-ancestor closure of start_id?
         # If so, adding edge (target_id prereqs start_id) would form a cycle.
@@ -848,7 +857,8 @@ class ReportStore:
         return [SkillPrereq(*r) for r in rows]
 
     def get_tree(self) -> dict:
-        """Whole active tree: nodes + edges. For frontend rendering."""
+        """Whole active tree: nodes + edges + tree_version. For frontend
+        rendering and the API."""
         with self._lock:
             skill_rows = self._conn.execute(
                 """SELECT id, domain, name, description, bloom_level, difficulty,
@@ -862,9 +872,13 @@ class ReportStore:
                    FROM skill_prerequisites
                    ORDER BY skill_id, edge_type"""
             ).fetchall()
+            tv_row = self._conn.execute(
+                "SELECT MAX(tree_version) FROM skills WHERE status = 'active'"
+            ).fetchone()
         return {
             "skills": [self._row_to_skill(r).to_json() for r in skill_rows],
             "edges": [SkillPrereq(*r).to_json() for r in edge_rows],
+            "treeVersion": tv_row[0] if tv_row and tv_row[0] is not None else 1,
         }
 
     def walk_topological(self) -> list[Skill]:
