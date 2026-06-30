@@ -99,6 +99,7 @@ BASE_SCHEMA = """
         parent_skill_id TEXT,
         status TEXT NOT NULL DEFAULT 'active',
         source TEXT NOT NULL DEFAULT '',
+        tree_version INTEGER NOT NULL DEFAULT 1,
         superseded_by TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -135,7 +136,7 @@ BASE_SCHEMA = """
     CREATE TABLE IF NOT EXISTS skill_prerequisites (
         skill_id TEXT NOT NULL,
         prereq_id TEXT NOT NULL,
-        edge_type TEXT NOT NULL CHECK (edge_type IN ('prereq','coreq','related')),
+        edge_type TEXT NOT NULL CHECK (edge_type IN ('prereq','coreq','related','soft_prereq')),
         proof_query TEXT NOT NULL DEFAULT '',
         build_id TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -288,6 +289,7 @@ class Skill:
     parent_skill_id: str = ""
     status: str = "active"
     source: str = ""
+    tree_version: int = 1
     superseded_by: str = ""
     created_at: str = ""
     updated_at: str = ""
@@ -303,6 +305,7 @@ class Skill:
             "parentSkillId": self.parent_skill_id,
             "status": self.status,
             "source": self.source,
+            "treeVersion": self.tree_version,
             "supersededBy": self.superseded_by,
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
@@ -410,7 +413,7 @@ def new_build_id() -> str:
 
 # Edges between skills: edge_type is 'prereq' (skill_id needs prereq_id
 # before being learnable), 'coreq' (taken together), or 'related'.
-EDGE_TYPES = ("prereq", "coreq", "related")
+EDGE_TYPES = ("prereq", "coreq", "related", "soft_prereq")
 
 # Learner-state status progression (see learner/model.py for the policy):
 # not_seen -> exploring -> practicing -> proficient -> mastered -> decaying
@@ -665,9 +668,10 @@ class ReportStore:
             parent_skill_id=row[6] or "",
             status=row[7],
             source=row[8] or "",
-            superseded_by=row[9],
-            created_at=row[10],
-            updated_at=row[11],
+            tree_version=row[9],
+            superseded_by=row[10],
+            created_at=row[11],
+            updated_at=row[12],
         )
 
     def start_build(self, session_id: str, trigger: str) -> str:
@@ -708,13 +712,12 @@ class ReportStore:
             )
 
     def upsert_skill(self, s: Skill) -> None:
-        # Upsert (not INSERT OR REPLACE): REPLACE would delete the row and
-        # reinsert without firing skills_fts_ad, corrupting the FTS index.
         with self._lock:
             self._conn.execute(
                 """INSERT INTO skills (id, domain, name, description, bloom_level,
-                                        difficulty, parent_skill_id, status, source)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       difficulty, parent_skill_id, status,
+                                       source, tree_version)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                        domain         = excluded.domain,
                        name           = excluded.name,
@@ -724,10 +727,12 @@ class ReportStore:
                        parent_skill_id= excluded.parent_skill_id,
                        status         = excluded.status,
                        source         = excluded.source,
+                       tree_version   = excluded.tree_version,
                        updated_at     = datetime('now')""",
                 (
                     s.id, s.domain, s.name, s.description, s.bloom_level,
                     s.difficulty, s.parent_skill_id, s.status, s.source,
+                    s.tree_version,
                 ),
             )
             # Seed learner_state on first insert (alpha=beta=1 -> Beta(1,1)
@@ -742,7 +747,7 @@ class ReportStore:
         with self._lock:
             row = self._conn.execute(
                 """SELECT id, domain, name, description, bloom_level, difficulty,
-                          parent_skill_id, status, source, superseded_by,
+                          parent_skill_id, status, source, tree_version, superseded_by,
                           created_at, updated_at
                    FROM skills WHERE id = ?""",
                 (skill_id,),
@@ -751,7 +756,7 @@ class ReportStore:
 
     def list_skills(self, domain: str | None = None) -> list[Skill]:
         sql = """SELECT id, domain, name, description, bloom_level, difficulty,
-                        parent_skill_id, status, source, superseded_by,
+                        parent_skill_id, status, source, tree_version, superseded_by,
                         created_at, updated_at
                  FROM skills WHERE status = 'active'"""
         args: list = []
@@ -773,6 +778,20 @@ class ReportStore:
                    WHERE id = ?""",
                 (new_skill_id, skill_id),
             )
+
+    def bump_tree_version(self) -> int:
+        """Increment tree_version on ALL active skills in one transaction.
+        Called by structural mutations (add_branch, prune_branch,
+        re_eval_prereqs) in future versions. Returns the new version."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE skills SET tree_version = tree_version + 1, "
+                "updated_at = datetime('now') WHERE status = 'active'"
+            )
+            row = self._conn.execute(
+                "SELECT MAX(tree_version) FROM skills WHERE status = 'active'"
+            ).fetchone()
+            return row[0] if row else 1
 
     def _prereq_reaches(self, start_id: str, target_id: str) -> bool:
         # Does target_id appear in the prereq-ancestor closure of start_id?
@@ -833,7 +852,7 @@ class ReportStore:
         with self._lock:
             skill_rows = self._conn.execute(
                 """SELECT id, domain, name, description, bloom_level, difficulty,
-                          parent_skill_id, status, source, superseded_by,
+                          parent_skill_id, status, source, tree_version, superseded_by,
                           created_at, updated_at
                    FROM skills WHERE status = 'active'
                    ORDER BY domain, name"""
@@ -893,7 +912,8 @@ class ReportStore:
             rows = self._conn.execute(
                 f"""SELECT s.id, s.domain, s.name, s.description, s.bloom_level,
                            s.difficulty, s.parent_skill_id, s.status, s.source,
-                           s.superseded_by, s.created_at, s.updated_at,
+                           s.tree_version, s.superseded_by, s.created_at,
+                           s.updated_at,
                            bm25(skills_fts, 10.0, 1.0) AS score
                     FROM skills_fts
                     JOIN skills s ON s.rowid = skills_fts.rowid
@@ -902,7 +922,7 @@ class ReportStore:
                     LIMIT ?""",
                 (fts_query, limit),
             ).fetchall()
-        return [self._row_to_skill(r[:12]) for r in rows]
+        return [self._row_to_skill(r[:13]) for r in rows]
 
     # --- learner state ---
 

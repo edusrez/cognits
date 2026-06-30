@@ -204,6 +204,9 @@ def test_prereq_add_and_cycle_guard(store):
     # 'related' edges bypass cycle detection (unordered).
     store.add_edge(a.id, c.id, "related")
     assert any(p.edge_type == "related" for p in store.get_prerequisites(a.id))
+    # 'soft_prereq' edges also bypass cycle detection (non-blocking).
+    store.add_edge(a.id, c.id, "soft_prereq")
+    assert any(p.edge_type == "soft_prereq" for p in store.get_prerequisites(a.id))
 
 
 def test_topological_walk(store):
@@ -250,3 +253,29 @@ def test_get_tree_emits_json_shapes(store):
     assert isinstance(tree["skills"], list) and isinstance(tree["edges"], list)
     assert any(e["edgeType"] == "prereq" and e["skillId"] == b.id for e in tree["edges"])
     assert all("id" in s and "name" in s for s in tree["skills"])
+
+
+def test_soft_prereq_in_edge_types():
+    assert "soft_prereq" in EDGE_TYPES
+
+
+def test_tree_version_defaults_to_1(store):
+    s = _skill("Test")
+    store.upsert_skill(s)
+    fetched = store.get_skill(s.id)
+    assert fetched.tree_version == 1
+    assert "treeVersion" in store.get_skill(s.id).to_json()
+
+
+def test_bump_tree_version(store):
+    a = _skill("A"); store.upsert_skill(a)
+    b = _skill("B"); store.upsert_skill(b)
+    c = _skill("C"); store.upsert_skill(c)
+    new_v = store.bump_tree_version()
+    assert new_v == 2
+    assert store.get_skill(a.id).tree_version == 2
+    assert store.get_skill(b.id).tree_version == 2
+    # Superseded skills should NOT be bumped (only active ones).
+    store.supersede_skill(c.id, b.id)
+    store.bump_tree_version()
+    assert store.get_skill(c.id).tree_version == 2  # stays at 2, not 3

@@ -549,12 +549,20 @@ Markdown summary structured as:
 ## Roots already mastered
 - <skill names the user brings>
 
-## Skills to acquire (topological order)
+## Skills to acquire (dependency order)
 1. <skill> (prereqs: ...)
 2. ...
 
+(Dependency order means prerequisites before dependents. It is NOT a
+schedule — the study planner handles when to learn each skill.)
+
 ## Notes
 - <any controversies, gaps, or concepts deferred to future builds>
+
+CRITICAL: The skill tree contains ONLY prerequisite dependencies. Do NOT
+include timing, schedules, phases, weeks, or any temporal ordering. Your
+output is a static dependency graph, not a roadmap. Scheduling is the
+Study Planner's job, not yours.
 
 This Markdown becomes a permanent report (the caller saves and RAG-indexes
 it) so future agents (the study-plan architect) can cite "the user's skill
@@ -563,6 +571,9 @@ tree" without rebuilding it.
 ## Rules
 - Persist skills in English; synthesize the final summary in the user's
   language.
+- Do NOT include timing, phases, weeks, or schedules in the final report.
+  The skill tree is a static dependency graph. Scheduling is the Study
+  Planner's job, not yours.
 - Always carry proof_query from the web search that justified an edge.
 - If add_edge returns a cycle error, flip direction and retry — do not
   abandon the edge.

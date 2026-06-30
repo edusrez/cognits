@@ -210,6 +210,14 @@ def test_subagent_labels_includes_skill_planner_and_web_researcher():
     assert SUBAGENT_LABELS.get("directory_reader") == "Directory Reader"
 
 
+def test_skill_planner_prompt_prohibits_timing():
+    from cognits.agent.subagents import SKILL_PLANNER_SYSTEM_PROMPT
+    assert "Do NOT include timing" in SKILL_PLANNER_SYSTEM_PROMPT
+    assert "dependency order" in SKILL_PLANNER_SYSTEM_PROMPT
+    assert "Scheduling is the Study" in SKILL_PLANNER_SYSTEM_PROMPT
+    assert "Planner's job" in SKILL_PLANNER_SYSTEM_PROMPT
+
+
 def test_skill_planner_appears_in_default_agents():
     from cognits.agent.prompts import DEFAULT_AGENTS
     ids = [a["id"] for a in DEFAULT_AGENTS]
