@@ -152,6 +152,15 @@ export async function flushPendingLearningSession() {
   setSessionAgentId("maestro")
   setSessionSkillId(pending.skill_id)
   await saveSessionConfigAsync(session.id)
+  // Kick off the Maestro after a brief delay to let loadSessionConfig
+  // complete on the new activeSessionId (same pattern as onboarding).
+  setTimeout(() => {
+    sendHiddenMessage(
+      "Start teaching this skill now. Follow the pedagogical plan in your " +
+      "system prompt. Begin with Stage 1 and use the Socratic method. " +
+      "Respond in the user's language."
+    )
+  }, 200)
 }
 
 function createCallbacks(): StreamCallbacks {
