@@ -110,17 +110,20 @@ class CreateLearningSession(Tool):
         # Validate the skill exists in the tree.
         if self.store is not None:
             skills = await asyncio.to_thread(self.store.list_skills)
-            found = any(s.name.lower() == skill_name.lower() for s in skills)
-            if not found:
+            match = next((s for s in skills if s.name.lower() == skill_name.lower()), None)
+            if match is None:
                 return tool_error(
                     f"skill '{skill_name}' not found in the skill tree. "
                     "Ask the user to choose a different skill."
                 )
+            skill_id = match.id
+        else:
+            skill_id = ""
 
         if self.emit is not None:
             self.emit({
                 "type": "create_learning_session",
-                "data": {"skill_name": skill_name},
+                "data": {"skill_name": skill_name, "skill_id": skill_id},
             })
 
         return json.dumps({

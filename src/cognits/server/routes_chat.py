@@ -26,6 +26,11 @@ from cognits.agent.subagents import (
     session_analyzer_config,
     skill_planner_config,
     study_planner_config,
+    teacher_config,
+)
+from cognits.agent.prompts import (
+    TEACHER_SYSTEM_PROMPT,
+    default_agent_prompt,
 )
 from cognits.agent.tool_deploy import DeploySubagent
 from cognits.llm.deepseek import DeepSeekClient
@@ -50,6 +55,7 @@ AGENT_LABELS = {
     "directory_reader": "Directory Reader",
     "skill_planner": "Skill Planner",
     "study_planner": "Study Planner",
+    "maestro": "Maestro",
     "system_support": "System Support",
 }
 
@@ -132,6 +138,53 @@ def _build_skills_summary(store, tree: dict) -> str:
         )
 
     return "\n".join(lines)
+
+
+def _build_teacher_system_prompt(
+    skill_id: str, store, profile_ctx: str = ""
+) -> str:
+    """Assemble the 5-layer Teacher system prompt by fetching the skill,
+    learner state, and pedagogical plan from the DB and concatenating them
+    with the static TEACHER_SYSTEM_PROMPT."""
+    prompt = TEACHER_SYSTEM_PROMPT
+
+    if skill_id:
+        skill = store.get_skill(skill_id)
+        if skill:
+            prompt += "\n\n## Skill\n\n"
+            prompt += f"- Name: {skill.name}\n"
+            prompt += f"- Domain: {skill.domain}\n"
+            prompt += f"- Description: {skill.description}\n"
+            if skill.bloom_level:
+                prompt += f"- Bloom level: {skill.bloom_level}\n"
+
+            state = store.get_learner_state(skill_id)
+            if state:
+                prompt += "\n## Learner State\n\n"
+                prompt += f"- Status: {state.status_enum}\n"
+                prompt += f"- p_mastery (BKT): {state.p_mastery:.2f}\n"
+                prompt += f"- Sessions completed: {state.reps}\n"
+                if state.next_review:
+                    prompt += f"- FSRS next review: {state.next_review}\n"
+            else:
+                prompt += "\n## Learner State\n\n(No learner state yet)\n"
+
+            plan = store.get_pedagogical_plan(skill_id)
+            if plan:
+                prompt += "\n## Pedagogical Plan\n\n" + plan
+            else:
+                prompt += (
+                    "\n## Pedagogical Plan\n\n"
+                    "(No pedagogical plan available yet. Teach from your own "
+                    "knowledge but follow a stage-based progression: activate "
+                    "prior knowledge → introduce concept → guided practice → "
+                    "assessment → wrap-up.)\n"
+                )
+
+    if profile_ctx:
+        prompt += "\n## Learner Profile\n\n" + profile_ctx
+
+    return prompt
 
 
 def _extract_declared(text: str) -> dict:
@@ -307,6 +360,20 @@ def register(app: FastAPI, st) -> None:
                             system_prompt += "\n\n## Skill Tree Context\n\n" + summary
                 except Exception:
                     pass
+
+        # Build dynamic Teacher system prompt when in a learning session.
+        if agent_id == "maestro" and sess_cfg is not None and sess_cfg.skill_id:
+            try:
+                profile = (await asyncio.to_thread(st.store.load_profile)) if st.store else None
+                profile_ctx = _build_profile_context(profile) if profile and profile.declared else ""
+                teacher_prompt = await asyncio.to_thread(
+                    _build_teacher_system_prompt, sess_cfg.skill_id,
+                    st.report_store, profile_ctx,
+                )
+                if teacher_prompt:
+                    system_prompt = teacher_prompt
+            except Exception:
+                pass
 
         llm_messages, storage_messages = build_chat_messages(cfg, incoming)
 
@@ -628,6 +695,11 @@ async def _run_agent(
             sp_model, sp_reasoning, sp_max_steps,
             st.report_store, lambda: sid, process_event,
             system_prompt_override=sp_prompt,
+            rag_engine=st.rag if st.rag is not None and st.rag.error is None else None,
+            tf_client=tf_client,
+            llm_client=llm_client,
+            tinyfish_api_key=cfg.tinyfish_api_key,
+            suspended_subagents=st.suspended_subagents,
         )
 
         # Evaluator: available ONLY when the Teacher agent is active (dormant
@@ -651,6 +723,32 @@ async def _run_agent(
                 tinyfish_api_key=cfg.tinyfish_api_key,
                 suspended_subagents=st.suspended_subagents,
             )
+
+        # Teacher (Maestro): available as the main agent of learning sessions.
+        # Its DeploySubagent includes documentalist (for authoritative sources)
+        # and evaluator (for 2-phase assessment with resume_token support).
+        if agent_id == "maestro" and tf_client is not None:
+            te_cfg = subagent_cfgs.get("maestro")
+            te_model = (te_cfg.model if te_cfg else "") or DEFAULT_MODEL
+            te_reasoning = te_cfg.reasoning if te_cfg else reasoning
+            te_max_steps = te_cfg.max_steps if te_cfg else 100
+            te_prompt = cfg.agent_overrides.get("maestro") or None
+            doc_cfg = subagent_cfgs.get("documentalist")
+            doc_model = (doc_cfg.model if doc_cfg else "") or DEFAULT_MODEL
+            doc_reasoning = doc_cfg.reasoning if doc_cfg else reasoning
+            doc_prompt = cfg.agent_overrides.get("documentalist") or None
+            subagent_map["maestro"] = teacher_config(
+                te_model, te_reasoning, te_max_steps,
+                llm_client,
+                st.rag if st.rag is not None and st.rag.error is None else None,
+                tf_client,
+                st.report_store, lambda: sid, process_event,
+                system_prompt_override=te_prompt,
+                tinyfish_api_key=cfg.tinyfish_api_key,
+                suspended_subagents=st.suspended_subagents,
+            )
+            # The documentalist and evaluator have already been registered
+            # earlier; the teacher's DeploySubagent references them by key.
 
         registry = Registry()
         deploy_subagent_tool = DeploySubagent(

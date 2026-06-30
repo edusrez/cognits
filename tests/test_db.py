@@ -142,6 +142,7 @@ def test_session_config_roundtrip(store):
         "model": "deepseek-v4-pro",
         "reasoning": "max",
         "agentId": "orchestrator",
+        "skillId": "",
     }
 
 

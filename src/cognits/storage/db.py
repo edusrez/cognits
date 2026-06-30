@@ -61,7 +61,8 @@ BASE_SCHEMA = """
         provider TEXT NOT NULL DEFAULT 'deepseek',
         model TEXT NOT NULL DEFAULT 'deepseek-v4-pro',
         reasoning TEXT NOT NULL DEFAULT 'max',
-        agent_id TEXT NOT NULL DEFAULT 'orchestrator'
+        agent_id TEXT NOT NULL DEFAULT 'orchestrator',
+        skill_id TEXT NOT NULL DEFAULT ''
     );
 
     CREATE VIRTUAL TABLE IF NOT EXISTS reports_fts USING fts5(
@@ -217,6 +218,17 @@ BASE_SCHEMA = """
     );
     CREATE INDEX IF NOT EXISTS idx_plan_items_plan ON study_plan_items(plan_id);
     CREATE INDEX IF NOT EXISTS idx_plan_items_status ON study_plan_items(status);
+
+    -- One pedagogical plan per skill (the Study Planner generates these
+    -- by researching teaching methodology and synthesising a stage-based
+    -- Markdown guide for the Teacher to follow during a learning session).
+    CREATE TABLE IF NOT EXISTS pedagogical_plans (
+        skill_id TEXT PRIMARY KEY,
+        content TEXT NOT NULL DEFAULT '',
+        generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (skill_id) REFERENCES skills(id)
+    );
 """
 
 
@@ -275,6 +287,7 @@ class SessionConfigRow:
     model: str = ""
     reasoning: str = ""
     agent_id: str = ""
+    skill_id: str = ""
 
     def to_json(self) -> dict:
         return {
@@ -283,6 +296,7 @@ class SessionConfigRow:
             "model": self.model,
             "reasoning": self.reasoning,
             "agentId": self.agent_id,
+            "skillId": self.skill_id,
         }
 
     @classmethod
@@ -293,6 +307,7 @@ class SessionConfigRow:
             model=d.get("model") or "",
             reasoning=d.get("reasoning") or "",
             agent_id=d.get("agentId") or "",
+            skill_id=d.get("skillId") or "",
         )
 
 
@@ -618,6 +633,11 @@ class ReportStore:
                 ).fetchone()[0]
                 if has_api_key:
                     cur.execute("ALTER TABLE session_config DROP COLUMN api_key")
+                has_skill_id = cur.execute(
+                    "SELECT COUNT(*) FROM pragma_table_info('session_config') WHERE name='skill_id'"
+                ).fetchone()[0]
+                if not has_skill_id:
+                    cur.execute("ALTER TABLE session_config ADD COLUMN skill_id TEXT NOT NULL DEFAULT ''")
 
         cur.executescript(BASE_SCHEMA)
 
@@ -1268,20 +1288,43 @@ class ReportStore:
             items = [self._row_to_plan_item(r) for r in item_rows]
         return plan, items
 
+    # --- pedagogical plans ------------------------------------------------
+
+    def save_pedagogical_plan(self, skill_id: str, content: str) -> None:
+        """Persist a stage-based teaching guide for a skill. Overwrites
+        any existing plan for the same skill_id (FOR EACH row is fine —
+        table has no FTS5 index, no INSERT OR REPLACE issues)."""
+        with self._lock:
+            self._conn.execute(
+                """INSERT OR REPLACE INTO pedagogical_plans
+                   (skill_id, content, updated_at)
+                   VALUES (?, ?, datetime('now'))""",
+                (skill_id, content),
+            )
+
+    def get_pedagogical_plan(self, skill_id: str) -> str | None:
+        """Return the Markdown plan for a skill, or None if no plan exists."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT content FROM pedagogical_plans WHERE skill_id = ?",
+                (skill_id,),
+            ).fetchone()
+        return row[0] if row else None
+
     # --- session config ---
 
     def save_session_config(self, cfg: SessionConfigRow) -> None:
         with self._lock:
             self._conn.execute(
-                """INSERT OR REPLACE INTO session_config (session_id, provider, model, reasoning, agent_id)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (cfg.session_id, cfg.provider, cfg.model, cfg.reasoning, cfg.agent_id),
+                """INSERT OR REPLACE INTO session_config (session_id, provider, model, reasoning, agent_id, skill_id)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (cfg.session_id, cfg.provider, cfg.model, cfg.reasoning, cfg.agent_id, cfg.skill_id),
             )
 
     def load_session_config(self, session_id: str) -> SessionConfigRow | None:
         with self._lock:
             row = self._conn.execute(
-                """SELECT session_id, provider, model, reasoning, agent_id
+                """SELECT session_id, provider, model, reasoning, agent_id, skill_id
                    FROM session_config WHERE session_id = ?""",
                 (session_id,),
             ).fetchone()

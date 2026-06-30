@@ -47,7 +47,7 @@ export interface StreamCallbacks {
   onSessionRenamed?: (data: { name: string }) => void
   onUIAction?: (data: any) => void
   onSetupComplete?: (data: any) => void
-  onCreateLearningSession?: (data: { skill_name: string }) => void
+  onCreateLearningSession?: (data: { skill_name: string, skill_id: string }) => void
 }
 
 export async function startChat(sessionId: string, messages: ChatMessage[]): Promise<void> {

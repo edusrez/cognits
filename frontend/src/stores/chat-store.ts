@@ -14,7 +14,7 @@ export const [streamingContent, setStreamingContent] = createSignal("")
 export const [streamingReasoning, setStreamingReasoning] = createSignal("")
 export const [isStreaming, setIsStreaming] = createSignal(false)
 export const [isThinking, setIsThinking] = createSignal(false)
-export const [pendingLearningSession, setPendingLearningSession] = createSignal<{skill_name: string} | null>(null)
+export const [pendingLearningSession, setPendingLearningSession] = createSignal<{skill_name: string, skill_id: string} | null>(null)
 
 const AGENT_LABELS: Record<string, string> = {
   web_researcher: "Web Researcher",
@@ -150,6 +150,7 @@ export async function flushPendingLearningSession() {
   setPendingLearningSession(null)
   const session = await createNewSession()
   setSessionAgentId("maestro")
+  setSessionSkillId(pending.skill_id)
   await saveSessionConfigAsync(session.id)
 }
 
@@ -293,8 +294,8 @@ function createCallbacks(): StreamCallbacks {
         m.setSetupStep("done")
       })
     },
-    onCreateLearningSession(data: { skill_name: string }) {
-      setPendingLearningSession({skill_name: data.skill_name})
+    onCreateLearningSession(data: { skill_name: string, skill_id: string }) {
+      setPendingLearningSession({skill_name: data.skill_name, skill_id: data.skill_id})
     },
   }
 }

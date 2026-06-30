@@ -369,6 +369,7 @@ export const [sessionProvider, setSessionProvider] = createSignal("")
 export const [sessionModel, setSessionModel] = createSignal("")
 export const [sessionReasoning, setSessionReasoning] = createSignal("")
 export const [sessionAgentId, setSessionAgentId] = createSignal("")
+export const [sessionSkillId, setSessionSkillId] = createSignal("")
 
 export const activeProvider = createMemo(() => {
   const sid = activeSessionId()
@@ -412,6 +413,7 @@ export async function loadSessionConfig(sessionId: string) {
   if (cfg.model) setSessionModel(cfg.model)
   if (cfg.reasoning) setSessionReasoning(cfg.reasoning)
   if (cfg.agentId) setSessionAgentId(cfg.agentId)
+  if (cfg.skillId) setSessionSkillId(cfg.skillId)
 }
 
 export function saveSessionConfig(sessionId: string) {
@@ -423,6 +425,7 @@ export function saveSessionConfig(sessionId: string) {
       model: sessionModel(),
       reasoning: sessionReasoning(),
       agentId: sessionAgentId(),
+      skillId: sessionSkillId(),
     }),
   }).catch((err) => console.error("save session config:", err))
 }
@@ -436,6 +439,7 @@ export async function saveSessionConfigAsync(sessionId: string): Promise<void> {
       model: sessionModel(),
       reasoning: sessionReasoning(),
       agentId: sessionAgentId(),
+      skillId: sessionSkillId(),
     }),
   })
 }

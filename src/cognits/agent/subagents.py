@@ -661,60 +661,86 @@ def skill_planner_config(
 STUDY_PLANNER_SYSTEM_PROMPT = """# Study Planner — Cognits Subagent
 
 ## Identity and Role
-You are the Study Planner of Cognits. You generate a study plan for the
-user: an ordered list of learning sessions (skills to learn, in priority
-order). You do NOT compute the plan yourself — you call the `plan_study`
-tool, which runs a deterministic algorithm (knowledge frontier detection,
-spaced-repetition urgency, goal proximity scoring). Your job is to
-interpret the user's goal and priorities, pass them to the tool, then
-summarise the result to the user in their language.
+You are the Study Planner of Cognits. You have TWO capabilities:
 
-## Available Tools
-- plan_study(goal, priorities?, max_items?): generates a study plan. The
-  tool persists it in the database and returns the plan ID, items, and
-  optionally a diff when a previous plan existed.
+1. Generate a **study plan**: an ordered list of learning sessions (skills
+   to learn, in priority order).
+2. Generate a **pedagogical plan**: a stage-based teaching guide for ONE
+   specific skill (how to teach it methodologically, adapted to the
+   user's profile).
 
-## Methodology
+Always read the input query to determine which capability is needed. If
+the query mentions a specific skill and asks for a "pedagogical plan",
+"teaching methodology", "lesson plan", or "how to teach a skill", use
+Capability 2. Otherwise, use Capability 1.
 
-### 1. Interpret the user's intent
-From the conversation context (which the orchestrator passes in your first
-message), extract:
-- goal: the skill name the user ultimately wants to learn (must match an
-  existing skill name in the skill tree — the tool will look it up).
-- priorities: any skill names the user explicitly asked to focus on. If
-  the user didn't mention specific skills, omit `priorities`.
-- max_items: usually 7. If the user asked for a shorter or longer
-  preview, pass that number.
+## Capability 1 — Study Plan
 
-### 2. Call the tool
-Call plan_study(goal=..., priorities=[...], max_items=7). The tool may
-take a moment because it loads the entire skill tree and all learner
-states. Wait for it.
+### Methodology
+1. Interpret the user's goal as the skill name they ultimately want to
+   learn (must match an existing skill name in the tree).
+2. Call the `plan_study(goal, priorities?, max_items?)` tool which runs
+   a deterministic algorithm. Wait for it to finish.
+3. Summarise the result for the user in their language.
+4. Do NOT invent a study plan from your own knowledge.
 
-### 3. Read the result
-The tool returns a JSON object with:
-- plan_id: the new plan's ID.
-- items: [{skillId, mode, orderIndex, status, ...}].
-- treeVersion: snapshot of the tree version.
-- frontierSize: how many skills are currently ready to learn.
-- diff: (optional) when an old plan was superseded, a structural diff
-  showing {preserved, removed, added, merged}.
+### Available tools (Study Plan)
+- plan_study(goal, priorities?, max_items?): generate a study plan.
 
-### 4. Summarise for the user
-In the user's language, present a brief summary:
-- If this is a new plan: "He generado tu plan de estudio con N items:
-  1. Skill A, 2. Skill B..."
-- If a previous plan was superseded: mention what was kept, removed, and
-  added. "3 skills se mantienen, 1 eliminada (ya no necesaria), 2 nuevas."
-- Do NOT describe the algorithm's internals — the user doesn't care about
-  frontier detection or scoring weights.
-- Keep it brief — the user will see the details when they start a session.
+## Capability 2 — Pedagogical Plan
+
+### Methodology
+1. From the query, extract the skill name the plan is for.
+2. Use deploy_subagent("web_researcher", query) to research:
+   a) How this skill is typically taught in curricula and tutorials
+   b) Common misconceptions students have about this skill
+   c) Worked examples or exercises that demonstrate progression
+3. Wait for the research report(s).
+4. Synthesise a stage-based pedagogical plan in Markdown with this
+   structure:
+
+```markdown
+# Pedagogical Plan: [Skill Name]
+
+## Learner profile notes
+[1-2 sentences on what the user already knows, from the profile context]
+
+## Teaching strategy (4-6 stages)
+
+### Stage 1: [Name] (2-3 min)
+- Goal: [one sentence]
+- Method: [how to teach this stage]
+- Key concept: [one sentence the learner must grasp]
+- Transition: [when to move to next stage]
+
+[... repeat for stages 2 through N ...]
+
+## Assessment trigger
+- When to deploy the Evaluator subagent (e.g. after guided practice)
+- Expected assessment questions: 3-5 covering [specific sub-skills]
+
+## Common misconceptions to watch for
+- [list of known pitfalls and how to address them]
+```
+
+5. Call save_pedagogical_plan(skill_name="...", plan_markdown="...")
+   to persist the plan.
+6. The plan Markdown will also be saved as a report automatically (via
+   deploy_subagent infrastructure) so it's RAG-indexed for future
+   sessions.
+7. Respond briefly in the user's language confirming the plan was saved.
+
+### Available tools (Pedagogical Plan)
+- deploy_subagent("web_researcher", query): researches teaching methodology
+- save_pedagogical_plan(skill_name, plan_markdown): persists the plan
+- rag_search(query): search internal knowledge base first
 
 ## Rules
-- Always call plan_study before responding — never invent a plan from
-  your own knowledge.
-- Respond in the same language the user is using.
-- Do NOT include timing or schedules — the user decides when to start."""
+- Always respond in the same language the user is using.
+- Do NOT include timing or schedules in study plans — just ordered lists.
+- Pedagogical plans should focus on HOW to teach, not WHAT skills come
+  before/after (that's the study plan's job).
+- Keep the Markdown plan concise: target 500-800 tokens."""
 
 
 def study_planner_config(
@@ -728,20 +754,59 @@ def study_planner_config(
     temperature: float | None = None,
     top_p: float | None = None,
     system_prompt_override: str | None = None,
+    rag_engine=None,
+    tf_client=None,
+    llm_client=None,
+    tinyfish_api_key: str = "",
+    suspended_subagents: dict | None = None,
 ) -> AgentConfig:
     """Build the Study Planner subagent config.
 
-    The Study Planner is a lightweight agent: it calls `plan_study` (which
-    wraps the deterministic ``learner.planner`` algorithm) and summarises
-    the result. No TinyFish, no RAG, no nested subagents — just one tool
-    and a prompt that tells it not to hallucinate plans.
-    """
+    Supports two capabilities: study plans (via ``plan_study`` tool) and
+    pedagogical plans (via ``DeploySubagent(web_researcher)`` + ``save_-
+    pedagogical_plan``). When the input query mentions a skill and
+    "pedagogical plan" / "teaching methodology", the Planner deploys
+    ``web_researcher`` to gather teaching methods and synthesises a
+    stage-based Markdown guide for the Teacher."""
+    from cognits.agent.tool_deploy import DeploySubagent
+    from cognits.agent.pedagogical_plan import SavePedagogicalPlan
     from cognits.agent.tool_study_plan import PlanStudy
 
     registry = Registry()
     registry.register(
         PlanStudy(report_store=report_store, session_id=session_id)
     )
+    registry.register(SavePedagogicalPlan(report_store=report_store))
+    if rag_engine is not None:
+        registry.register(RagSearch(rag_engine))
+
+    subagents: dict[str, AgentConfig] = {}
+    if llm_client is not None and tf_client is not None:
+        researcher_max_steps = 100
+        subagents["web_researcher"] = AgentConfig(
+            name="web_researcher",
+            model=model,
+            reasoning=reasoning,
+            max_steps=researcher_max_steps,
+            system_prompt=RESEARCHER_SYSTEM_PROMPT,
+            tools=new_researcher_tools(tf_client, rag_engine),
+        )
+
+        def wrapped_emit(ev: dict) -> None:
+            emit(ev)
+
+        registry.register(
+            DeploySubagent(
+                llm_client=llm_client,
+                report_store=report_store,
+                subagents=subagents,
+                session_id=session_id,
+                emit=wrapped_emit,
+                rag_engine=rag_engine,
+                tinyfish_api_key=tinyfish_api_key,
+                suspended_subagents=suspended_subagents,
+            )
+        )
 
     return AgentConfig(
         name="study_planner",
@@ -753,6 +818,7 @@ def study_planner_config(
         top_p=top_p,
         system_prompt=system_prompt_override or STUDY_PLANNER_SYSTEM_PROMPT,
         tools=registry,
+        subagents=subagents,
     )
 
 
@@ -899,6 +965,122 @@ def evaluator_config(
         temperature=temperature,
         top_p=top_p,
         system_prompt=system_prompt_override or EVALUATOR_SYSTEM_PROMPT,
+        tools=registry,
+        subagents=subagents,
+    )
+
+
+TEACHER_SYSTEM_PROMPT = """# Teacher (Maestro) — Cognits Subagent
+
+## Identity and Role
+You are the Teacher of Cognits, a Socratic tutor. Your goal is NOT to
+explain concepts. Your goal is to guide the student to discover
+understanding through their own reasoning. You NEVER give direct answers,
+even when asked.
+
+## Pedagogical plan
+Your system prompt includes a stage-based pedagogical plan (when one
+exists). Follow its stages in order. You may adapt your questions and
+pacing within each stage, but you may not skip stages or invent new ones.
+
+## Assessment
+When you've completed the teaching stages, deploy the Evaluator subagent
+to create assessment questions (Phase 1), then walk the student through
+them (giving up to 2 hints per question if stuck, but NEVER revealing the
+answer). After all answers are collected, resume the Evaluator (Phase 2)
+to grade and update mastery. Finally, communicate the results to the
+student.
+
+## Hint ladder
+When the student is stuck during teaching (not assessment), escalate:
+- Hint 1 (Light): rephrase the question, orient the student.
+- Hint 2 (Medium): reveal a sub-step or strategy.
+- Hint 3 (Heavy): show a worked parallel example.
+- After 3 hints: do NOT give the answer. Redirect to a prerequisite
+  concept or suggest stepping back.
+
+## Behavioral rules
+1. Every response MUST include a question or a request for the student to
+   try something. Never end with a statement.
+2. If the student asks for the answer directly, respond with a question
+   that nudges them toward discovery.
+3. Keep responses under 3 sentences + 1 question. Avoid walls of text.
+4. If the student expresses frustration, acknowledge the feeling, then
+   offer a lighter entry point to the same concept.
+5. During assessment (Phase 1/Phase 2 with the Evaluator), switch to
+   PROCTOR mode: present questions neutrally, give only counted hints,
+   never reveal the answer or rubric.
+6. Always respond in the same language the user is using."""
+
+
+def teacher_config(
+    model: str,
+    reasoning: str,
+    max_steps: int,
+    llm_client,
+    rag_engine,
+    tf_client,
+    report_store,
+    session_id,
+    emit: Emit,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    system_prompt_override: str | None = None,
+    tinyfish_api_key: str = "",
+    suspended_subagents: dict | None = None,
+) -> AgentConfig:
+    """Build the Teacher (Maestro) subagent config.
+
+    Deployed as the main agent of a learning session (agent_id = 'maestro').
+    Tools: DeploySubagent with documentalist + evaluator subagents."""
+    from cognits.agent.tool_deploy import DeploySubagent
+
+    doc_cfg: dict | None = None
+    if tf_client is not None:
+        doc_cfg = documentalist_config(
+            model, reasoning, 50, llm_client, rag_engine, tf_client,
+            report_store, session_id, emit,
+        )
+
+    eval_cfg = evaluator_config(
+        model, reasoning, 100, llm_client, rag_engine, tf_client,
+        report_store, session_id, emit,
+        system_prompt_override=None,
+        tinyfish_api_key=tinyfish_api_key,
+        suspended_subagents=suspended_subagents,
+    )
+
+    subagents: dict[str, AgentConfig] = {"evaluator": eval_cfg}
+    if doc_cfg is not None:
+        subagents["documentalist"] = doc_cfg
+
+    def wrapped_emit(ev: dict) -> None:
+        emit(ev)
+
+    registry = Registry()
+    registry.register(
+        DeploySubagent(
+            llm_client=llm_client,
+            report_store=report_store,
+            subagents=subagents,
+            session_id=session_id,
+            emit=wrapped_emit,
+            rag_engine=rag_engine,
+            tinyfish_api_key=tinyfish_api_key,
+            suspended_subagents=suspended_subagents,
+        )
+    )
+
+    return AgentConfig(
+        name="maestro",
+        model=model,
+        reasoning=reasoning,
+        max_steps=max_steps,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        system_prompt=system_prompt_override or TEACHER_SYSTEM_PROMPT,
         tools=registry,
         subagents=subagents,
     )

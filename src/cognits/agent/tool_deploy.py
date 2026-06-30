@@ -24,6 +24,7 @@ SUBAGENT_LABELS: dict[str, str] = {
     "skill_planner": "Skill Planner",
     "study_planner": "Study Planner",
     "evaluator": "Evaluator",
+    "teacher": "Teacher",
 }
 
 

@@ -8,6 +8,7 @@ from cognits.agent.subagents import (
     SESSION_ANALYZER_SYSTEM_PROMPT,
     SKILL_PLANNER_SYSTEM_PROMPT,
     STUDY_PLANNER_SYSTEM_PROMPT,
+    TEACHER_SYSTEM_PROMPT,
 )
 
 DEFAULT_AGENT_ID = "orchestrator"
@@ -64,10 +65,11 @@ ORCHESTRATOR_SYSTEM_PROMPT = (
     "4. If the user asks for a full study plan, call "
     "deploy_subagent(\"study_planner\", \"Generate a study plan for goal "
     "X, priorities: ...\"). The study planner will return an ordered plan.\n"
-    "5. When the user confirms they want to learn a specific skill, call "
-    "create_learning_session(skill_name=\"...\"). The UI will create a new "
-    "learning session and transition automatically. Do NOT continue the "
-    "conversation after calling this tool — the session is over.\n\n"
+    "5. When the user confirms they want to learn a specific skill, first "
+    "deploy_subagent(\"study_planner\", \"Generate pedagogical plan for "
+    "skill X. User profile: ...\"). Wait for the plan, then briefly "
+    "describe the stages to the user and ask for final confirmation. "
+    "Only after that call create_learning_session(skill_name=\"...\").\n\n"
     "### What NOT to do\n"
     "- Do NOT teach in Planning Mode. Your job is to guide the choice, not "
     "to explain concepts. Teaching is the Teacher's job in the learning "
@@ -223,6 +225,11 @@ DEFAULT_AGENTS = [
         "id": "evaluator",
         "name": "Evaluator",
         "systemPrompt": EVALUATOR_SYSTEM_PROMPT,
+    },
+    {
+        "id": "maestro",
+        "name": "Maestro",
+        "systemPrompt": TEACHER_SYSTEM_PROMPT,
     },
     {
         "id": "system_support",
