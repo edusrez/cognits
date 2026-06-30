@@ -13,6 +13,7 @@ import {
   type Session,
 } from "../stores/session-store"
 import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
+import { isStreaming, sendHiddenMessage } from "../stores/chat-store"
 import { listDragState, initiateListDrag, moveHint } from "../drag/drag-state"
 import ContextMenu from "./ContextMenu"
 
@@ -104,7 +105,19 @@ export default function Sessions() {
           createNewSession()
         }}
       >
-        + Create Session
+        + Free Session
+      </button>
+      <button
+        class="border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors w-full text-left cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        disabled={isCreatingSession() || isStreaming()}
+        onClick={(e) => {
+          e.stopPropagation()
+          createNewSession().then(() =>
+            sendHiddenMessage("Start planning mode. Help the user decide which skill to learn next. Present the knowledge frontier and recommend the highest-priority skill.")
+          )
+        }}
+      >
+        + Learning Session
       </button>
 
       <For each={displaySessions()}>

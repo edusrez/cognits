@@ -1,8 +1,9 @@
 import { createSignal, createMemo, batch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { startChat, type ChatMessage, type ChatUsage, type StreamCallbacks, type HistorySnapshot } from "../lib/chat-stream"
-import { activeSessionId } from "./session-store"
+import { activeSessionId, createNewSession } from "./session-store"
 import { setTabHidden, activateTab } from "./viewport-tree-store"
+import { setSessionAgentId, saveSessionConfigAsync } from "./settings-store"
 import { ChatConnection } from "./chat-connection"
 
 export type { ChatMessage, ChatUsage }
@@ -13,6 +14,7 @@ export const [streamingContent, setStreamingContent] = createSignal("")
 export const [streamingReasoning, setStreamingReasoning] = createSignal("")
 export const [isStreaming, setIsStreaming] = createSignal(false)
 export const [isThinking, setIsThinking] = createSignal(false)
+export const [pendingLearningSession, setPendingLearningSession] = createSignal<{skill_name: string} | null>(null)
 
 const AGENT_LABELS: Record<string, string> = {
   web_researcher: "Web Researcher",
@@ -140,6 +142,15 @@ export async function cancelStreaming() {
     connection.disconnect()
     setIsStreaming(false)
   }
+}
+
+export async function flushPendingLearningSession() {
+  const pending = pendingLearningSession()
+  if (!pending) return
+  setPendingLearningSession(null)
+  const session = await createNewSession()
+  setSessionAgentId("maestro")
+  await saveSessionConfigAsync(session.id)
 }
 
 function createCallbacks(): StreamCallbacks {
@@ -283,9 +294,7 @@ function createCallbacks(): StreamCallbacks {
       })
     },
     onCreateLearningSession(data: { skill_name: string }) {
-      // Fase 10: createNewSession() + save session config with
-      // agent_id="maestro".  For now, log to console.
-      console.log("create_learning_session", data)
+      setPendingLearningSession({skill_name: data.skill_name})
     },
   }
 }

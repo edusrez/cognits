@@ -13,7 +13,7 @@ import {
 import { dragState, endDrag, listDragState, endListDrag, moveHint, setMoveHint } from "./drag/drag-state"
 import { activeSessionId } from "./stores/session-store"
 import { loadConfig, defaultChatViewport, defaultWriteViewport, loadSessionConfig, linkedViewport } from "./stores/settings-store"
-import { loadSessionMessages, sendHiddenMessage } from "./stores/chat-store"
+import { loadSessionMessages, sendHiddenMessage, isStreaming, pendingLearningSession, flushPendingLearningSession } from "./stores/chat-store"
 import { initDesktops } from "./stores/desktop-store"
 import { isSetupActive, setupStep, interviewMessageSent, setInterviewMessageSent, initSetup } from "./stores/setup-store"
 import { setDisplayThinking, saveConfig } from "./stores/settings-store"
@@ -78,6 +78,15 @@ export default function App() {
       }
     } else {
       removeSessionTabs()
+    }
+  }))
+
+  // Planning → learning session deferred transition: when isStreaming
+  // transitions from true→false and a pending learning session exists,
+  // create the new learning session with agentId="maestro".
+  createEffect(on(isStreaming, (streaming, prev) => {
+    if (prev && !streaming && pendingLearningSession()) {
+      flushPendingLearningSession()
     }
   }))
 

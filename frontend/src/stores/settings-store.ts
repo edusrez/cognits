@@ -427,6 +427,19 @@ export function saveSessionConfig(sessionId: string) {
   }).catch((err) => console.error("save session config:", err))
 }
 
+export async function saveSessionConfigAsync(sessionId: string): Promise<void> {
+  await fetch(`/api/sessions/${sessionId}/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      provider: sessionProvider(),
+      model: sessionModel(),
+      reasoning: sessionReasoning(),
+      agentId: sessionAgentId(),
+    }),
+  })
+}
+
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
 export async function loadConfig() {
