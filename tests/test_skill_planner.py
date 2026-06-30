@@ -203,6 +203,13 @@ def test_deploy_subagent_enum_includes_skill_planner():
     assert "skill_planner" in DeploySubagent.schema["properties"]["type"]["enum"]
 
 
+def test_subagent_labels_includes_skill_planner_and_web_researcher():
+    from cognits.agent.tool_deploy import SUBAGENT_LABELS
+    assert SUBAGENT_LABELS.get("skill_planner") == "Skill Planner"
+    assert SUBAGENT_LABELS.get("web_researcher") == "Web Researcher"
+    assert SUBAGENT_LABELS.get("directory_reader") == "Directory Reader"
+
+
 def test_skill_planner_appears_in_default_agents():
     from cognits.agent.prompts import DEFAULT_AGENTS
     ids = [a["id"] for a in DEFAULT_AGENTS]

@@ -19,6 +19,7 @@ const AGENT_LABELS: Record<string, string> = {
   documentalist: "Documentalist",
   session_analyzer: "Session Analyzer",
   directory_reader: "Directory Reader",
+  skill_planner: "Skill Planner",
   system_support: "System Support",
   "": "Agent",
 }

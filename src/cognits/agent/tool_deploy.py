@@ -15,6 +15,15 @@ from cognits.tools import Tool, tool_error
 
 log = logging.getLogger("cognits.deploy")
 
+# Display labels for subagent types, used when the outer deploy wrapper
+# translates a tool_start(deploy_subagent) into a "Deploying <label>..."
+# tool_progress message.
+SUBAGENT_LABELS: dict[str, str] = {
+    "web_researcher": "Web Researcher",
+    "directory_reader": "Directory Reader",
+    "skill_planner": "Skill Planner",
+}
+
 
 def extract_title(content: str, fallback: str) -> str:
     for line in content.split("\n"):
@@ -128,14 +137,17 @@ class DeploySubagent(Tool):
         subagent = Agent(cfg, self.llm_client)
 
         emitted_first = False
+        deploy_count = 0
 
         def emit(ev: dict) -> None:
             nonlocal emitted_first
+            nonlocal deploy_count
             if self.emit is None:
                 return
             t = ev["type"]
             if t == "reasoning":
                 emitted_first = False
+                deploy_count = 0
                 self.emit({"type": "tool_progress", "data": {"message": "Thinking...", "agent": cfg.name}})
                 return
             if t == "token":
@@ -147,6 +159,21 @@ class DeploySubagent(Tool):
                 emitted_first = False
                 data = ev.get("data")
                 tool = data.get("tool", "") if isinstance(data, dict) else ""
+                if tool == "deploy_subagent":
+                    deploy_count += 1
+                    raw_args = data.get("args", "{}") if isinstance(data, dict) else "{}"
+                    try:
+                        sub_type = json.loads(raw_args).get("type", "") if isinstance(data, dict) else ""
+                    except Exception:
+                        sub_type = ""
+                    label = SUBAGENT_LABELS.get(sub_type, sub_type or "subagent")
+                    suffix = f" (x{deploy_count})" if deploy_count > 1 else ""
+                    msg = f"Deploying {label}{suffix}..."
+                    agent = data.get("agent", cfg.name) if isinstance(data, dict) else cfg.name
+                    self.emit({"type": "tool_progress", "data": {"message": msg, "agent": agent}})
+                    return
+
+                deploy_count = 0
                 msg = "Searching the Web..."
                 if tool == "tinyfish_fetch_content":
                     msg = "Reading Results..."
