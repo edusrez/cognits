@@ -14,8 +14,9 @@ frontend/node_modules/
 frontend/dist/
 
 # Internal design docs and dev tooling
+"CONVERSACIÓN_CON_LA_IDEA.md"
 IDEA.md
-CONVERSACION_CON_LA_IDEA.md
+ROADMAP-*.md
 AGENTS.md
 .opencode/
 opencode.jsonc
