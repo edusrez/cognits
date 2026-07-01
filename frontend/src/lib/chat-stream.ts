@@ -2,8 +2,7 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system" | "hidden_user"
   content: string
   reasoning?: string
-  reportId?: string
-  reportTitle?: string
+  reports?: { reportId: string; reportTitle: string }[]
 }
 
 export interface ChatUsage {
@@ -26,8 +25,7 @@ export interface HistorySnapshot {
   toolFavicons?: string[]
   liveContent: string
   liveReasoning: string
-  liveReportId: string
-  liveReportTitle: string
+  liveReports?: { reportId: string; reportTitle: string }[]
   agentActive: boolean
 }
 
@@ -114,8 +112,7 @@ export async function streamSession(
               toolStatus: json.toolStatus || null,
               liveContent: json.liveContent || "",
               liveReasoning: json.liveReasoning || "",
-              liveReportId: json.liveReportId || "",
-              liveReportTitle: json.liveReportTitle || "",
+              liveReports: json.liveReports || [],
               agentActive: json.agentActive === true,
             })
             continue

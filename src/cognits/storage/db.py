@@ -42,6 +42,7 @@ BASE_SCHEMA = """
         reasoning TEXT,
         report_id TEXT,
         report_title TEXT,
+        reports TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_messages_session
@@ -265,19 +266,26 @@ class MessageRow:
     reasoning: str = ""
     report_id: str = ""
     report_title: str = ""
+    reports: str = ""
     created_at: str = ""
 
     def to_json(self) -> dict:
-        return {
+        result = {
             "id": self.id,
             "sessionId": self.session_id,
             "role": self.role,
             "content": self.content,
             "reasoning": self.reasoning,
-            "reportId": self.report_id,
-            "reportTitle": self.report_title,
             "createdAt": self.created_at,
         }
+        if self.reports:
+            try:
+                result["reports"] = json.loads(self.reports)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        elif self.report_id:
+            result["reports"] = [{"reportId": self.report_id, "reportTitle": self.report_title}]
+        return result
 
 
 @dataclass
@@ -640,6 +648,13 @@ class ReportStore:
                     cur.execute("ALTER TABLE session_config ADD COLUMN skill_id TEXT NOT NULL DEFAULT ''")
 
         cur.executescript(BASE_SCHEMA)
+
+        if version < 1:
+            has_reports = cur.execute(
+                "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name='reports'"
+            ).fetchone()[0]
+            if not has_reports:
+                cur.execute("ALTER TABLE messages ADD COLUMN reports TEXT NOT NULL DEFAULT ''")
 
         if version < SCHEMA_VERSION:
             cur.execute("INSERT INTO reports_fts(reports_fts) VALUES('rebuild')")
@@ -1347,10 +1362,10 @@ class ReportStore:
             try:
                 cur.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
                 cur.executemany(
-                    """INSERT INTO messages (session_id, role, content, reasoning, report_id, report_title)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    """INSERT INTO messages (session_id, role, content, reasoning, report_id, report_title, reports)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     [
-                        (session_id, m.role, m.content, m.reasoning, m.report_id, m.report_title)
+                        (session_id, m.role, m.content, m.reasoning, m.report_id, m.report_title, m.reports)
                         for m in msgs
                     ],
                 )
@@ -1365,16 +1380,17 @@ class ReportStore:
         # conversation.
         with self._lock:
             self._conn.execute(
-                """INSERT INTO messages (session_id, role, content, reasoning, report_id, report_title)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (session_id, m.role, m.content, m.reasoning, m.report_id, m.report_title),
+                """INSERT INTO messages (session_id, role, content, reasoning, report_id, report_title, reports)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (session_id, m.role, m.content, m.reasoning, m.report_id, m.report_title, m.reports),
             )
 
     def load_messages(self, session_id: str) -> list[MessageRow]:
         with self._lock:
             rows = self._conn.execute(
                 """SELECT id, session_id, role, content, COALESCE(reasoning,''),
-                          COALESCE(report_id,''), COALESCE(report_title,''), created_at
+                          COALESCE(report_id,''), COALESCE(report_title,''),
+                          COALESCE(reports,''), created_at
                    FROM messages WHERE session_id = ? ORDER BY id ASC""",
                 (session_id,),
             ).fetchall()

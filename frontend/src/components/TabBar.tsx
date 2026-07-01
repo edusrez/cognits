@@ -77,7 +77,11 @@ export default function TabBar(props: {
               {tab.id === "chat" ? (
                 <div class="grid grid-cols-[1fr_auto_1fr] items-center w-full gap-1 min-w-0">
                   <span class="truncate text-[10px] text-[#5a5a5a]">
-                    {Object.values(currentToolStatus()).join(", ") || (isThinking() ? "Thinking..." : isStreaming() ? "Writing..." : "Ready")}
+                    {Object.entries(currentToolStatus()).map(([agent, status]) => {
+                      const cleanStatus = status.endsWith("...") ? status.replace(/\.\.\.$/, "") : status
+                      const animated = status.endsWith("...")
+                      return `${agent}: ${cleanStatus}${animated ? "" : ""}`
+                    }).join(" | ") || (isThinking() ? "Thinking..." : isStreaming() ? "Writing..." : "Ready")}
                   </span>
                   <span class="text-[11px] whitespace-nowrap">{tab.label}</span>
                   <div class="w-10 h-1.5 border border-white/15 justify-self-end">

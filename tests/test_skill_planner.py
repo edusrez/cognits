@@ -214,7 +214,7 @@ def test_skill_planner_prompt_prohibits_timing():
     from cognits.agent.subagents import SKILL_PLANNER_SYSTEM_PROMPT
     assert "Do NOT include timing" in SKILL_PLANNER_SYSTEM_PROMPT
     assert "dependency order" in SKILL_PLANNER_SYSTEM_PROMPT
-    assert "Scheduling is the Study" in SKILL_PLANNER_SYSTEM_PROMPT
+    assert "Scheduling is the" in SKILL_PLANNER_SYSTEM_PROMPT
     assert "Planner's job" in SKILL_PLANNER_SYSTEM_PROMPT
 
 

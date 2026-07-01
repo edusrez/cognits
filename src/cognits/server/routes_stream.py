@@ -33,13 +33,18 @@ def _dumps(data) -> str:
 
 
 def _message_dict(m: MessageRow) -> dict:
-    return {
+    result = {
         "role": m.role,
         "content": m.content,
         "reasoning": m.reasoning,
-        "reportId": m.report_id,
-        "reportTitle": m.report_title,
     }
+    if m.reports:
+        import json
+        try:
+            result["reports"] = json.loads(m.reports)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return result
 
 
 def _format_event(ev: dict) -> str:
@@ -77,8 +82,7 @@ def register(app: FastAPI, st) -> None:
             "toolFavicons": snap.tool_favicons,
             "liveContent": snap.live_content,
             "liveReasoning": snap.live_reasoning,
-            "liveReportId": snap.live_report_id,
-            "liveReportTitle": snap.live_report_title,
+            "liveReports": snap.live_reports,
             "agentActive": True,
         }
 

@@ -32,7 +32,8 @@ class DeepSeekClient:
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(
                 connect=10.0, read=STREAM_IDLE_TIMEOUT, write=30.0, pool=10.0
-            )
+            ),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=4),
         )
 
     async def aclose(self) -> None:

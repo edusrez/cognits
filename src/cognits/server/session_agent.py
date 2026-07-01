@@ -28,8 +28,7 @@ class AgentSnapshot:
     tool_favicons: list[str] = field(default_factory=list)
     live_content: str = ""
     live_reasoning: str = ""
-    live_report_id: str = ""
-    live_report_title: str = ""
+    live_reports: list[dict] = field(default_factory=list)
 
 
 class SessionAgent:
@@ -44,8 +43,7 @@ class SessionAgent:
         self.tool_favicons: list[str] = []
         self.live_content = ""
         self.live_reasoning = ""
-        self.live_report_id = ""
-        self.live_report_title = ""
+        self.live_reports: list[dict] = []
         self.subscribers: dict[asyncio.Queue, None] = {}
 
     def publish(self, event: dict, update: Callable[[], None] | None = None) -> None:
@@ -69,8 +67,7 @@ class SessionAgent:
             tool_favicons=list(self.tool_favicons),
             live_content=self.live_content,
             live_reasoning=self.live_reasoning,
-            live_report_id=self.live_report_id,
-            live_report_title=self.live_report_title,
+            live_reports=list(self.live_reports),
         )
         return q, snap
 

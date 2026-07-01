@@ -36,10 +36,12 @@ class RagEngine:
         self.ready = asyncio.Event()
         self.error: str | None = None
         self.progress: int = 0
-        self._model = None
         self._collection = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._warm_proc: multiprocessing.Process | None = None
+        self._worker_proc: multiprocessing.Process | None = None
+        self._worker_pipe: object | None = None
+        self._model = None
 
     @classmethod
     def start_background(cls) -> "RagEngine":
@@ -113,7 +115,7 @@ class RagEngine:
                                    "onnx/sentencepiece.bpe.model"],
             )
             # Step 2: load model (ONNX init, uses cache from step 1).
-            _ = TextEmbedding(model_name="BAAI/bge-m3", cache_dir=cache_dir)
+            _ = TextEmbedding(model_name="BAAI/bge-m3", cache_dir=cache_dir, threads=1)
         except Exception as e:
             if error_queue is not None:
                 error_queue.put(f"{type(e).__name__}: {e}")
@@ -207,6 +209,18 @@ class RagEngine:
             if self._loop:
                 self._loop.call_soon_threadsafe(self.ready.set)
         self._executor.shutdown(wait=False, cancel_futures=True)
+        if self._worker_pipe is not None:
+            try:
+                self._worker_pipe.send(("shutdown", None))
+                self._worker_pipe.recv()
+            except Exception:
+                pass
+        if self._worker_proc is not None and self._worker_proc.is_alive():
+            try:
+                self._worker_proc.kill()
+                self._worker_proc.join(timeout=2)
+            except Exception:
+                pass
 
     def _require_ready(self) -> None:
         if not self.ready.is_set():
@@ -214,37 +228,12 @@ class RagEngine:
                 raise RagNotReady(f"RAG engine not available: {self.error}")
             raise RagNotReady("RAG engine still loading, retry in a few seconds")
 
-    def _ensure_model(self) -> None:
-        """Load BGE-M3 on first use — deferred so startup spinner stays smooth.
-        Called from the executor thread; blocks briefly during ONNX init
-        (~200-500 ms) but has no impact on the TUI spinner."""
-        if self._model is not None:
-            return
-        from fastembed import TextEmbedding
-        from fastembed.common.model_description import ModelSource, PoolingType
-
-        path = os.dup(2)
-        devnull = os.open(os.devnull, os.O_WRONLY)
-        os.dup2(devnull, 2)
-        os.close(devnull)
-        try:
-            TextEmbedding.add_custom_model(
-                model="BAAI/bge-m3",
-                pooling=PoolingType.CLS,
-                normalization=True,
-                sources=ModelSource(hf="BAAI/bge-m3"),
-                dim=1024,
-                model_file="onnx/model.onnx",
-                description="Text embeddings, Unimodal, Multilingual (100+ languages), 8192 tokens",
-                license="mit",
-                size_in_gb=2.27,
-                additional_files=["onnx/model.onnx_data",
-                                   "onnx/sentencepiece.bpe.model"],
-            )
-            self._model = TextEmbedding(model_name="BAAI/bge-m3")
-        finally:
-            os.dup2(path, 2)
-            os.close(path)
+    def _ensure_worker(self) -> object:
+        if self._worker_pipe is not None:
+            return self._worker_pipe
+        from cognits.rag.embedding_worker import start_worker
+        self._worker_proc, self._worker_pipe = start_worker()
+        return self._worker_pipe
 
     async def _run(self, fn, *args):
         loop = asyncio.get_running_loop()
@@ -270,13 +259,26 @@ class RagEngine:
 
     # --- synchronous implementation (only on the executor thread) ---
 
+    def _worker_embed(self, texts: list[str]) -> list[list[float]]:
+        pipe = self._ensure_worker()
+        pipe.send(("embed", texts))
+        status, result = pipe.recv()
+        if status != "ok":
+            raise RagNotReady(f"embedding worker error: {result}")
+        return result
+
+    def _worker_query_embed(self, query: str) -> list[float]:
+        pipe = self._ensure_worker()
+        pipe.send(("query_embed", query))
+        status, result = pipe.recv()
+        if status != "ok":
+            raise RagNotReady(f"embedding worker error: {result}")
+        return result
+
     def _search_sync(self, query: str, max_results: int) -> list[dict]:
-        self._ensure_model()
-        # query_embed returns a generator with ONE embedding; wrapping the
-        # entire list in another list produced shape 1x1x1024 and broke.
-        query_embedding = next(iter(self._model.query_embed(query)))
+        query_embedding = self._worker_query_embed(query)
         results = self._collection.query(
-            query_embeddings=[query_embedding.tolist()],
+            query_embeddings=[query_embedding],
             n_results=max_results,
             include=["documents", "metadatas", "distances"],
         )
@@ -299,19 +301,20 @@ class RagEngine:
         return chunks
 
     def _index_sync(self, chunks: list[dict]) -> int:
-        self._ensure_model()
         texts = [c["text"] for c in chunks]
         ids = [c["id"] for c in chunks]
         metadatas = [
             {k: v for k, v in c.items() if k not in ("id", "text")} for c in chunks
         ]
 
-        embeddings = list(self._model.embed(texts, batch_size=min(len(texts), 32)))
+        embeddings = self._worker_embed(texts)
         self._collection.add(
             ids=ids,
-            embeddings=[e.tolist() for e in embeddings],
+            embeddings=embeddings,
             documents=texts,
             metadatas=metadatas,
         )
         log.info("rag: indexed %d chunks (total: %d)", len(chunks), self._collection.count())
+        del embeddings, texts, ids, metadatas
+        import gc; gc.collect()
         return len(chunks)

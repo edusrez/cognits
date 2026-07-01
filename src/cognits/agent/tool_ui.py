@@ -1,4 +1,4 @@
-"""UI manipulation tool for the System Support agent."""
+"""UI manipulation tools."""
 
 from __future__ import annotations
 
@@ -9,62 +9,6 @@ from collections.abc import Awaitable, Callable
 
 from cognits.tools import Tool, tool_error
 from cognits.storage.files import StudentProfile
-
-
-class ToggleTabVisibility(Tool):
-    def __init__(self, emit=None):
-        self.emit = emit
-
-    name = "toggle_tab_visibility"
-    description = (
-        "Show or hide a tab in the user interface. Use this to guide the "
-        "user through the interface: show Settings when needed, hide setup "
-        "after onboarding, etc. Always explain what you're doing before "
-        "calling this tool."
-    )
-    schema = {
-        "type": "object",
-        "properties": {
-            "viewportId": {
-                "type": "string",
-                "description": "Viewport identifier (e.g. '111' for right panel, '1100' for center-upper, '1101' for center-lower).",
-            },
-            "tabId": {
-                "type": "string",
-                "description": "Tab identifier (e.g. 'settings', 'chat', 'write', 'setup', 'files', 'sessions').",
-            },
-            "hidden": {
-                "type": "boolean",
-                "description": "Set to true to hide the tab, false to show it.",
-            },
-        },
-        "required": ["viewportId", "tabId", "hidden"],
-    }
-
-    async def execute(self, raw_args: str) -> str:
-        try:
-            args = json.loads(raw_args)
-            viewport_id = args["viewportId"]
-            tab_id = args["tabId"]
-            hidden = bool(args["hidden"])
-        except (json.JSONDecodeError, KeyError, TypeError) as e:
-            return tool_error(f"invalid args: {e}")
-
-        if self.emit is not None:
-            self.emit({
-                "type": "ui_action",
-                "data": {
-                    "action": "toggle_tab",
-                    "viewportId": viewport_id,
-                    "tabId": tab_id,
-                    "hidden": hidden,
-                },
-            })
-
-        verb = "hidden" if hidden else "shown"
-        return json.dumps({
-            "message": f"Tab '{tab_id}' in viewport '{viewport_id}' is now {verb}.",
-        }, ensure_ascii=False)
 
 
 class CreateLearningSession(Tool):
@@ -292,3 +236,81 @@ class FinishSetup(Tool):
             f"Learning style: {learning_style}\n"
             f"Availability: {availability}"
         )
+
+
+class ApplyProfile(Tool):
+    def __init__(self, store=None, session_id: str = "", emit=None):
+        self.store = store
+        self.session_id = session_id
+        self.emit = emit
+
+    name = "apply_profile"
+    description = (
+        "Merge a profile_patch into the learner's inferred profile. The patch "
+        "is produced by the session_analyzer after analyzing the full session "
+        "transcript. Only call this after deploying the session_analyzer."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "patch_json": {
+                "type": "string",
+                "description": (
+                    "The profile_patch JSON object produced by the session_analyzer, "
+                    "serialized as a string. Must include inferred and meta keys."
+                ),
+            },
+        },
+        "required": ["patch_json"],
+    }
+
+    async def execute(self, raw_args: str) -> str:
+        try:
+            args = json.loads(raw_args)
+            patch_json_str = args["patch_json"]
+            patch = json.loads(patch_json_str)
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            return tool_error(f"invalid args: {e}")
+
+        if self.store is None:
+            return tool_error("store not available")
+
+        try:
+            profile = self.store.load_profile()
+        except Exception:
+            profile = StudentProfile()
+
+        inferred_patch = patch.get("inferred", {}) if isinstance(patch, dict) else {}
+        meta_patch = patch.get("meta", {}) if isinstance(patch, dict) else {}
+
+        for key, value in inferred_patch.items():
+            if isinstance(value, dict) and "confidence" in value:
+                patch_conf = value.get("confidence", 0.0)
+                current = profile.inferred.get(key)
+                current_conf = current.get("confidence", 0.0) if isinstance(current, dict) else 0.0
+                if patch_conf > current_conf:
+                    profile.inferred[key] = value
+            else:
+                profile.inferred[key] = value
+
+        if meta_patch.get("sessions") == "increment":
+            profile.meta["sessions"] = profile.meta.get("sessions", 0) + 1
+
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z"
+        changelog = profile.meta.get("changelog", [])
+        if not isinstance(changelog, list):
+            changelog = []
+        changelog.append({
+            "session_id": self.session_id,
+            "timestamp": now,
+            "changes": {k: str(v)[:200] for k, v in inferred_patch.items()},
+        })
+        profile.meta["changelog"] = changelog
+        profile.meta["last_session_at"] = now
+
+        self.store.save_profile(profile)
+
+        return json.dumps({
+            "message": "Profile updated successfully.",
+            "sessions": profile.meta.get("sessions", 0),
+        }, ensure_ascii=False)

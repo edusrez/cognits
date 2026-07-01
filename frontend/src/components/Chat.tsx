@@ -95,21 +95,25 @@ export default function Chat(props: { viewportId?: string }) {
                   ? <StreamingMessage content={msg.content} />
                   : msg.content}
 
-                <Show when={msg.reportId && msg.reportTitle}>
-                  <div
-                    class="mt-2 border border-white/20 px-3 py-2 cursor-pointer hover:bg-white/5"
-                    onClick={() => {
-                      const vpId = props.viewportId
-                      if (vpId) {
-                        import("../stores/report-store").then(m => m.openReportInViewport(vpId, msg.reportId!))
-                      }
-                    }}
-                  >
-                    <div class="text-[#e0e0e0] text-[13px]">{msg.reportTitle}</div>
-                    <div class="flex justify-between text-[#6a6a6a] text-[11px] mt-1">
-                      <span>Read full &rarr;</span>
-                    </div>
-                  </div>
+                <Show when={msg.reports && msg.reports.length > 0}>
+                  <For each={msg.reports}>
+                    {report => (
+                      <div
+                        class="mt-2 border border-white/20 px-3 py-2 cursor-pointer hover:bg-white/5"
+                        onClick={() => {
+                          const vpId = props.viewportId
+                          if (vpId) {
+                            import("../stores/report-store").then(m => m.openReportInViewport(vpId, report.reportId))
+                          }
+                        }}
+                      >
+                        <div class="text-[#e0e0e0] text-[13px]">{report.reportTitle}</div>
+                        <div class="flex justify-between text-[#6a6a6a] text-[11px] mt-1">
+                          <span>Read full &rarr;</span>
+                        </div>
+                      </div>
+                    )}
+                  </For>
                 </Show>
               </div>
             </div>

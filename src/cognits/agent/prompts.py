@@ -5,6 +5,7 @@ from cognits.agent.subagents import (
     DOCUMENTALIST_SYSTEM_PROMPT,
     EVALUATOR_SYSTEM_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
+    SESSION_NAMER_SYSTEM_PROMPT,
     SESSION_ANALYZER_SYSTEM_PROMPT,
     SKILL_PLANNER_SYSTEM_PROMPT,
     STUDY_PLANNER_SYSTEM_PROMPT,
@@ -200,6 +201,11 @@ DEFAULT_AGENTS = [
         "id": "documentalist",
         "name": "Documentalist",
         "systemPrompt": DOCUMENTALIST_SYSTEM_PROMPT,
+    },
+    {
+        "id": "session_namer",
+        "name": "Session Namer",
+        "systemPrompt": SESSION_NAMER_SYSTEM_PROMPT,
     },
     {
         "id": "session_analyzer",

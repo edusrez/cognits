@@ -25,6 +25,7 @@ SUBAGENT_LABELS: dict[str, str] = {
     "study_planner": "Study Planner",
     "evaluator": "Evaluator",
     "teacher": "Teacher",
+    "session_analyzer": "Session Analyzer",
 }
 
 
@@ -94,7 +95,7 @@ class DeploySubagent(Tool):
     schema = {
         "type": "object",
         "properties": {
-            "type": {"type": "string", "enum": ["web_researcher", "directory_reader", "skill_planner", "study_planner", "evaluator"]},
+            "type": {"type": "string", "enum": ["web_researcher", "directory_reader", "documentalist", "session_analyzer", "skill_planner", "study_planner", "evaluator"]},
             "query": {"type": "string", "description": "Task description for the subagent"},
             "thoroughness": {
                 "type": "string",
@@ -280,6 +281,8 @@ class DeploySubagent(Tool):
                 try:
                     n = await self.rag_engine.index(chunks)
                     log.info("deploy: indexed %d chunks for report %s", n, report_id)
+                    del chunks
+                    import gc; gc.collect()
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:

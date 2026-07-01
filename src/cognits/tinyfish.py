@@ -15,7 +15,7 @@ class TinyfishError(Exception):
 class TinyfishClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self._client = httpx.AsyncClient(timeout=150.0)
+        self._client = httpx.AsyncClient(timeout=150.0, limits=httpx.Limits(max_connections=10, max_keepalive_connections=4))
 
     async def aclose(self) -> None:
         await self._client.aclose()

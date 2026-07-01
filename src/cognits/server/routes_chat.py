@@ -23,7 +23,7 @@ from cognits.agent.subagents import (
     documentalist_config,
     evaluator_config,
     researcher_config,
-    session_analyzer_config,
+    session_namer_config,
     skill_planner_config,
     study_planner_config,
     teacher_config,
@@ -86,6 +86,21 @@ def _build_profile_context(profile: StudentProfile) -> str:
             pref_items.append(f"language={prefs['language']}")
         if pref_items:
             parts.append("Preferences: " + ", ".join(pref_items))
+
+    inf = profile.inferred
+    if inf and isinstance(inf, dict):
+        inf_parts = []
+        for key, value in inf.items():
+            if isinstance(value, dict):
+                v = value.get("value") or value
+                if v and not isinstance(v, dict):
+                    inf_parts.append(f"{key}: {v}")
+            elif value and not isinstance(value, dict):
+                inf_parts.append(f"{key}: {value}")
+        if inf_parts:
+            parts.append("\n## Inferred Profile")
+            parts.extend(inf_parts)
+
     return "\n".join(parts)
 
 
@@ -153,6 +168,7 @@ def _build_teacher_system_prompt(
         if skill:
             prompt += "\n\n## Skill\n\n"
             prompt += f"- Name: {skill.name}\n"
+            prompt += f"- ID: {skill.id}\n"
             prompt += f"- Domain: {skill.domain}\n"
             prompt += f"- Description: {skill.description}\n"
             if skill.bloom_level:
@@ -187,24 +203,6 @@ def _build_teacher_system_prompt(
     return prompt
 
 
-def _extract_declared(text: str) -> dict:
-    declared: dict = {}
-    lines = text.split("\n")
-    for line in lines:
-        line = line.strip()
-        if line.startswith("- Background:") or line.startswith("Background:"):
-            declared["background"] = line.split(":", 1)[1].strip()
-        elif line.startswith("- Project:") or line.startswith("Project:"):
-            declared["project"] = line.split(":", 1)[1].strip()
-        elif line.startswith("- Experience:") or line.startswith("Experience:"):
-            declared["experience"] = line.split(":", 1)[1].strip()
-        elif line.startswith("- Learning style:") or line.startswith("Learning style:"):
-            declared["learning_style"] = line.split(":", 1)[1].strip()
-        elif line.startswith("- Availability:") or line.startswith("Availability:"):
-            declared["availability"] = line.split(":", 1)[1].strip()
-        elif line.startswith("- Goals:") or line.startswith("Goals:"):
-            declared["goals"] = line.split(":", 1)[1].strip()
-    return declared
 
 
 # Explicit lists instead of strftime %A/%B: those are locale-dependent.
@@ -280,6 +278,7 @@ def build_chat_messages(
                 reasoning=m.get("reasoning") or "",
                 report_id=m.get("reportId") or "",
                 report_title=m.get("reportTitle") or "",
+                reports=json.dumps(m.get("reports") or [], ensure_ascii=False),
             )
         )
 
@@ -398,7 +397,7 @@ def register(app: FastAPI, st) -> None:
         return Response(status_code=204)
 
 
-async def _run_session_analyzer(
+async def _run_session_namer(
     st,
     sa: SessionAgent,
     cfg: Config,
@@ -406,7 +405,7 @@ async def _run_session_analyzer(
     incoming: list[dict],
 ) -> None:
     """Fire-and-forget: generates a session name from the first user message."""
-    logger = logging.getLogger("cognits.session_analyzer")
+    logger = logging.getLogger("cognits.session_namer")
     try:
         user_msgs = [m for m in incoming if m.get("role") == "user"]
         if not user_msgs:
@@ -429,7 +428,7 @@ async def _run_session_analyzer(
         context += f"The project directory is '{Path.cwd().name}'."
 
         model = "deepseek-v4-flash"
-        ag_cfg = session_analyzer_config(
+        ag_cfg = session_namer_config(
             model=model,
             max_tokens=20,
             temperature=0.3,
@@ -444,7 +443,7 @@ async def _run_session_analyzer(
         try:
             content = await ag.run(messages, emit=lambda _ev: None)
         except Exception as e:
-            logger.error("session_analyzer: agent run: %s", e)
+            logger.error("session_namer: agent run: %s", e)
             return
 
         name = content.strip().strip('"\'').strip()
@@ -453,13 +452,13 @@ async def _run_session_analyzer(
         if len(name) > 80:
             name = name[:77] + "..."
 
-        logger.info("session_analyzer: renaming %s -> %s", sid, name)
+        logger.info("session_namer: renaming %s -> %s", sid, name)
         await asyncio.to_thread(st.store.rename_session, sid, name)
         sa.publish({"type": "session_renamed", "data": {"name": name}})
     except asyncio.CancelledError:
         pass
     except Exception:
-        logger.exception("session_analyzer: failed")
+        logger.exception("session_namer: failed")
     finally:
         with contextlib.suppress(Exception):
             asyncio.get_running_loop().create_task(llm_client.aclose())
@@ -485,7 +484,7 @@ async def _run_agent(
         # Session Analyzer: fire-and-forget on the first user message.
         if sum(1 for m in incoming if m.get("role") == "user") == 1:
             asyncio.create_task(
-                _run_session_analyzer(st, sa, cfg, sid, incoming)
+                _run_session_namer(st, sa, cfg, sid, incoming)
             )
 
         # The server is the source of truth: it stores history + new message
@@ -583,11 +582,9 @@ async def _run_agent(
                     sa.tool_favicons = []
                     if isinstance(data, dict):
                         rid = data.get("reportId")
-                        if isinstance(rid, str):
-                            sa.live_report_id = rid
                         rt = data.get("title")
-                        if isinstance(rt, str):
-                            sa.live_report_title = rt
+                        if isinstance(rid, str) and isinstance(rt, str):
+                            sa.live_reports.append({"reportId": rid, "reportTitle": rt})
             sa.publish(ev, update)
 
         subagent_cfgs = cfg.subagent_config or {}
@@ -750,6 +747,19 @@ async def _run_agent(
             # The documentalist and evaluator have already been registered
             # earlier; the teacher's DeploySubagent references them by key.
 
+        # session_analyzer: only available to the orchestrator (who can deploy
+        # it to analyze session transcripts and produce profile patches).
+        if agent_id != "system_support":
+            s_analyzer_cfg = subagent_cfgs.get("session_analyzer")
+            s_analyzer_model = (s_analyzer_cfg.model if s_analyzer_cfg else "") or DEFAULT_MODEL
+            s_analyzer_reasoning = s_analyzer_cfg.reasoning if s_analyzer_cfg else "disabled"
+            from cognits.agent.subagents import session_analyzer_config
+            sa_cfg = session_analyzer_config(
+                model=s_analyzer_model,
+                reasoning=s_analyzer_reasoning,
+            )
+            subagent_map["session_analyzer"] = sa_cfg
+
         registry = Registry()
         deploy_subagent_tool = DeploySubagent(
             llm_client=llm_client,
@@ -773,6 +783,10 @@ async def _run_agent(
 
         if agent_id == "system_support":
             from cognits.agent.tool_ui import FinishSetup
+
+        if agent_id == "maestro":
+            from cognits.agent.tool_ui import ApplyProfile
+            registry.register(ApplyProfile(store=st.store, session_id=sid, emit=process_event))
 
             # Wire the skill_planner trigger inside finish_setup. When
             # TinyFish is configured and skill_planner is in the subagent
@@ -834,20 +848,21 @@ async def _run_agent(
         content = acc["content"]
         reasoning_text = acc["reasoning"]
         assistant_row = None
-        if content or reasoning_text or sa.live_report_id:
+        if content or reasoning_text or sa.live_reports:
             assistant_row = MessageRow(
                 role="assistant",
                 content=content,
                 reasoning=reasoning_text,
-                report_id=sa.live_report_id,
-                report_title=sa.live_report_title,
+                reports=json.dumps(sa.live_reports, ensure_ascii=False),
             )
             sa.messages.append(assistant_row)
         sa.live_content = ""
         sa.live_reasoning = ""
-        sa.live_report_id = ""
-        sa.live_report_title = ""
+        sa.live_reports.clear()
         sa.tool_status = ""
+
+        if len(st.suspended_subagents) > 20:
+            st.suspended_subagents.clear()
 
         # The history was already persisted when the run started; only the
         # response remains (the partial too, if the run was cancelled). Direct
@@ -861,33 +876,6 @@ async def _run_agent(
 
         st.active_agents.pop(sid, None)
         sa.close()
-
-        # Detect [PROFILE COMPLETE] in the assistant's response and save profile.
-        if "[PROFILE COMPLETE]" in content and st.store is not None:
-            try:
-                declared = _extract_declared(content)
-                import datetime
-                profile = StudentProfile(
-                    declared={
-                        "background": declared.get("background", ""),
-                        "goals": [declared.get("goals", "")],
-                        "experience": declared.get("experience", ""),
-                        "project": declared.get("project", ""),
-                        "preferences": {
-                            "style": declared.get("learning_style", "socratic"),
-                        },
-                        "availability": declared.get("availability", ""),
-                    },
-                    meta={
-                        "created": datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z",
-                        "sessions": 0,
-                        "source": "onboarding",
-                    },
-                )
-                st.store.save_profile(profile)
-                log.info("chat: onboarding profile saved for session %s", sid)
-            except Exception as e:
-                log.error("chat: save onboarding profile: %s", e)
 
         # Close HTTP clients without awaiting (fire-and-forget on the loop).
         for client in (llm_client, tf_client):

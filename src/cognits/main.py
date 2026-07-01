@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import atexit
 import logging
+import logging.handlers
 import os
 import shutil
 import signal
@@ -30,6 +31,43 @@ from textual.widgets.option_list import Option
 from cognits import __version__, paths
 from cognits.server.app import DEFAULT_PORT, AppState, create_app
 from cognits.server.browser import open_browser
+
+# File logger: Textual's alternate screen buffer hides stderr tracebacks,
+# so we also write them to disk so the user can inspect after a crash.
+_log_file: Path | None = None
+_log_handler: logging.FileHandler | None = None
+
+def _setup_file_logging() -> None:
+    global _log_file, _log_handler
+    try:
+        data_dir = paths.data_dir(create=True)
+        _log_file = data_dir / "cognits.log"
+        _log_handler = logging.FileHandler(str(_log_file), delay=True)
+        _log_handler.setLevel(logging.DEBUG)
+        _log_handler.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%S",
+        ))
+        root = logging.getLogger()
+        root.addHandler(_log_handler)
+        root.setLevel(logging.DEBUG)
+    except Exception:
+        pass
+
+def _log_exception(msg: str, exc: Exception) -> None:
+    """Write a traceback to both stderr and the log file (if available)."""
+    import traceback
+    try:
+        traceback.print_exc()
+    except Exception:
+        pass
+    if _log_handler is not None:
+        try:
+            _log_handler.emit(logging.LogRecord(
+                "cognits", logging.ERROR, "", 0, msg, (), exc,
+            ))
+        except Exception:
+            pass
 
 # ---------------------------------------------------------------------------
 # Spinner — bouncing filled square, Knight-Rider style
@@ -203,7 +241,24 @@ class CognitsTUI(App):
         self.register_theme(COGNITS_THEME)
         self.theme = "cognits-dark"
 
-        signal.signal(signal.SIGHUP, lambda *_: self.exit())
+        # Safe signal handlers: never call self.exit() directly from a signal
+        # handler (reentrant = deadlock). Instead set a flag and schedule an
+        # async shutdown via call_later, which runs on Textual's event loop.
+        _should_exit = False
+
+        def _on_term(signum: int, frame: object) -> None:
+            nonlocal _should_exit
+            if _should_exit:
+                return
+            _should_exit = True
+            try:
+                self.call_later(self.exit)
+            except Exception:
+                self.exit()
+
+        if hasattr(signal, "SIGHUP"):
+            signal.signal(signal.SIGHUP, _on_term)
+        signal.signal(signal.SIGTERM, _on_term)
 
         # Run uvicorn in its own thread + event loop so serving static
         # assets never blocks Textual's render loop.
@@ -219,8 +274,7 @@ class CognitsTUI(App):
         try:
             asyncio.run(self._run_server())
         except Exception:
-            import traceback
-            traceback.print_exc()
+            _log_exception("Server thread crashed", sys.exc_info()[1])
             try:
                 self.call_from_thread(self.exit)
             except Exception:
@@ -229,12 +283,7 @@ class CognitsTUI(App):
     # -- Server --------------------------------------------------------------
 
     async def _run_server(self) -> None:
-        try:
-            await self._server.serve()
-        except Exception:
-            import traceback
-            traceback.print_exc()
-            raise
+        await self._server.serve()
 
     # -- Loading phase -------------------------------------------------------
 
@@ -296,6 +345,41 @@ class CognitsTUI(App):
         finally:
             sys.setswitchinterval(old_switch)
         self._show_ready()
+        self.run_worker(self._watch_memory())
+
+    async def _watch_memory(self) -> None:
+        """Active memory watchdog: logs RSS every 30s and forces global GC
+        when pressure is high, to help Python release cyclically-referenced
+        objects before the native-arena leak pushes RSS past the OOM limit."""
+        import gc
+        while True:
+            await asyncio.sleep(15)
+            try:
+                import resource
+                rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                rss_mb = rss // 1024
+                from cognits.agent import agent as agent_mod
+                agent_mod.set_memory_pressure(rss_mb)
+                if _log_handler is not None:
+                    _log_handler.emit(logging.LogRecord(
+                        "cognits.mem", logging.DEBUG, "", 0,
+                        f"RSS memory: {rss_mb} MB", (), None,
+                    ))
+                if rss_mb > 6200:
+                    gc.collect()
+                    if _log_handler is not None:
+                        _log_handler.emit(logging.LogRecord(
+                            "cognits.mem", logging.WARNING, "", 0,
+                            f"High memory ({rss_mb} MB) — forced GC", (), None,
+                        ))
+                if rss_mb > 6800:
+                    if _log_handler is not None:
+                        _log_handler.emit(logging.LogRecord(
+                            "cognits.mem", logging.CRITICAL, "", 0,
+                            f"Critical memory ({rss_mb} MB) — near OOM limit", (), None,
+                        ))
+            except Exception:
+                pass
 
     def _show_ready(self) -> None:
         self.query_one("#loading-container").add_class("hidden")
@@ -335,19 +419,31 @@ class CognitsTUI(App):
         # The lifespan finally block should have called these, but if the
         # server-thread join timed out the lifespan may not have completed.
         # shutdown() is idempotent and terminates the warm-cache subprocess.
-        if self._state.rag is not None:
-            self._state.rag.shutdown()
-        if self._state.docling_engine is not None:
-            self._state.docling_engine.shutdown()
+        try:
+            if self._state.rag is not None:
+                self._state.rag.shutdown()
+        except Exception:
+            pass
+        try:
+            if self._state.docling_engine is not None:
+                self._state.docling_engine.shutdown()
+        except Exception:
+            pass
         await super()._shutdown()
         # Belt-and-suspenders: the lifespan finally block should have called
         # these, but if the server thread join timed out the lifespan may not
         # have completed. shutdown() is idempotent and also terminates the
         # warm-cache subprocess so atexit doesn't hang on thread.join.
-        if self._state.rag is not None:
-            self._state.rag.shutdown()
-        if self._state.docling_engine is not None:
-            self._state.docling_engine.shutdown()
+        try:
+            if self._state.rag is not None:
+                self._state.rag.shutdown()
+        except Exception:
+            pass
+        try:
+            if self._state.docling_engine is not None:
+                self._state.docling_engine.shutdown()
+        except Exception:
+            pass
 
 
 def _interactive_uninstall(skip_confirm: bool = False) -> None:
@@ -535,6 +631,13 @@ def main() -> None:
             raise SystemExit(1)
 
     _cleanup_legacy_sidecar()
+    _setup_file_logging()
+
+    try:
+        with open(f"/proc/{os.getpid()}/oom_score_adj", "w") as f:
+            f.write("-500")
+    except Exception:
+        pass
 
     # onnxruntime emits a hard-coded C++ warning to fd 2 during import
     # (GPU device discovery) that ORT_LOG_LEVEL=ERROR cannot suppress

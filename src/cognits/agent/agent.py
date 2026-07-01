@@ -13,6 +13,24 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from cognits.llm.deepseek import DeepSeekClient
+
+_MAX_CONCURRENT_TOOLS = 4
+_tool_sem = asyncio.Semaphore(_MAX_CONCURRENT_TOOLS)
+_MAX_CONCURRENT_DEPLOYS = 2
+_deploy_sem = asyncio.Semaphore(_MAX_CONCURRENT_DEPLOYS)
+_tool_sem_low = asyncio.Semaphore(1)
+_memory_pressure: str = "ok"
+
+def set_memory_pressure(rss_mb: int) -> None:
+    global _memory_pressure
+    if rss_mb > 6800:
+        _memory_pressure = "critical"
+    elif rss_mb > 6200:
+        _memory_pressure = "high"
+    elif rss_mb > 5000:
+        _memory_pressure = "warn"
+    else:
+        _memory_pressure = "ok"
 from cognits.llm.types import ROLE_ASSISTANT, ROLE_SYSTEM, ROLE_TOOL, Message, ToolCall
 from cognits.tools import Registry
 
@@ -144,12 +162,16 @@ class Agent:
                     }
                 )
 
-                try:
-                    result = await tool.execute(tc.arguments)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as e:
-                    result = json.dumps({"error": str(e)}, ensure_ascii=False)
+                sem = _deploy_sem if tc.name == "deploy_subagent" else _tool_sem
+                if _memory_pressure in ("critical", "high"):
+                    sem = _tool_sem_low
+                async with sem:
+                    try:
+                        result = await tool.execute(tc.arguments)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as e:
+                        result = json.dumps({"error": str(e)}, ensure_ascii=False)
 
                 emit({"type": "tool_end", "data": {"tool": tc.name, "id": tc.id}})
                 return result

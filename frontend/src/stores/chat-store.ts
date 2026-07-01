@@ -19,9 +19,13 @@ export const [pendingLearningSession, setPendingLearningSession] = createSignal<
 const AGENT_LABELS: Record<string, string> = {
   web_researcher: "Web Researcher",
   documentalist: "Documentalist",
+  session_namer: "Session Namer",
   session_analyzer: "Session Analyzer",
   directory_reader: "Directory Reader",
   skill_planner: "Skill Planner",
+  study_planner: "Study Planner",
+  evaluator: "Evaluator",
+  maestro: "Teacher",
   system_support: "System Support",
   "": "Agent",
 }
@@ -253,8 +257,10 @@ function createCallbacks(): StreamCallbacks {
       const len = messages.length
       if (len > 0 && messages[len - 1].role === "assistant") {
         batch(() => {
-          setMessages(len - 1, "reportId", data.reportId)
-          setMessages(len - 1, "reportTitle", data.title)
+          setMessages(len - 1, "reports", (prev: ChatMessage["reports"]) => [
+            ...(prev ?? []),
+            { reportId: data.reportId, reportTitle: data.title },
+          ])
         })
       }
     },
