@@ -784,17 +784,6 @@ async def _run_agent(
         if agent_id == "system_support":
             from cognits.agent.tool_ui import FinishSetup
 
-        if agent_id == "maestro":
-            from cognits.agent.tool_ui import ApplyProfile
-            registry.register(ApplyProfile(store=st.store, session_id=sid, emit=process_event))
-
-            # Wire the skill_planner trigger inside finish_setup. When
-            # TinyFish is configured and skill_planner is in the subagent
-            # map, finish_setup will invoke deploy_subagent("skill_
-            # planner", query=<profile inline>) and wait for the tree
-            # pass to complete before returning. Otherwise the tool still
-            # saves the profile and emits setup_complete but reports the
-            # tree as not built.
             skill_planner_deployer = None
             if cfg.tinyfish_api_key and "skill_planner" in subagent_map:
                 async def _skill_planner_deployer(query: str) -> str:
@@ -810,6 +799,10 @@ async def _run_agent(
                     skill_planner_deployer=skill_planner_deployer,
                 )
             )
+
+        if agent_id == "maestro":
+            from cognits.agent.tool_ui import ApplyProfile
+            registry.register(ApplyProfile(store=st.store, session_id=sid, emit=process_event))
 
         max_steps = cfg.max_steps or DEFAULT_ORCHESTRATOR_MAX_STEPS
         ag = Agent(

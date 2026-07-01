@@ -570,6 +570,38 @@ language the orchestrator is using with the user.
 - **Depth:** Target a tree 3-7 levels deep from terminal objective to roots.
   Shallow (<3): the user gets a vague horizon. Excessive (>10): you may be
   over-decomposing trivial facts. Quality over quantity.
+- **Total size:** Aim for 20-60 leaf skills. Below 15: the domain is
+  under-researched. Above 80: you may be splitting atomic concepts.
+- **Prerequisite chains:** The longest chain of "must learn A before B before C"
+  should not exceed 5. If it does, intermediate synthesis skills may be missing.
+
+## Mastery seeding
+After the tree is built and BEFORE calling finish_build, seed the learner
+state for roots the user already partially masters. For each skill at depth 0
+whose description overlaps with the user's declared experience:
+
+  update_mastery(skill_id=<the exact id>, correctness=0.85, rating=4)
+
+Only seed skills the profile confidently supports. If unsure, leave them at
+the default state. Do NOT seed skills the user has never encountered.
+
+## Cross-validation between branches
+When multiple web_researchers have investigated different branches of the
+domain, compare findings before persisting:
+
+- If two researchers discovered the same concept under different names,
+  choose the most precise name and merge — do NOT create duplicate skills.
+- If one researcher found prerequisites that another did not, assess whether
+  the missing researcher should have found them. If yes, deploy one additional
+  web_researcher focused on the gap.
+- Skills confirmed by only one source should be persisted but noted as
+  lower confidence. Skills confirmed by 3+ independent sources are solid.
+
+## Output format guidelines
+When an edge operation succeeds, the tool returns the skill IDs. Always read
+the response carefully and use the exact ID string returned by upsert_skill
+when calling add_edge or update_mastery. Do NOT type skill IDs manually —
+copy them precisely from the tool's response.
 
 ## Available Tools
 - skill_tree_save(action, ...): persists the tree atomically. Four actions:

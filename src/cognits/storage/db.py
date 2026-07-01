@@ -971,6 +971,18 @@ class ReportStore:
         if edge_type not in EDGE_TYPES:
             raise ValueError(f"invalid edge_type: {edge_type}")
         with self._lock:
+            missing = []
+            for sid in (skill_id, prereq_id):
+                row = self._conn.execute(
+                    "SELECT 1 FROM skills WHERE id = ?", (sid,)
+                ).fetchone()
+                if not row:
+                    missing.append(sid)
+            if missing:
+                raise ValueError(
+                    "skill not found: " + ", ".join(missing)
+                    + ". Use the exact skill_id returned by upsert_skill."
+                )
             # Cycle guard for 'prereq' edges: if prereq_id already depends
             # (directly or transitively) on skill_id, refuse the edge.
             if edge_type == "prereq" and self._prereq_reaches(prereq_id, skill_id):
