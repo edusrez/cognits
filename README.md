@@ -2,10 +2,11 @@
 
 **C**ontext-**O**riented **G**eneration for **N**eural **I**ntelligent **T**utoring **S**ystems.
 
-Cognits is a personal AI tutor that helps you learn any skill through guided
-Socratic dialogue. It anchors itself to your project folder — whether you're
-learning Godot, Rust, music theory, or anything else — and builds a
-personalized learning experience around your goals, background, and pace.
+Cognits is a multi-agent learning system. It anchors itself to your project
+folder — whether you're building a game, creating a web app, learning a new
+language, studying a university subject, or even working on Cognits itself —
+and orchestrates specialized subagents that research your domain, build a
+skill tree, and guide you through Socratic learning sessions.
 
 ## How it works
 
