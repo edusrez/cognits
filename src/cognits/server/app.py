@@ -12,7 +12,8 @@ import contextlib
 import logging
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from cognits import paths
 from cognits.storage.database import Database
@@ -132,6 +133,15 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.ctx = state
+
+    from cognits.server.exceptions import CognitsError
+
+    @app.exception_handler(CognitsError)
+    async def _cognits_error_handler(request, exc: CognitsError):
+        return JSONResponse(
+            status_code=exc.http_status,
+            content={"error": exc.code, "message": exc.message, "details": exc.details},
+        )
 
     from cognits.server import (
         routes_chat,

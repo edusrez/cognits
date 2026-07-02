@@ -8,13 +8,13 @@ import json
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
-from cognits.server.util import text_error
+from cognits.server.exceptions import StorageError
 
 
 def register(app: FastAPI, st) -> None:
     def ensure_db():
         if st.db is None:
-            return text_error("storage not available", 503)
+            raise CognitsError("storage not available", "ERROR", 503)
         return None
 
     @app.post("/api/notes")
@@ -29,11 +29,11 @@ def register(app: FastAPI, st) -> None:
                 raise ValueError("title")
             title = title.strip()
         except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
-            return text_error("invalid body", 400)
+            raise CognitsError("invalid body", "ERROR", 400)
         if not title:
-            return text_error("title is required", 400)
+            raise CognitsError("title is required", "ERROR", 400)
         if len(title) > 120:
-            return text_error("title too long", 400)
+            raise CognitsError("title too long", "ERROR", 400)
 
         try:
             note = await asyncio.to_thread(st.notes.create, title)
@@ -61,7 +61,7 @@ def register(app: FastAPI, st) -> None:
         except Exception as e:
             return text_error(str(e), 500)
         if note is None:
-            return text_error("note not found", 404)
+            raise CognitsError("note not found", "ERROR", 404)
         return JSONResponse(note.to_json())
 
     @app.put("/api/notes/{note_id}")
@@ -74,23 +74,23 @@ def register(app: FastAPI, st) -> None:
             if not isinstance(body, dict):
                 raise ValueError("body")
         except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
-            return text_error("invalid body", 400)
+            raise CognitsError("invalid body", "ERROR", 400)
 
         name = body.get("name", None)
         content = body.get("content", None)
 
         if name is not None:
             if not isinstance(name, str):
-                return text_error("invalid name", 400)
+                raise CognitsError("invalid name", "ERROR", 400)
             name = name.strip()
             if not name:
-                return text_error("name is required", 400)
+                raise CognitsError("name is required", "ERROR", 400)
             if len(name) > 120:
-                return text_error("name too long", 400)
+                raise CognitsError("name too long", "ERROR", 400)
 
         if content is not None:
             if not isinstance(content, str):
-                return text_error("invalid content", 400)
+                raise CognitsError("invalid content", "ERROR", 400)
 
         try:
             if name is not None:
@@ -125,7 +125,7 @@ def register(app: FastAPI, st) -> None:
             if not isinstance(order, list) or not all(isinstance(x, str) for x in order):
                 raise ValueError("order")
         except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
-            return text_error("invalid body", 400)
+            raise CognitsError("invalid body", "ERROR", 400)
 
         try:
             await asyncio.to_thread(st.notes.reorder, order)
