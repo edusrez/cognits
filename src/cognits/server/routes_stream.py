@@ -135,5 +135,5 @@ async def _messages_snapshot(st, session_id: str) -> Response:
     return Response(
         content=body,
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache"},
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

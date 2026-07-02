@@ -218,7 +218,7 @@ def register(app: FastAPI, st) -> None:
 
         if category in ("code", "text"):
             try:
-                raw = file_path.read_bytes()
+                raw = await asyncio.to_thread(file_path.read_bytes)
             except OSError as e:
                 return text_error(str(e), 500)
 

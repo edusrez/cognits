@@ -8,7 +8,7 @@ import json
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
-from cognits.constants import DEFAULT_FLASH_MODEL, DEFAULT_MODEL
+from cognits.constants import DEFAULT_FLASH_MODEL, DEFAULT_MODEL, ORCHESTRATOR_MAX_STEPS
 from cognits.server.util import mask_key, text_error
 from cognits.storage.files import Config, StudentProfile
 
@@ -62,7 +62,7 @@ def register(app: FastAPI, st) -> None:
             return text_error("invalid temperature", 400)
         if cfg.top_p and not (0 <= cfg.top_p <= 1.0):
             return text_error("invalid topP", 400)
-        if cfg.max_steps and not (0 <= cfg.max_steps <= 100):
+        if cfg.max_steps and not (0 <= cfg.max_steps <= ORCHESTRATOR_MAX_STEPS):
             return text_error("invalid maxSteps", 400)
 
         current = st.cached_config
@@ -115,7 +115,7 @@ def register(app: FastAPI, st) -> None:
             await asyncio.to_thread(st.store.reset_setup_state)
         except Exception as e:
             return text_error(str(e), 500)
-        st.cached_config = None
+        st.cached_config = Config()
         return Response(status_code=204)
 
     @app.post("/api/config/test-key")
