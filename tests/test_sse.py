@@ -9,7 +9,7 @@ import httpx
 
 from cognits.server.app import AppState, create_app
 from cognits.server.session_agent import SessionAgent
-from cognits.storage.db import MessageRow
+from cognits.storage.models import MessageRow
 
 
 def _parse_sse(raw: str) -> list[tuple[str, str]]:

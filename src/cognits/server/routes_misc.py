@@ -13,7 +13,7 @@ from cognits import paths
 from cognits.agent.prompts import DEFAULT_AGENTS
 from cognits.constants import DEFAULT_MODEL, TREE_MAX_DEPTH, TREE_MAX_ENTRIES
 from cognits.server.util import text_error
-from cognits.storage.db import SessionConfigRow
+from cognits.storage.models import SessionConfigRow
 from cognits.storage.files import write_file_atomic
 TREE_SKIP_DIRS = {"node_modules", "dist", "vendor"}
 

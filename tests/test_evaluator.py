@@ -7,7 +7,8 @@ import json
 import pytest
 
 from cognits.learner import record_review
-from cognits.storage.db import LearnerState, ReportStore, Skill, new_skill_id
+from _legacy import LegacyStore
+from cognits.storage.models import LearnerState, Skill, new_skill_id
 from cognits.tools import Registry
 
 
@@ -19,7 +20,7 @@ def _skill(name="Test", domain="d"):
 
 @pytest.fixture
 def store(tmp_path):
-    rs = ReportStore(tmp_path / "test.db")
+    rs = LegacyStore(tmp_path / "test.db")
     yield rs
     rs.close()
 
@@ -175,7 +176,7 @@ def test_deploy_resume_phase2(tmp_path):
     from cognits.agent.tool_deploy import DeploySubagent
     from cognits.agent.agent import AgentConfig
 
-    store = ReportStore(tmp_path / "db2.db")
+    store = LegacyStore(tmp_path / "db2.db")
     s = _skill("ResumeTest"); store.upsert_skill(s)
 
     # Build a minimal subagent that echoes its query back.

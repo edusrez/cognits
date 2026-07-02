@@ -17,7 +17,7 @@ import asyncio
 import json
 from collections.abc import Callable
 
-from cognits.storage.db import (
+from cognits.storage.models import (
     EDGE_TYPES,
     LearnerState,
     Skill,

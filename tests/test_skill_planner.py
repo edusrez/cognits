@@ -3,7 +3,7 @@
 Uses the ScriptedLLM pattern from test_agent.py (plain asyncio.run, no
 pytest-asyncio marker — matches the codebase convention).
 
-The SkillTreeSave tool exercises the real ReportStore on a tmp_path DB.
+The SkillTreeSave tool exercises the real LegacyStore on a tmp_path DB.
 """
 
 import asyncio
@@ -11,9 +11,9 @@ import json
 
 import pytest
 
+from _legacy import LegacyStore
 from cognits.agent.agent import Agent, AgentConfig
 from cognits.agent.tool_skill import SkillTreeSave
-from cognits.storage.db import ReportStore
 from cognits.tools import Registry
 
 
@@ -52,7 +52,7 @@ def _delta(content=None, tool_calls=None, finish=None):
 
 @pytest.fixture
 def store(tmp_path):
-    rs = ReportStore(tmp_path / "test.db")
+    rs = LegacyStore(tmp_path / "test.db")
     yield rs
     rs.close()
 

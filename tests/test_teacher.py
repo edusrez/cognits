@@ -7,12 +7,13 @@ import json
 
 import pytest
 
-from cognits.storage.db import LearnerState, ReportStore, SessionConfigRow, Skill, new_skill_id
+from _legacy import LegacyStore
+from cognits.storage.models import LearnerState, SessionConfigRow, Skill, new_skill_id
 
 
 @pytest.fixture
 def store(tmp_path):
-    rs = ReportStore(tmp_path / "test.db")
+    rs = LegacyStore(tmp_path / "test.db")
     yield rs
     rs.close()
 

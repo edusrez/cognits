@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from cognits.constants import SUBSCRIBER_BUFFER
-from cognits.storage.db import MessageRow
+from cognits.storage.models import MessageRow
 
 
 @dataclass

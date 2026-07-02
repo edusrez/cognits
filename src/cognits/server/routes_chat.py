@@ -44,7 +44,7 @@ from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import ROLE_SYSTEM, ROLE_USER, Message
 from cognits.server.session_agent import SessionAgent
 from cognits.server.util import text_error
-from cognits.storage.db import MessageRow
+from cognits.storage.models import MessageRow
 from cognits.storage.files import Config, StudentProfile
 from cognits.tinyfish import TinyfishClient
 from cognits.tools import Registry

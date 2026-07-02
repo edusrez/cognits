@@ -24,7 +24,7 @@ from cognits.learner import (
     update_mastery,
 )
 from cognits.learner.fsrs import _parse_iso
-from cognits.storage.db import LearnerState
+from cognits.storage.models import LearnerState
 
 
 # --- BKT: conjugate beta update --------------------------------------

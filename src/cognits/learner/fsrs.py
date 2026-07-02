@@ -18,7 +18,7 @@ import datetime
 import math
 import random
 
-from cognits.storage.db import LearnerState
+from cognits.storage.models import LearnerState
 
 # Default 21-parameter vector shipped by Anki 24.11 (FSRS-6). Optimised over
 # the anki-revlogs-10k dataset (2024). Index 20 is DECAY.

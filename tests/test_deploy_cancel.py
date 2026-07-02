@@ -8,8 +8,8 @@ import pytest
 
 from cognits.agent.agent import AgentConfig
 from cognits.agent.tool_deploy import DeploySubagent
-from cognits.storage.db import ReportStore
 from cognits.tools import Registry
+from _legacy import LegacyStore
 
 
 class _FakeLLM:
@@ -30,7 +30,7 @@ class _FakeLLM:
         on_chunk({"choices": [{"delta": {}, "finish_reason": "stop"}]})
 
 
-def _make_deploy(database: ReportStore, **overrides) -> DeploySubagent:
+def _make_deploy(database: LegacyStore, **overrides) -> DeploySubagent:
     cfg = AgentConfig(
         name="test_sub",
         model="m",
@@ -51,7 +51,7 @@ def _make_deploy(database: ReportStore, **overrides) -> DeploySubagent:
 
 
 def test_normal_path_saves_indexes_emits(tmp_path):
-    db = ReportStore(tmp_path / "test.db")
+    db = LegacyStore(tmp_path / "test.db")
     deploy = _make_deploy(db)
     emits: list[dict] = []
     deploy.emit = lambda ev: emits.append(ev)
@@ -75,7 +75,7 @@ def test_normal_path_saves_indexes_emits(tmp_path):
 def test_cancel_during_save_shields_and_emits(tmp_path):
     """Cancel at the report_store.save await — the shielded save must
     complete and subagent_end must still emit."""
-    db = ReportStore(tmp_path / "test.db")
+    db = LegacyStore(tmp_path / "test.db")
     save_started = threading.Event()
     save_release = threading.Event()
     save_calls: list[str] = []
@@ -116,7 +116,7 @@ def test_cancel_during_save_shields_and_emits(tmp_path):
 def test_cancel_during_index_emits_subagent_end(tmp_path):
     """Cancel at the rag_engine.index await — save already completed,
     subagent_end must still emit, CancelledError must re-raise."""
-    db = ReportStore(tmp_path / "test.db")
+    db = LegacyStore(tmp_path / "test.db")
     deploy = _make_deploy(db)
 
     class GatedRag:
@@ -155,7 +155,7 @@ def test_cancel_during_index_emits_subagent_end(tmp_path):
 
 def test_subagent_run_cancelled_no_report(tmp_path):
     """Cancelled during subagent.run — no report, no emit."""
-    db = ReportStore(tmp_path / "test.db")
+    db = LegacyStore(tmp_path / "test.db")
     deploy = _make_deploy(db)
 
     class CancellingLLM:

@@ -9,7 +9,9 @@ import pytest
 
 from cognits.agent.tool_ui import CreateLearningSession
 from cognits.agent.prompts import ORCHESTRATOR_SYSTEM_PROMPT
-from cognits.storage.db import ReportStore, Skill, new_skill_id
+from _legacy import LegacyStore
+from cognits.storage.models import Skill, new_skill_id
+from cognits.storage.models import LearnerState
 from cognits.server.app import AppState, create_app
 from cognits.server.routes_chat import _build_skills_summary
 
@@ -22,7 +24,7 @@ def _skill_dict(sid, name, domain="python"):
 
 @pytest.fixture
 def store(tmp_path):
-    rs = ReportStore(tmp_path / "test.db")
+    rs = LegacyStore(tmp_path / "test.db")
     yield rs
     rs.close()
 
@@ -50,7 +52,7 @@ def test_build_skills_summary_empty_tree(store):
 def test_build_skills_summary_marks_mastered(store):
     s = Skill(id=new_skill_id(), domain="d", name="MasteredSkill", source="test")
     store.upsert_skill(s)
-    from cognits.storage.db import LearnerState
+    from cognits.storage.models import LearnerState
     store.upsert_learner_state(LearnerState(skill_id=s.id, p_mastery=0.96, status_enum="mastered"))
     tree = store.get_tree()
     summary = _build_skills_summary(store, tree)
@@ -121,7 +123,7 @@ def test_get_all_learner_states(store):
 def test_planning_mode_injects_skill_tree_context(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     async def run():
-        store = ReportStore(tmp_path / "db.db")
+        store = LegacyStore(tmp_path / "db.db")
         a = Skill(id=new_skill_id(), domain="python", name="Variables", source="test")
         store.upsert_skill(a)
         state = AppState(); state.reports = store

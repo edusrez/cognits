@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections import deque
 from datetime import datetime, timezone
 
-from cognits.storage.db import LearnerState, Skill, SkillPrereq, StudyPlanItem
+from cognits.storage.models import LearnerState, Skill, SkillPrereq, StudyPlanItem
 
 # --- constants --------------------------------------------------------
 

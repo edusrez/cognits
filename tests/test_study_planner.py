@@ -6,9 +6,9 @@ import json
 import pytest
 
 from cognits.learner import planner as P
-from cognits.storage.db import (
+from _legacy import LegacyStore
+from cognits.storage.models import (
     LearnerState,
-    ReportStore,
     Skill,
     SkillPrereq,
     StudyPlanItem,
@@ -201,7 +201,7 @@ def test_diff_plans_adds_newly_relevant(monkeypatch):
 
 @pytest.fixture
 def store(tmp_path):
-    rs = ReportStore(tmp_path / "test.db")
+    rs = LegacyStore(tmp_path / "test.db")
     yield rs
     rs.close()
 

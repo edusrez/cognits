@@ -58,3 +58,4 @@ def pedagogy(db):
 @pytest.fixture
 def session_config(db):
     return SessionConfigRepository(db)
+

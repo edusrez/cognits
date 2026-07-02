@@ -12,7 +12,7 @@ import json
 from collections.abc import Callable
 
 from cognits.learner import planner
-from cognits.storage.db import StudyPlanItem
+from cognits.storage.models import StudyPlanItem
 from cognits.tools import Tool, tool_error
 
 
@@ -88,7 +88,7 @@ class PlanStudy(Tool):
             tree_version = tree.get("treeVersion", 1)
 
             # Turn dicts into dataclasses locally.
-            from cognits.storage.db import Skill, SkillPrereq, LearnerState
+            from cognits.storage.models import Skill, SkillPrereq, LearnerState
 
             skill_map: dict[str, Skill] = {}
             for d in skills_raw:

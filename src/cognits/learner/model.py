@@ -19,7 +19,7 @@ import datetime
 import random
 
 from cognits.learner import fsrs
-from cognits.storage.db import LearnerState
+from cognits.storage.models import LearnerState
 
 # --- BKT prior / soft-evidence constants -------------------------------
 PRIOR_ALPHA: float = 1.0

@@ -11,7 +11,7 @@ from cognits.agent.agent import Agent, AgentConfig, Emit
 from cognits.constants import AGENT_LABELS, DEFAULT_MODEL
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import ROLE_USER, Message
-from cognits.storage.db import Report, new_report_id
+from cognits.storage.models import Report, new_report_id
 from cognits.tools import Tool, tool_error
 
 log = logging.getLogger("cognits.deploy")
