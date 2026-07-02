@@ -60,14 +60,14 @@ def store(tmp_path):
 # --- tool-level tests ------------------------------------------------
 
 def test_skill_tree_save_start_build(store):
-    tool = SkillTreeSave(report_store=store, session_id=lambda: "s1")
+    tool = SkillTreeSave(skills=store, session_id=lambda: "s1")
     result = asyncio.run(tool.execute(json.dumps({"action": "start_build", "trigger": "onboarding"})))
     data = json.loads(result)
     assert data["build_id"].startswith("b_")
 
 
 def test_skill_tree_save_upsert_and_get(store):
-    tool = SkillTreeSave(report_store=store, session_id=lambda: "s1")
+    tool = SkillTreeSave(skills=store, session_id=lambda: "s1")
     result = asyncio.run(tool.execute(json.dumps({
         "action": "upsert_skill",
         "domain": "python",
@@ -84,7 +84,7 @@ def test_skill_tree_save_upsert_and_get(store):
 
 
 def test_skill_tree_save_add_edge_cycle_returns_tool_error(store):
-    tool = SkillTreeSave(report_store=store, session_id=lambda: "s1")
+    tool = SkillTreeSave(skills=store, session_id=lambda: "s1")
     a = json.loads(asyncio.run(tool.execute(json.dumps({"action": "upsert_skill", "domain": "d", "name": "A"}))))["skill_id"]
     b = json.loads(asyncio.run(tool.execute(json.dumps({"action": "upsert_skill", "domain": "d", "name": "B"}))))["skill_id"]
     ok = asyncio.run(tool.execute(json.dumps({"action": "add_edge", "skill_id": b, "prereq_id": a, "edge_type": "prereq"})))
@@ -96,7 +96,7 @@ def test_skill_tree_save_add_edge_cycle_returns_tool_error(store):
 
 
 def test_skill_tree_save_finish_build(store):
-    tool = SkillTreeSave(report_store=store, session_id=lambda: "s1")
+    tool = SkillTreeSave(skills=store, session_id=lambda: "s1")
     bid = json.loads(asyncio.run(tool.execute(json.dumps({"action": "start_build", "trigger": "test"}))))["build_id"]
     result = asyncio.run(tool.execute(json.dumps({
         "action": "finish_build",
@@ -115,7 +115,7 @@ def test_skill_tree_save_finish_build(store):
 
 
 def test_skill_tree_save_missing_args_returns_tool_error(store):
-    tool = SkillTreeSave(report_store=store)
+    tool = SkillTreeSave(skills=store)
     result = asyncio.run(tool.execute(json.dumps({"action": "upsert_skill", "domain": "d"})))
     assert "error" in json.loads(result)
 
@@ -130,7 +130,7 @@ def test_skill_planner_run_end_to_end_scripted(store):
     that we rewrite on the fly from earlier tool results seen in messages,
     so the agent loop sees consistent IDs without us hard-coding them.
     """
-    tool = SkillTreeSave(report_store=store, session_id=lambda: "s_test")
+    tool = SkillTreeSave(skills=store, session_id=lambda: "s_test")
     registry = Registry()
     registry.register(tool)
 

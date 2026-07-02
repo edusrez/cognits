@@ -39,7 +39,7 @@ def _make_deploy(database: ReportStore, **overrides) -> DeploySubagent:
     )
     kwargs = dict(
         llm_client=_FakeLLM(),
-        report_store=database,
+        reports=database,
         subagents={"test_sub": cfg},
         session_id=lambda: "s_test",
         emit=None,
@@ -91,7 +91,7 @@ def test_cancel_during_save_shields_and_emits(tmp_path):
             return self._inner.save(report)
 
     gated = GatedSave(db)
-    deploy = _make_deploy(db, report_store=gated)
+    deploy = _make_deploy(db, reports=gated)
     emits: list[dict] = []
     deploy.emit = lambda ev: emits.append(ev)
 

@@ -66,7 +66,7 @@ def test_save_pedagogical_plan_tool_persists(store):
     from cognits.agent.pedagogical_plan import SavePedagogicalPlan
 
     s = _skill("Variables"); _seed(store, s)
-    tool = SavePedagogicalPlan(report_store=store)
+    tool = SavePedagogicalPlan(pedagogy=store)
     result = asyncio.run(tool.execute(json.dumps({
         "skill_name": "Variables",
         "plan_markdown": "# Plan\n\nStage 1: hello",
@@ -78,7 +78,7 @@ def test_save_pedagogical_plan_tool_persists(store):
 def test_save_pedagogical_plan_tool_unknown_skill(store):
     from cognits.agent.pedagogical_plan import SavePedagogicalPlan
 
-    tool = SavePedagogicalPlan(report_store=store)
+    tool = SavePedagogicalPlan(pedagogy=store)
     result = asyncio.run(tool.execute(json.dumps({
         "skill_name": "Nonexistent",
         "plan_markdown": "Plan",

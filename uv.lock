@@ -430,7 +430,7 @@ wheels = [
 
 [[package]]
 name = "cognits"
-version = "0.0.6"
+version = "0.0.6.1"
 source = { editable = "." }
 dependencies = [
     { name = "chromadb" },

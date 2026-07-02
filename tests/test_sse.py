@@ -99,7 +99,7 @@ def test_stream_sesion_inactiva(tmp_path, monkeypatch):
 async def _run_inactive_stream_test():
     state = AppState()
     app = create_app(state)
-    state.report_store.save_messages(
+    state.reports.save_messages(
         "old", [MessageRow(role="user", content="history")]
     )
 

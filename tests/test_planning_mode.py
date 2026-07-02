@@ -124,7 +124,7 @@ def test_planning_mode_injects_skill_tree_context(tmp_path, monkeypatch):
         store = ReportStore(tmp_path / "db.db")
         a = Skill(id=new_skill_id(), domain="python", name="Variables", source="test")
         store.upsert_skill(a)
-        state = AppState(); state.report_store = store
+        state = AppState(); state.reports = store
         app = create_app(state)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:

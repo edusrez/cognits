@@ -149,15 +149,21 @@ def _build_skills_summary(store, tree: dict) -> str:
 
 
 def _build_teacher_system_prompt(
-    skill_id: str, store, profile_ctx: str = ""
+    skill_id: str, store=None, learner_state=None, pedagogy=None, profile_ctx: str = ""
 ) -> str:
     """Assemble the 5-layer Teacher system prompt by fetching the skill,
     learner state, and pedagogical plan from the DB and concatenating them
     with the static TEACHER_SYSTEM_PROMPT."""
     prompt = TEACHER_SYSTEM_PROMPT
 
+    # Legacy: store is a ReportStore or compat object with all methods.
+    # New: skills, learner_state, pedagogy are individual repos.
+    _skills = store if store is not None else None  # will determine later
+    _ls = learner_state if learner_state is not None else store
+    _ped = pedagogy if pedagogy is not None else store
+
     if skill_id:
-        skill = skills.get(skill_id)
+        skill = _skills.get_skill(skill_id) if _skills else None
         if skill:
             prompt += "\n\n## Skill\n\n"
             prompt += f"- Name: {skill.name}\n"
@@ -167,7 +173,7 @@ def _build_teacher_system_prompt(
             if skill.bloom_level:
                 prompt += f"- Bloom level: {skill.bloom_level}\n"
 
-            state = learner_state.get(skill_id)
+            state = _ls.get_learner_state(skill_id) if _ls else None
             if state:
                 prompt += "\n## Learner State\n\n"
                 prompt += f"- Status: {state.status_enum}\n"
@@ -178,7 +184,7 @@ def _build_teacher_system_prompt(
             else:
                 prompt += "\n## Learner State\n\n(No learner state yet)\n"
 
-            plan = pedagogy.get(skill_id)
+            plan = _ped.get_pedagogical_plan(skill_id) if _ped else None
             if plan:
                 prompt += "\n## Pedagogical Plan\n\n" + plan
             else:

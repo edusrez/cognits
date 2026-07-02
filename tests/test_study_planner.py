@@ -216,7 +216,7 @@ def test_plan_study_creates_plan_and_items(store):
     # Give A high mastery -> B should be unlocked in frontier.
     store.upsert_learner_state(_state(a.id, p=0.95, status="mastered"))
 
-    tool = PlanStudy(report_store=store, session_id=lambda: "s_test")
+    tool = PlanStudy(plans=store, skills=store, learner_state=store, session_id=lambda: "s_test")
     result = asyncio.run(tool.execute(json.dumps({"goal": "C"})))
     data = json.loads(result)
     assert "plan_id" in data
@@ -232,7 +232,7 @@ def test_plan_study_supersedes_old_plan(store):
     from cognits.agent.tool_study_plan import PlanStudy
 
     a = _skill("A"); store.upsert_skill(a)
-    tool = PlanStudy(report_store=store, session_id=lambda: "s_test")
+    tool = PlanStudy(plans=store, skills=store, learner_state=store, session_id=lambda: "s_test")
     r1 = asyncio.run(tool.execute(json.dumps({"goal": "A"})))
     pid1 = json.loads(r1)["plan_id"]
     # Second call supersedes.
@@ -248,7 +248,7 @@ def test_plan_study_returns_json_shape(store):
     from cognits.agent.tool_study_plan import PlanStudy
 
     a = _skill("A"); store.upsert_skill(a)
-    tool = PlanStudy(report_store=store, session_id=lambda: "s_test")
+    tool = PlanStudy(plans=store, skills=store, learner_state=store, session_id=lambda: "s_test")
     result = asyncio.run(tool.execute(json.dumps({"goal": "A"})))
     data = json.loads(result)
     for k in ("plan_id", "items", "treeVersion", "frontierSize"):

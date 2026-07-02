@@ -30,7 +30,7 @@ def test_update_mastery_first_review(store):
     from cognits.agent.tool_mastery import UpdateMastery
 
     s = _skill("Variables"); store.upsert_skill(s)
-    tool = UpdateMastery(report_store=store)
+    tool = UpdateMastery(learner_state=store)
     args = json.dumps({"skill_id": s.id, "correctness": 0.95, "rating": 3})
     result = asyncio.run(tool.execute(args))
     data = json.loads(result)
@@ -49,7 +49,7 @@ def test_update_mastery_failure_drops_mastery(store):
 
     s = _skill("FailSkill"); store.upsert_skill(s)
     # First boost mastery.
-    tool = UpdateMastery(report_store=store)
+    tool = UpdateMastery(learner_state=store)
     asyncio.run(tool.execute(json.dumps({"skill_id": s.id, "correctness": 0.95, "rating": 3})))
     before = store.get_learner_state(s.id)
     # Then fail.
@@ -65,7 +65,7 @@ def test_update_mastery_returns_before_after(store):
     from cognits.agent.tool_mastery import UpdateMastery
 
     s = _skill("BeforeAfter"); store.upsert_skill(s)
-    tool = UpdateMastery(report_store=store)
+    tool = UpdateMastery(learner_state=store)
     result = asyncio.run(tool.execute(json.dumps({"skill_id": s.id, "correctness": 0.8, "rating": 2})))
     data = json.loads(result)
     assert data["p_mastery_before"] == 0.5
@@ -77,7 +77,7 @@ def test_update_mastery_returns_before_after(store):
 def test_update_mastery_unknown_skill(store):
     from cognits.agent.tool_mastery import UpdateMastery
 
-    tool = UpdateMastery(report_store=store)
+    tool = UpdateMastery(learner_state=store)
     result = asyncio.run(tool.execute(json.dumps({"skill_id": "k_nonexistent", "correctness": 0.5, "rating": 3})))
     assert "error" in json.loads(result)
 
@@ -86,7 +86,7 @@ def test_update_mastery_invalid_rating(store):
     from cognits.agent.tool_mastery import UpdateMastery
 
     s = _skill(); store.upsert_skill(s)
-    tool = UpdateMastery(report_store=store)
+    tool = UpdateMastery(learner_state=store)
     result = asyncio.run(tool.execute(json.dumps({"skill_id": s.id, "correctness": 0.5, "rating": 5})))
     assert "error" in json.loads(result)
 
