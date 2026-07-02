@@ -23,6 +23,9 @@ log = logging.getLogger("cognits.server")
 DEFAULT_PORT = 5173
 
 
+_DRAIN_TIMEOUT = float(os.environ.get("COGNITS_DRAIN_TIMEOUT", "5.0"))
+
+
 class AppState:
     def __init__(self) -> None:
         self.store: Store | None = None
@@ -97,7 +100,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
             yield
         except asyncio.CancelledError:
             pass
-        await state.drain_agents(timeout=5)
+        await state.drain_agents(timeout=_DRAIN_TIMEOUT)
         if state.report_store is not None:
             await asyncio.to_thread(state.report_store.shutdown)
         if state.rag is not None:
