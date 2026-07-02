@@ -64,7 +64,7 @@ def test_create_learning_session_emits_sse(store):
     a = Skill(id=new_skill_id(), domain="d", name="Variables", source="test")
     store.upsert_skill(a)
     events = []
-    tool = CreateLearningSession(emit=events.append, report_store=store)
+    tool = CreateLearningSession(emit=events.append, skills=store)
     result = asyncio.run(tool.execute(json.dumps({"skill_name": "Variables"})))
     data = json.loads(result)
     assert "Learning session requested" in data["message"]
@@ -75,7 +75,7 @@ def test_create_learning_session_emits_sse(store):
 
 def test_create_learning_session_unknown_skill_returns_error(store):
     events = []
-    tool = CreateLearningSession(emit=events.append, report_store=store)
+    tool = CreateLearningSession(emit=events.append, skills=store)
     result = asyncio.run(tool.execute(json.dumps({"skill_name": "Nonexistent"})))
     data = json.loads(result)
     assert "error" in data
@@ -84,7 +84,7 @@ def test_create_learning_session_unknown_skill_returns_error(store):
 
 def test_create_learning_session_unified(store):
     events = []
-    tool = CreateLearningSession(emit=events.append, report_store=None)
+    tool = CreateLearningSession(emit=events.append, skills=None)
     result = asyncio.run(tool.execute(json.dumps({"skill_name": "Anything"})))
     data = json.loads(result)
     # Without a store, no validation is possible — still emits.

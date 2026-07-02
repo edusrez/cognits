@@ -1508,3 +1508,5 @@ class ReportStore:
     append = append_message
     load = load_messages
     delete_by_session = delete_messages_by_session
+    save_ped_plan = save_pedagogical_plan
+    get_ped_plan = get_pedagogical_plan

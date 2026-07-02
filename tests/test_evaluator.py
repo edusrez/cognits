@@ -203,7 +203,7 @@ def test_deploy_resume_phase2(tmp_path):
     suspended: dict = {}
     tool = DeploySubagent(
         llm_client=echo_llm,
-        report_store=store,
+        reports=store,
         subagents={"echo": echo_cfg},
         session_id=lambda: "s_test",
         emit=None,
@@ -256,7 +256,7 @@ def test_evaluator_config_builds(store):
     cfg = evaluator_config(
         model="m", reasoning="", max_steps=10,
         llm_client=FakeLLM(), rag_engine=None, tf_client=FakeTF(),
-        report_store=store, session_id=lambda: "s_test",
+        reports=store, session_id=lambda: "s_test",
         emit=lambda e: None,
     )
     assert cfg.name == "evaluator"

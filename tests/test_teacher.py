@@ -172,7 +172,7 @@ def test_create_learning_session_emits_skill_id(store):
 
     s = _skill("Variables"); _seed(store, s)
     events = []
-    tool = CreateLearningSession(emit=events.append, report_store=store)
+    tool = CreateLearningSession(emit=events.append, skills=store)
     result = asyncio.run(tool.execute(json.dumps({"skill_name": "Variables"})))
     assert json.loads(result).get("message")
     assert len(events) == 1

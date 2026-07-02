@@ -284,7 +284,7 @@ def test_study_planner_config_builds(store):
         model="deepseek-v4-pro",
         reasoning="max",
         max_steps=10,
-        report_store=store,
+        reports=store, plans=store, skills=store, learner_state=store, pedagogy=store,
         session_id=lambda: "s_test",
         emit=lambda ev: None,
     )

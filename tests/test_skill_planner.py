@@ -243,7 +243,7 @@ def test_skill_planner_config_builds_registry(store):
         llm_client=FakeLLM(),
         rag_engine=None,
         tf_client=FakeTF(),
-        report_store=store,
+        reports=store, skills=store, learner_state=store,
         session_id=lambda: "s_test",
         emit=lambda ev: None,
         tinyfish_api_key="fake_key",

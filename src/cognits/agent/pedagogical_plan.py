@@ -55,6 +55,8 @@ class SavePedagogicalPlan(Tool):
                 "Use the exact skill name as it appears in the tree."
             )
 
-        await asyncio.to_thread(self.store.save, match.id, plan_md)
+        await asyncio.to_thread(
+            getattr(self.pedagogy, "save_pedagogical_plan", self.pedagogy.save),
+            match.id, plan_md)
 
         return json.dumps({"skill_id": match.id, "saved": True}, ensure_ascii=False)
