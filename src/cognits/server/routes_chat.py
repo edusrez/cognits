@@ -655,7 +655,7 @@ async def _run_agent(
             planner_reasoning = planner_cfg.reasoning if planner_cfg else "max"
             planner_max_steps = planner_cfg.max_steps if planner_cfg else 0
             if planner_max_steps <= 0:
-                planner_max_steps = DEFAULT_ORCHESTRATOR_MAX_STEPS  # 999
+                planner_max_steps = ORCHESTRATOR_MAX_STEPS  # 999
             planner_max_tokens = planner_cfg.max_tokens if planner_cfg else 0
             planner_temperature = planner_cfg.temperature if planner_cfg else 0.0
             planner_top_p = planner_cfg.top_p if planner_cfg else 0.0
@@ -668,6 +668,7 @@ async def _run_agent(
                 st.rag if st.rag is not None and st.rag.error is None else None,
                 tf_client,
                 st.reports,
+                st.skills,
                 lambda: sid,
                 process_event,
                 max_tokens=planner_max_tokens or None,
@@ -689,7 +690,7 @@ async def _run_agent(
         sp_prompt = cfg.agent_overrides.get("study_planner") or None
         subagent_map["study_planner"] = study_planner_config(
             sp_model, sp_reasoning, sp_max_steps,
-            st.reports, lambda: sid, process_event,
+            st.reports, st.study_plans, st.skills, st.learner_state, st.pedagogy, lambda: sid, process_event,
             system_prompt_override=sp_prompt,
             rag_engine=st.rag if st.rag is not None and st.rag.error is None else None,
             tf_client=tf_client,
@@ -714,7 +715,7 @@ async def _run_agent(
                 llm_client,
                 st.rag if st.rag is not None and st.rag.error is None else None,
                 tf_client,
-                st.reports, lambda: sid, process_event,
+                st.reports, st.learner_state, lambda: sid, process_event,
                 system_prompt_override=ev_prompt,
                 tinyfish_api_key=cfg.tinyfish_api_key,
                 suspended_subagents=st.suspended_subagents,
@@ -738,7 +739,7 @@ async def _run_agent(
                 llm_client,
                 st.rag if st.rag is not None and st.rag.error is None else None,
                 tf_client,
-                st.reports, lambda: sid, process_event,
+                st.reports, st.skills, st.learner_state, st.pedagogy, lambda: sid, process_event,
                 system_prompt_override=te_prompt,
                 tinyfish_api_key=cfg.tinyfish_api_key,
                 suspended_subagents=st.suspended_subagents,
@@ -803,7 +804,7 @@ async def _run_agent(
             from cognits.agent.tool_ui import ApplyProfile
             registry.register(ApplyProfile(store=st.store, session_id=sid, emit=process_event))
 
-        max_steps = cfg.max_steps or DEFAULT_ORCHESTRATOR_MAX_STEPS
+        max_steps = cfg.max_steps or ORCHESTRATOR_MAX_STEPS
         ag = Agent(
             AgentConfig(
                 name=agent_id,

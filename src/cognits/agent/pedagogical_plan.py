@@ -10,8 +10,9 @@ from cognits.tools import Tool, tool_error
 
 
 class SavePedagogicalPlan(Tool):
-    def __init__(self, pedagogy):
-        self.store = pedagogy
+    def __init__(self, skills=None, pedagogy=None):
+        self.skills = skills
+        self.pedagogy = pedagogy
 
     name = "save_pedagogical_plan"
     description = (
@@ -46,7 +47,7 @@ class SavePedagogicalPlan(Tool):
         if not skill_name or not plan_md.strip():
             return tool_error("skill_name and plan_markdown are required")
 
-        skills = await asyncio.to_thread(self.store.list_active)
+        skills = await asyncio.to_thread(self.skills.list_active)
         match = next((s for s in skills if s.name.lower() == skill_name.lower()), None)
         if match is None:
             return tool_error(

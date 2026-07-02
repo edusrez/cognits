@@ -747,6 +747,7 @@ def skill_planner_config(
     rag_engine,
     tf_client: TinyfishClient,
     reports,
+    skills,
     session_id,
     emit: Emit,
     max_tokens: int | None = None,
@@ -771,7 +772,7 @@ def skill_planner_config(
     if rag_engine is not None:
         registry.register(RagSearch(rag_engine))
     registry.register(
-        SkillTreeSave(reports=reports, session_id=session_id, emit=tool_emit)
+        SkillTreeSave(skills=skills, session_id=session_id, emit=tool_emit)
     )
 
     researcher_max_steps = RESEARCHER_MAX_STEPS  # DEFAULT_RESEARCHER_MAX_STEPS in routes_chat
@@ -905,6 +906,10 @@ def study_planner_config(
     reasoning: str,
     max_steps: int,
     reports,
+    plans,
+    skills,
+    learner_state,
+    pedagogy,
     session_id,
     emit: Emit,
     max_tokens: int | None = None,
@@ -931,9 +936,9 @@ def study_planner_config(
 
     registry = Registry()
     registry.register(
-        PlanStudy(reports=reports, session_id=session_id)
+        PlanStudy(plans=plans, skills=skills, learner_state=learner_state, session_id=session_id)
     )
-    registry.register(SavePedagogicalPlan(reports=reports))
+    registry.register(SavePedagogicalPlan(skills=skills, pedagogy=pedagogy))
     if rag_engine is not None:
         registry.register(RagSearch(rag_engine))
 
@@ -1062,6 +1067,7 @@ def evaluator_config(
     rag_engine,
     tf_client: TinyfishClient,
     reports,
+    learner_state,
     session_id,
     emit: Emit,
     max_tokens: int | None = None,
@@ -1085,7 +1091,7 @@ def evaluator_config(
     registry = Registry()
     if rag_engine is not None:
         registry.register(RagSearch(rag_engine))
-    registry.register(UpdateMastery(reports=reports))
+    registry.register(UpdateMastery(learner_state=learner_state))
 
     researcher_max_steps = RESEARCHER_MAX_STEPS
     subagents = {
@@ -1287,6 +1293,9 @@ def teacher_config(
     rag_engine,
     tf_client,
     reports,
+    skills,
+    learner_state,
+    pedagogy,
     session_id,
     emit: Emit,
     max_tokens: int | None = None,
@@ -1311,7 +1320,7 @@ def teacher_config(
 
     eval_cfg = evaluator_config(
         model, reasoning, 100, llm_client, rag_engine, tf_client,
-        reports, session_id, emit,
+        reports, learner_state, session_id, emit,
         system_prompt_override=None,
         tinyfish_api_key=tinyfish_api_key,
         suspended_subagents=suspended_subagents,
