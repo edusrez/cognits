@@ -7,28 +7,29 @@ import asyncio
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
-from cognits.server.util import atoi, text_error
+from cognits.server.exceptions import NotFoundError, StorageError
+from cognits.server.util import atoi
 
 
 def register(app: FastAPI, st) -> None:
     @app.get("/api/reports/{report_id}")
     async def get_report(report_id: str):
         if st.db is None:
-            return text_error("reports not available", 500)
+            raise StorageError("reports not available")
 
         try:
             report = await asyncio.to_thread(st.reports.get, report_id)
         except Exception:
             report = None
         if report is None:
-            return text_error("report not found", 404)
+            raise NotFoundError("report not found")
 
         return JSONResponse(report.to_json())
 
     @app.get("/api/reports")
     async def list_reports(request: Request):
         if st.db is None:
-            return text_error("reports not available", 500)
+            raise StorageError("reports not available")
 
         q = request.query_params
         page = max(atoi(q.get("page")), 1)
@@ -46,18 +47,18 @@ def register(app: FastAPI, st) -> None:
                     st.reports.search, page, limit, sort, search
                 )
         except Exception as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
 
         return JSONResponse(result)
 
     @app.delete("/api/reports/{report_id}")
     async def delete_report(report_id: str):
         if st.db is None:
-            return text_error("reports not available", 500)
+            raise StorageError("reports not available")
 
         try:
             await asyncio.to_thread(st.reports.delete, report_id)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
 
         return Response(status_code=204)

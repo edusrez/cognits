@@ -82,3 +82,10 @@ def real_state(tmp_path, monkeypatch):
     state.session_config = SessionConfigRepository(db)
     return state, create_app(state)
 
+
+@pytest.fixture
+def real_app(real_state):
+    """FastAPI app wired to real repos (no async needed)."""
+    _, app = real_state
+    return app
+

@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from cognits.constants import MAX_NAME_LENGTH
-from cognits.server.util import text_error
+from cognits.server.exceptions import NotFoundError, StorageError
 from cognits.storage.files import Session
 
 log = logging.getLogger("cognits.sessions")
@@ -60,9 +60,9 @@ def register(app: FastAPI, st) -> None:
             if not isinstance(name, str):
                 raise ValueError("name")
         except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
-            return text_error("invalid body", 400)
+            raise StorageError("invalid body")
         if len(name) > MAX_NAME_LENGTH:
-            return text_error("name too long", 400)
+            raise StorageError("name too long")
 
         try:
             await asyncio.to_thread(st.store.rename_session, session_id, name)
@@ -104,7 +104,7 @@ def register(app: FastAPI, st) -> None:
             if not isinstance(order, list) or not all(isinstance(x, str) for x in order):
                 raise ValueError("order")
         except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
-            return text_error("invalid body", 400)
+            raise StorageError("invalid body")
 
         try:
             await asyncio.to_thread(st.store.reorder_sessions, order)
