@@ -16,7 +16,7 @@ from cognits.server.util import text_error
 
 def register(app: FastAPI, st) -> None:
     def _ensure_db():
-        if st.report_store is None:
+        if st.db is None:
             return text_error("storage not available", 503)
         return None
 
@@ -27,7 +27,7 @@ def register(app: FastAPI, st) -> None:
 
         domain = request.query_params.get("domain") or None
         try:
-            skills = await asyncio.to_thread(st.report_store.list_skills, domain)
+            skills = await asyncio.to_thread(st.skills.list_active, domain)
         except Exception as e:
             return text_error(str(e), 500)
 
@@ -39,8 +39,8 @@ def register(app: FastAPI, st) -> None:
             return err
 
         try:
-            tree = await asyncio.to_thread(st.report_store.get_tree)
-            tv = await asyncio.to_thread(st.report_store.get_tree_version)
+            tree = await asyncio.to_thread(st.skills.get_tree)
+            tv = await asyncio.to_thread(st.skills.get_tree_version)
         except Exception as e:
             return text_error(str(e), 500)
 
@@ -54,7 +54,7 @@ def register(app: FastAPI, st) -> None:
 
         try:
             state = await asyncio.to_thread(
-                st.report_store.get_learner_state, skill_id
+                st.learner_state.get, skill_id
             )
         except Exception as e:
             return text_error(str(e), 500)

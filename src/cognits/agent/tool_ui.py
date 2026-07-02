@@ -18,9 +18,9 @@ class CreateLearningSession(Tool):
     will listen and call POST /api/sessions + POST .../config with
     agent_id="maestro"."""
 
-    def __init__(self, emit=None, report_store=None):
+    def __init__(self, emit=None, skills=None):
         self.emit = emit
-        self.store = report_store
+        self.skills = skills
 
     name = "create_learning_session"
     description = (
@@ -51,9 +51,8 @@ class CreateLearningSession(Tool):
         if not skill_name:
             return tool_error("skill_name is required")
 
-        # Validate the skill exists in the tree.
-        if self.store is not None:
-            skills = await asyncio.to_thread(self.store.list_skills)
+        if self.skills is not None:
+            skills = await asyncio.to_thread(self.skills.list_active)
             match = next((s for s in skills if s.name.lower() == skill_name.lower()), None)
             if match is None:
                 return tool_error(

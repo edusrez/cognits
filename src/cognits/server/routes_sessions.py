@@ -80,13 +80,13 @@ def register(app: FastAPI, st) -> None:
         except OSError as e:
             return text_error(str(e), 500)
 
-        if st.report_store is not None:
+        if st.db is not None:
             try:
-                await asyncio.to_thread(st.report_store.delete_messages_by_session, session_id)
+                await asyncio.to_thread(st.messages.delete_by_session, session_id)
             except Exception as e:
                 log.error("sessions: delete messages (session %s): %s", session_id, e)
             try:
-                await asyncio.to_thread(st.report_store.delete_session_config, session_id)
+                await asyncio.to_thread(st.session_config.delete, session_id)
             except Exception as e:
                 log.error("sessions: delete session config (session %s): %s", session_id, e)
 

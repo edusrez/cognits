@@ -15,8 +15,16 @@ import os
 from fastapi import FastAPI
 
 from cognits import paths
-from cognits.storage.db import ReportStore
+from cognits.storage.database import Database
 from cognits.storage.files import Config, Store
+from cognits.storage.learner_state import LearnerStateRepository
+from cognits.storage.messages import MessageRepository
+from cognits.storage.notes import NoteRepository
+from cognits.storage.pedagogical import PedagogicalPlanRepository
+from cognits.storage.reports import ReportRepository
+from cognits.storage.session_config import SessionConfigRepository
+from cognits.storage.skills import SkillRepository
+from cognits.storage.study_plans import StudyPlanRepository
 
 log = logging.getLogger("cognits.server")
 
@@ -29,15 +37,21 @@ _DRAIN_TIMEOUT = float(os.environ.get("COGNITS_DRAIN_TIMEOUT", "5.0"))
 class AppState:
     def __init__(self) -> None:
         self.store: Store | None = None
-        self.report_store: ReportStore | None = None
+        self.db: Database | None = None
+        self.reports: ReportRepository | None = None
+        self.messages: MessageRepository | None = None
+        self.notes: NoteRepository | None = None
+        self.skills: SkillRepository | None = None
+        self.learner_state: LearnerStateRepository | None = None
+        self.study_plans: StudyPlanRepository | None = None
+        self.pedagogy: PedagogicalPlanRepository | None = None
+        self.session_config: SessionConfigRepository | None = None
         self.cached_config: Config = Config()
-        # session_id -> SessionAgent (server/session_agent.py)
         self.active_agents: dict[str, object] = {}
-        # resume_token -> paused subagent message history.
         self.suspended_subagents: dict[str, object] = {}
         self.desktop_lock = asyncio.Lock()
-        self.rag = None  # rag.engine.RagEngine, initialized in main
-        self.docling_engine = None  # docling_engine.DoclingEngine
+        self.rag = None
+        self.docling_engine = None
 
         try:
             base = paths.data_dir()
@@ -59,7 +73,15 @@ class AppState:
             self.cached_config = Config()
 
         try:
-            self.report_store = ReportStore(paths.db_path(base))
+            self.db = Database(paths.db_path(base))
+            self.reports = ReportRepository(self.db)
+            self.messages = MessageRepository(self.db)
+            self.notes = NoteRepository(self.db)
+            self.skills = SkillRepository(self.db)
+            self.learner_state = LearnerStateRepository(self.db)
+            self.study_plans = StudyPlanRepository(self.db)
+            self.pedagogy = PedagogicalPlanRepository(self.db)
+            self.session_config = SessionConfigRepository(self.db)
         except Exception as e:
             log.error("storage: init db: %s", e)
 
@@ -101,8 +123,8 @@ def create_app(state: AppState | None = None) -> FastAPI:
         except asyncio.CancelledError:
             pass
         await state.drain_agents(timeout=_DRAIN_TIMEOUT)
-        if state.report_store is not None:
-            await asyncio.to_thread(state.report_store.shutdown)
+        if state.db is not None:
+            await asyncio.to_thread(state.db.shutdown)
         if state.rag is not None:
             state.rag.shutdown()
         if state.docling_engine is not None:

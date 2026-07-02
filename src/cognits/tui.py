@@ -332,8 +332,8 @@ class CognitsTUI(App):
                 self._server.force_exit = True
                 self._server_thread.join(timeout=2)
         try:
-            if self._state.report_store is not None:
-                self._state.report_store.shutdown()
+            if self._state.db is not None:
+                self._state.db.shutdown()
         except Exception:
             pass
         try:

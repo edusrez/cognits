@@ -13,11 +13,11 @@ from cognits.server.util import atoi, text_error
 def register(app: FastAPI, st) -> None:
     @app.get("/api/reports/{report_id}")
     async def get_report(report_id: str):
-        if st.report_store is None:
+        if st.db is None:
             return text_error("reports not available", 500)
 
         try:
-            report = await asyncio.to_thread(st.report_store.get, report_id)
+            report = await asyncio.to_thread(st.reports.get, report_id)
         except Exception:
             report = None
         if report is None:
@@ -27,7 +27,7 @@ def register(app: FastAPI, st) -> None:
 
     @app.get("/api/reports")
     async def list_reports(request: Request):
-        if st.report_store is None:
+        if st.db is None:
             return text_error("reports not available", 500)
 
         q = request.query_params
@@ -39,11 +39,11 @@ def register(app: FastAPI, st) -> None:
         try:
             if search:
                 result = await asyncio.to_thread(
-                    st.report_store.search_reports_fts, page, limit, sort, search
+                    st.reports.search_fts, page, limit, sort, search
                 )
             else:
                 result = await asyncio.to_thread(
-                    st.report_store.search_reports, page, limit, sort, search
+                    st.reports.search, page, limit, sort, search
                 )
         except Exception as e:
             return text_error(str(e), 500)
@@ -52,11 +52,11 @@ def register(app: FastAPI, st) -> None:
 
     @app.delete("/api/reports/{report_id}")
     async def delete_report(report_id: str):
-        if st.report_store is None:
+        if st.db is None:
             return text_error("reports not available", 500)
 
         try:
-            await asyncio.to_thread(st.report_store.delete_report, report_id)
+            await asyncio.to_thread(st.reports.delete, report_id)
         except Exception as e:
             return text_error(str(e), 500)
 

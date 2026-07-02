@@ -1484,3 +1484,27 @@ class ReportStore:
                     "UPDATE notes SET sort_order = ? WHERE id = ?",
                     (float(i), nid),
                 )
+
+    # --- compat aliases for agent migration (new repo method names) ---
+    # Agents now call shorter method names. These aliases let a ReportStore
+    # object work as a drop-in for tests and transitional callers.
+    upsert = upsert_skill
+    list_active = list_skills
+    search_fts = search_skills_fts
+    supersede = supersede_skill
+    get_active = get_active_plan
+    get_items = get_plan_items
+    get_with_items = get_plan_with_items
+    create = create_plan
+    supersede_plan_alias = supersede_plan  # noqa
+    replace_items = replace_plan_items
+    add_item = add_plan_item
+    update_item = update_plan_item
+    list_all = list_notes
+    rename = rename_note
+    save_content = save_note_content
+    reorder = reorder_notes
+    save_msgs = save_messages  # noqa
+    append = append_message
+    load = load_messages
+    delete_by_session = delete_messages_by_session

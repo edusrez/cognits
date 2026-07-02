@@ -122,11 +122,11 @@ def register(app: FastAPI, st) -> None:
 
 
 async def _messages_snapshot(st, session_id: str) -> Response:
-    if st.report_store is None:
+    if st.db is None:
         return text_error("db not available", 500)
 
     try:
-        rows = await asyncio.to_thread(st.report_store.load_messages, session_id)
+        rows = await asyncio.to_thread(st.messages.load, session_id)
     except Exception as e:
         return text_error(str(e), 500)
 

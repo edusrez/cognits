@@ -13,7 +13,7 @@ from cognits.server.util import text_error
 
 def register(app: FastAPI, st) -> None:
     def ensure_db():
-        if st.report_store is None:
+        if st.db is None:
             return text_error("storage not available", 503)
         return None
 
@@ -36,7 +36,7 @@ def register(app: FastAPI, st) -> None:
             return text_error("title too long", 400)
 
         try:
-            note = await asyncio.to_thread(st.report_store.create_note, title)
+            note = await asyncio.to_thread(st.notes.create, title)
         except Exception as e:
             return text_error(f"storage: create note: {e}", 500)
 
@@ -47,7 +47,7 @@ def register(app: FastAPI, st) -> None:
         if (err := ensure_db()) is not None:
             return err
         try:
-            notes = await asyncio.to_thread(st.report_store.list_notes)
+            notes = await asyncio.to_thread(st.notes.list_all)
         except Exception as e:
             return text_error(str(e), 500)
         return JSONResponse([n.to_json() for n in notes])
@@ -57,7 +57,7 @@ def register(app: FastAPI, st) -> None:
         if (err := ensure_db()) is not None:
             return err
         try:
-            note = await asyncio.to_thread(st.report_store.get_note, note_id)
+            note = await asyncio.to_thread(st.notes.get, note_id)
         except Exception as e:
             return text_error(str(e), 500)
         if note is None:
@@ -94,9 +94,9 @@ def register(app: FastAPI, st) -> None:
 
         try:
             if name is not None:
-                await asyncio.to_thread(st.report_store.rename_note, note_id, name)
+                await asyncio.to_thread(st.notes.rename, note_id, name)
             if content is not None:
-                await asyncio.to_thread(st.report_store.save_note_content, note_id, content)
+                await asyncio.to_thread(st.notes.save_content, note_id, content)
         except Exception as e:
             return text_error(str(e), 500)
 
@@ -108,7 +108,7 @@ def register(app: FastAPI, st) -> None:
             return err
 
         try:
-            await asyncio.to_thread(st.report_store.delete_note, note_id)
+            await asyncio.to_thread(st.notes.delete, note_id)
         except Exception as e:
             return text_error(str(e), 500)
 
@@ -128,7 +128,7 @@ def register(app: FastAPI, st) -> None:
             return text_error("invalid body", 400)
 
         try:
-            await asyncio.to_thread(st.report_store.reorder_notes, order)
+            await asyncio.to_thread(st.notes.reorder, order)
         except Exception as e:
             return text_error(str(e), 500)
 

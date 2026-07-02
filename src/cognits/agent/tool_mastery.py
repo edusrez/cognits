@@ -17,8 +17,8 @@ from cognits.tools import Tool, tool_error
 
 
 class UpdateMastery(Tool):
-    def __init__(self, report_store):
-        self.store = report_store
+    def __init__(self, learner_state):
+        self.store = learner_state
 
     name = "update_mastery"
     description = (

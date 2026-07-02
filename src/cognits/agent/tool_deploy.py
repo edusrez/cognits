@@ -57,7 +57,7 @@ class DeploySubagent(Tool):
     def __init__(
         self,
         llm_client: DeepSeekClient,
-        report_store,
+        reports,
         subagents: dict[str, AgentConfig],
         session_id: Callable[[], str] | None,
         emit: Emit | None,
@@ -66,7 +66,7 @@ class DeploySubagent(Tool):
         suspended_subagents: dict[str, list] | None = None,
     ):
         self.llm_client = llm_client
-        self.report_store = report_store
+        self.reports = reports
         self.subagents = subagents
         self.session_id = session_id
         self.emit = emit
@@ -273,9 +273,9 @@ class DeploySubagent(Tool):
                 )
 
         try:
-            if self.report_store is not None:
+            if self.reports is not None:
                 try:
-                    await asyncio.to_thread(self.report_store.save, report)
+                    await asyncio.to_thread(self.reports.save, report)
                 except Exception as e:
                     log.error("deploy: save report %s: %s", report_id, e)
                 save_done = True
@@ -298,8 +298,8 @@ class DeploySubagent(Tool):
             _emit_end()
 
         except asyncio.CancelledError:
-            if not save_done and self.report_store is not None:
-                await asyncio.shield(asyncio.to_thread(self.report_store.save, report))
+            if not save_done and self.reports is not None:
+                await asyncio.shield(asyncio.to_thread(self.reports.save, report))
             _emit_end()
             if self.rag_engine is not None and content:
                 log.warning("deploy: RAG index skipped for report %s (cancelled)", report_id)

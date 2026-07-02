@@ -88,20 +88,20 @@ def register(app: FastAPI, st) -> None:
 
     @app.get("/api/sessions/{session_id}/messages")
     async def get_messages(session_id: str):
-        if st.report_store is None:
+        if st.db is None:
             return text_error("db not available", 500)
         try:
-            msgs = await asyncio.to_thread(st.report_store.load_messages, session_id)
+            msgs = await asyncio.to_thread(st.messages.load, session_id)
         except Exception as e:
             return text_error(str(e), 500)
         return JSONResponse([m.to_json() for m in msgs])
 
     @app.get("/api/sessions/{session_id}/config")
     async def get_session_config(session_id: str):
-        if st.report_store is None:
+        if st.db is None:
             return text_error("db not available", 500)
         try:
-            cfg = await asyncio.to_thread(st.report_store.load_session_config, session_id)
+            cfg = await asyncio.to_thread(st.session_config.load, session_id)
         except Exception as e:
             return text_error(str(e), 500)
         if cfg is None:
@@ -116,7 +116,7 @@ def register(app: FastAPI, st) -> None:
 
     @app.put("/api/sessions/{session_id}/config")
     async def put_session_config(session_id: str, request: Request):
-        if st.report_store is None:
+        if st.db is None:
             return text_error("db not available", 500)
         try:
             body = await request.json()
@@ -128,7 +128,7 @@ def register(app: FastAPI, st) -> None:
         cfg.session_id = session_id
 
         try:
-            await asyncio.to_thread(st.report_store.save_session_config, cfg)
+            await asyncio.to_thread(st.session_config.save, cfg)
         except Exception as e:
             return text_error(str(e), 500)
         return Response(status_code=204)

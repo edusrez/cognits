@@ -29,11 +29,11 @@ from cognits.tools import Tool, tool_error
 class SkillTreeSave(Tool):
     def __init__(
         self,
-        report_store,
+        skills,
         session_id: Callable[[], str] | None = None,
         emit=None,
     ):
-        self.store = report_store
+        self.store = skills
         self.session_id = session_id
         self.emit = emit
 
@@ -153,7 +153,7 @@ class SkillTreeSave(Tool):
             parent_skill_id=args.get("parent_skill_id", "") or "",
             source="skill_planner",
         )
-        await asyncio.to_thread(self.store.upsert_skill, skill)
+        await asyncio.to_thread(self.store.upsert, skill)
         return json.dumps({"skill_id": skill_id}, ensure_ascii=False)
 
     async def _add_edge(self, args: dict) -> str:

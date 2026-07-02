@@ -10,8 +10,8 @@ from cognits.tools import Tool, tool_error
 
 
 class SavePedagogicalPlan(Tool):
-    def __init__(self, report_store):
-        self.store = report_store
+    def __init__(self, pedagogy):
+        self.store = pedagogy
 
     name = "save_pedagogical_plan"
     description = (
@@ -46,7 +46,7 @@ class SavePedagogicalPlan(Tool):
         if not skill_name or not plan_md.strip():
             return tool_error("skill_name and plan_markdown are required")
 
-        skills = await asyncio.to_thread(self.store.list_skills)
+        skills = await asyncio.to_thread(self.store.list_active)
         match = next((s for s in skills if s.name.lower() == skill_name.lower()), None)
         if match is None:
             return tool_error(
@@ -54,6 +54,6 @@ class SavePedagogicalPlan(Tool):
                 "Use the exact skill name as it appears in the tree."
             )
 
-        await asyncio.to_thread(self.store.save_pedagogical_plan, match.id, plan_md)
+        await asyncio.to_thread(self.store.save, match.id, plan_md)
 
         return json.dumps({"skill_id": match.id, "saved": True}, ensure_ascii=False)

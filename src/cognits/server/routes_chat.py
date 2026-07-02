@@ -157,7 +157,7 @@ def _build_teacher_system_prompt(
     prompt = TEACHER_SYSTEM_PROMPT
 
     if skill_id:
-        skill = store.get_skill(skill_id)
+        skill = skills.get(skill_id)
         if skill:
             prompt += "\n\n## Skill\n\n"
             prompt += f"- Name: {skill.name}\n"
@@ -167,7 +167,7 @@ def _build_teacher_system_prompt(
             if skill.bloom_level:
                 prompt += f"- Bloom level: {skill.bloom_level}\n"
 
-            state = store.get_learner_state(skill_id)
+            state = learner_state.get(skill_id)
             if state:
                 prompt += "\n## Learner State\n\n"
                 prompt += f"- Status: {state.status_enum}\n"
@@ -178,7 +178,7 @@ def _build_teacher_system_prompt(
             else:
                 prompt += "\n## Learner State\n\n(No learner state yet)\n"
 
-            plan = store.get_pedagogical_plan(skill_id)
+            plan = pedagogy.get(skill_id)
             if plan:
                 prompt += "\n## Pedagogical Plan\n\n" + plan
             else:
@@ -305,10 +305,10 @@ def register(app: FastAPI, st) -> None:
         model = cfg.llm_model
         reasoning = cfg.llm_reasoning
         agent_id = cfg.llm_agent_id
-        if st.report_store is not None:
+        if st.db is not None:
             try:
                 sess_cfg = await asyncio.to_thread(
-                    st.report_store.load_session_config, sid
+                    st.session_config.load, sid
                 )
             except Exception as e:
                 log.error("chat: load session config: %s", e)
@@ -335,7 +335,7 @@ def register(app: FastAPI, st) -> None:
                 pass
 
         # Inject compact skill tree context when in planning mode.
-        if st.report_store is not None:
+        if st.db is not None:
             is_planning = any(
                 m.get("role") == "hidden_user"
                 and "planning" in (m.get("content") or "").lower()
@@ -343,10 +343,10 @@ def register(app: FastAPI, st) -> None:
             )
             if is_planning:
                 try:
-                    tree = await asyncio.to_thread(st.report_store.get_tree)
+                    tree = await asyncio.to_thread(st.skills.get_tree)
                     if tree.get("skills"):
                         summary = await asyncio.to_thread(
-                            _build_skills_summary, st.report_store, tree
+                            _build_skills_summary, st.learner_state, tree
                         )
                         if summary:
                             system_prompt += "\n\n## Skill Tree Context\n\n" + summary
@@ -360,7 +360,7 @@ def register(app: FastAPI, st) -> None:
                 profile_ctx = _build_profile_context(profile) if profile and profile.declared else ""
                 teacher_prompt = await asyncio.to_thread(
                     _build_teacher_system_prompt, sess_cfg.skill_id,
-                    st.report_store, profile_ctx,
+                    st.skills, st.learner_state, st.pedagogy, profile_ctx,
                 )
                 if teacher_prompt:
                     system_prompt = teacher_prompt
@@ -484,9 +484,9 @@ async def _run_agent(
         # right at the start. Here and not in the handler: the POST responds
         # immediately even if SQLite is busy, and immediate subscribers read
         # the in-memory sa.messages snapshot, not the DB.
-        if st.report_store is not None:
+        if st.db is not None:
             try:
-                await asyncio.to_thread(st.report_store.save_messages, sid, sa.messages)
+                await asyncio.to_thread(st.messages.save, sid, sa.messages)
             except Exception as e:
                 log.error("chat: save messages (session %s): %s", sid, e)
 
@@ -564,9 +564,9 @@ async def _run_agent(
                             acc["reasoning"] = ""
                             sa.live_content = ""
                             sa.live_reasoning = ""
-                            if st.report_store is not None:
+                            if st.db is not None:
                                 try:
-                                    st.report_store.append_message(sid, partial)
+                                    st.messages.append(sid, partial)
                                 except Exception:
                                     pass
             elif t == "subagent_end":
@@ -629,7 +629,7 @@ async def _run_agent(
                 llm_client,
                 st.rag,
                 tf_client,
-                st.report_store,
+                st.reports,
                 lambda: sid,
                 process_event,
                 max_tokens=doc_max_tokens or None,
@@ -661,7 +661,7 @@ async def _run_agent(
                 llm_client,
                 st.rag if st.rag is not None and st.rag.error is None else None,
                 tf_client,
-                st.report_store,
+                st.reports,
                 lambda: sid,
                 process_event,
                 max_tokens=planner_max_tokens or None,
@@ -683,7 +683,7 @@ async def _run_agent(
         sp_prompt = cfg.agent_overrides.get("study_planner") or None
         subagent_map["study_planner"] = study_planner_config(
             sp_model, sp_reasoning, sp_max_steps,
-            st.report_store, lambda: sid, process_event,
+            st.reports, lambda: sid, process_event,
             system_prompt_override=sp_prompt,
             rag_engine=st.rag if st.rag is not None and st.rag.error is None else None,
             tf_client=tf_client,
@@ -708,7 +708,7 @@ async def _run_agent(
                 llm_client,
                 st.rag if st.rag is not None and st.rag.error is None else None,
                 tf_client,
-                st.report_store, lambda: sid, process_event,
+                st.reports, lambda: sid, process_event,
                 system_prompt_override=ev_prompt,
                 tinyfish_api_key=cfg.tinyfish_api_key,
                 suspended_subagents=st.suspended_subagents,
@@ -732,7 +732,7 @@ async def _run_agent(
                 llm_client,
                 st.rag if st.rag is not None and st.rag.error is None else None,
                 tf_client,
-                st.report_store, lambda: sid, process_event,
+                st.reports, lambda: sid, process_event,
                 system_prompt_override=te_prompt,
                 tinyfish_api_key=cfg.tinyfish_api_key,
                 suspended_subagents=st.suspended_subagents,
@@ -756,7 +756,7 @@ async def _run_agent(
         registry = Registry()
         deploy_subagent_tool = DeploySubagent(
             llm_client=llm_client,
-            report_store=st.report_store,
+            reports=st.reports,
             subagents=subagent_map,
             session_id=lambda: sid,
             emit=process_event,
@@ -771,7 +771,7 @@ async def _run_agent(
         # (Fase 10) to create a new learning session.
         from cognits.agent.tool_ui import CreateLearningSession
         registry.register(
-            CreateLearningSession(emit=process_event, report_store=st.report_store)
+            CreateLearningSession(emit=process_event, skills=st.skills)
         )
 
         if agent_id == "system_support":
@@ -854,9 +854,9 @@ async def _run_agent(
         # response remains (the partial too, if the run was cancelled). Direct
         # sqlite call (ms) instead of to_thread: an await here could be
         # interrupted by a second cancellation and skip the rest.
-        if assistant_row is not None and st.report_store is not None:
+        if assistant_row is not None and st.db is not None:
             try:
-                st.report_store.append_message(sid, assistant_row)
+                st.messages.append(sid, assistant_row)
             except Exception as e:
                 log.error("chat: append message (session %s): %s", sid, e)
 

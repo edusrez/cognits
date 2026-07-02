@@ -223,9 +223,9 @@ def main() -> None:
     app = create_app(state)
 
     def _cleanup_engines() -> None:
-        if state.report_store is not None:
+        if state.db is not None:
             try:
-                state.report_store.shutdown()
+                state.db.shutdown()
             except Exception:
                 pass
         if state.rag is not None:

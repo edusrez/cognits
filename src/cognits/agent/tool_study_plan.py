@@ -23,8 +23,16 @@ def _parse_priority_list(raw) -> list[str]:
 
 
 class PlanStudy(Tool):
-    def __init__(self, report_store, session_id: Callable[[], str] | None = None):
-        self.store = report_store
+    def __init__(
+        self,
+        plans=None,
+        skills=None,
+        learner_state=None,
+        session_id: Callable[[], str] | None = None,
+    ):
+        self.plans = plans
+        self.skills = skills
+        self.learner_state = learner_state
         self.session_id = session_id
 
     name = "plan_study"
@@ -74,7 +82,7 @@ class PlanStudy(Tool):
 
         try:
             # 1. Load FULL skill tree + all learner states.
-            tree = await asyncio.to_thread(self.store.get_tree)
+            tree = await asyncio.to_thread(self.skills.get_tree)
             skills_raw = tree.get("skills", [])
             edges_raw = tree.get("edges", [])
             tree_version = tree.get("treeVersion", 1)
@@ -106,7 +114,7 @@ class PlanStudy(Tool):
 
             states: dict[str, LearnerState] = {}
             for sid_key in skill_map:
-                st = await asyncio.to_thread(self.store.get_learner_state, sid_key)
+                st = await asyncio.to_thread(self.learner_state.get, sid_key)
                 if st is not None:
                     states[sid_key] = st
                 else:
@@ -121,11 +129,11 @@ class PlanStudy(Tool):
             )
 
             # 3. Diff if an old active plan exists.
-            old_plan = await asyncio.to_thread(self.store.get_active_plan)
+            old_plan = await asyncio.to_thread(self.plans.get_active)
             diff: dict | None = None
             if old_plan is not None:
                 old_items = await asyncio.to_thread(
-                    self.store.get_plan_items, old_plan.id
+                    self.plans.get_items, old_plan.id
                 )
                 old_goal = old_plan.goal
                 diff = planner.diff_plans(
@@ -137,23 +145,23 @@ class PlanStudy(Tool):
 
             # 4. Persist: supersede old, create new, replace items.
             if old_plan is not None:
-                await asyncio.to_thread(self.store.supersede_plan, old_plan.id)
+                await asyncio.to_thread(self.plans.supersede, old_plan.id)
                 # Mark removed items as goal_removed.
                 if diff:
                     for ri in diff.get("removed", []):
                         await asyncio.to_thread(
-                            self.store.update_plan_item,
+                            self.plans.update_item,
                             ri["id"], status="goal_removed",
                         )
 
             plan_id = await asyncio.to_thread(
-                self.store.create_plan, tree_version, goal, sid
+                self.plans.create, tree_version, goal, sid
             )
-            await asyncio.to_thread(self.store.replace_plan_items, plan_id, items)
+            await asyncio.to_thread(self.plans.replace_items, plan_id, items)
 
             # 5. Reload to get timestamps + returned item IDs.
             items_reloaded = await asyncio.to_thread(
-                self.store.get_plan_items, plan_id
+                self.plans.get_items, plan_id
             )
 
             result = {

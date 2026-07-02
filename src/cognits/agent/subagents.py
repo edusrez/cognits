@@ -499,7 +499,7 @@ def documentalist_config(
     llm_client: DeepSeekClient,
     rag_engine,
     tf_client: TinyfishClient,
-    report_store,
+    reports,
     session_id,
     emit: Emit,
     max_tokens: int | None = None,
@@ -529,7 +529,7 @@ def documentalist_config(
     registry.register(
         DeploySubagent(
             llm_client=llm_client,
-            report_store=report_store,
+            reports=reports,
             subagents=subagents,
             session_id=session_id,
             emit=wrapped_emit,
@@ -746,7 +746,7 @@ def skill_planner_config(
     llm_client: DeepSeekClient,
     rag_engine,
     tf_client: TinyfishClient,
-    report_store,
+    reports,
     session_id,
     emit: Emit,
     max_tokens: int | None = None,
@@ -771,7 +771,7 @@ def skill_planner_config(
     if rag_engine is not None:
         registry.register(RagSearch(rag_engine))
     registry.register(
-        SkillTreeSave(report_store=report_store, session_id=session_id, emit=tool_emit)
+        SkillTreeSave(reports=reports, session_id=session_id, emit=tool_emit)
     )
 
     researcher_max_steps = RESEARCHER_MAX_STEPS  # DEFAULT_RESEARCHER_MAX_STEPS in routes_chat
@@ -792,7 +792,7 @@ def skill_planner_config(
     registry.register(
         DeploySubagent(
             llm_client=llm_client,
-            report_store=report_store,
+            reports=reports,
             subagents=subagents,
             session_id=session_id,
             emit=wrapped_emit,
@@ -904,7 +904,7 @@ def study_planner_config(
     model: str,
     reasoning: str,
     max_steps: int,
-    report_store,
+    reports,
     session_id,
     emit: Emit,
     max_tokens: int | None = None,
@@ -931,9 +931,9 @@ def study_planner_config(
 
     registry = Registry()
     registry.register(
-        PlanStudy(report_store=report_store, session_id=session_id)
+        PlanStudy(reports=reports, session_id=session_id)
     )
-    registry.register(SavePedagogicalPlan(report_store=report_store))
+    registry.register(SavePedagogicalPlan(reports=reports))
     if rag_engine is not None:
         registry.register(RagSearch(rag_engine))
 
@@ -955,7 +955,7 @@ def study_planner_config(
         registry.register(
             DeploySubagent(
                 llm_client=llm_client,
-                report_store=report_store,
+                reports=reports,
                 subagents=subagents,
                 session_id=session_id,
                 emit=wrapped_emit,
@@ -1061,7 +1061,7 @@ def evaluator_config(
     llm_client: DeepSeekClient,
     rag_engine,
     tf_client: TinyfishClient,
-    report_store,
+    reports,
     session_id,
     emit: Emit,
     max_tokens: int | None = None,
@@ -1085,7 +1085,7 @@ def evaluator_config(
     registry = Registry()
     if rag_engine is not None:
         registry.register(RagSearch(rag_engine))
-    registry.register(UpdateMastery(report_store=report_store))
+    registry.register(UpdateMastery(reports=reports))
 
     researcher_max_steps = RESEARCHER_MAX_STEPS
     subagents = {
@@ -1105,7 +1105,7 @@ def evaluator_config(
     registry.register(
         DeploySubagent(
             llm_client=llm_client,
-            report_store=report_store,
+            reports=reports,
             subagents=subagents,
             session_id=session_id,
             emit=wrapped_emit,
@@ -1286,7 +1286,7 @@ def teacher_config(
     llm_client,
     rag_engine,
     tf_client,
-    report_store,
+    reports,
     session_id,
     emit: Emit,
     max_tokens: int | None = None,
@@ -1306,12 +1306,12 @@ def teacher_config(
     if tf_client is not None:
         doc_cfg = documentalist_config(
             model, reasoning, 50, llm_client, rag_engine, tf_client,
-            report_store, session_id, emit,
+            reports, session_id, emit,
         )
 
     eval_cfg = evaluator_config(
         model, reasoning, 100, llm_client, rag_engine, tf_client,
-        report_store, session_id, emit,
+        reports, session_id, emit,
         system_prompt_override=None,
         tinyfish_api_key=tinyfish_api_key,
         suspended_subagents=suspended_subagents,
@@ -1328,7 +1328,7 @@ def teacher_config(
     registry.register(
         DeploySubagent(
             llm_client=llm_client,
-            report_store=report_store,
+            reports=reports,
             subagents=subagents,
             session_id=session_id,
             emit=wrapped_emit,
