@@ -14,6 +14,9 @@ import pytest
 
 from cognits.server.app import AppState, create_app
 from cognits.storage.db import ReportStore, Skill, new_skill_id
+from cognits.storage.database import Database
+from cognits.storage.learner_state import LearnerStateRepository
+from cognits.storage.skills import SkillRepository
 
 
 # --- helpers ---------------------------------------------------------
@@ -24,7 +27,7 @@ def _skill(name: str, domain: str = "python") -> Skill:
 
 def _seed(store: ReportStore, *skills: Skill):
     for s in skills:
-        store.upsert_skill(s)
+        store.upsert(s)
 
 
 def _state():
@@ -44,7 +47,9 @@ async def _get(client: httpx.AsyncClient, path: str, status: int = 200):
 def client_and_store(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     state = _state()
-    state.skills = ReportStore(tmp_path / "test.db")
+    db = Database(tmp_path / "test.db")
+    state.skills = SkillRepository(db)
+    state.learner_state = LearnerStateRepository(db)
     app = create_app(state)
     async def _inner():
         transport = httpx.ASGITransport(app=app)
@@ -103,8 +108,8 @@ def test_get_skill_tree(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     async def run():
         store = ReportStore(tmp_path / "db.db")
-        a = _skill("A"); store.upsert_skill(a)
-        b = _skill("B"); store.upsert_skill(b)
+        a = _skill("A"); store.upsert(a)
+        b = _skill("B"); store.upsert(b)
         store.add_edge(b.id, a.id, "soft_prereq", build_id="")
         state = _state(); state.skills = store
         app = create_app(state)
@@ -139,8 +144,10 @@ def test_get_learner_state_existing(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     async def run():
         store = ReportStore(tmp_path / "db.db")
-        s = _skill("A"); store.upsert_skill(s)
+        s = _skill("A"); store.upsert(s)
         state = _state(); state.skills = store
+        db = Database(store.db_path)
+        state.learner_state = LearnerStateRepository(db)
         app = create_app(state)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:

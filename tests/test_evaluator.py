@@ -256,7 +256,7 @@ def test_evaluator_config_builds(store):
     cfg = evaluator_config(
         model="m", reasoning="", max_steps=10,
         llm_client=FakeLLM(), rag_engine=None, tf_client=FakeTF(),
-        reports=store, session_id=lambda: "s_test",
+        reports=store, learner_state=store, session_id=lambda: "s_test",
         emit=lambda e: None,
     )
     assert cfg.name == "evaluator"

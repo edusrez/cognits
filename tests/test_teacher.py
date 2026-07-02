@@ -66,7 +66,7 @@ def test_save_pedagogical_plan_tool_persists(store):
     from cognits.agent.pedagogical_plan import SavePedagogicalPlan
 
     s = _skill("Variables"); _seed(store, s)
-    tool = SavePedagogicalPlan(pedagogy=store)
+    tool = SavePedagogicalPlan(skills=store, pedagogy=store)
     result = asyncio.run(tool.execute(json.dumps({
         "skill_name": "Variables",
         "plan_markdown": "# Plan\n\nStage 1: hello",
@@ -78,7 +78,7 @@ def test_save_pedagogical_plan_tool_persists(store):
 def test_save_pedagogical_plan_tool_unknown_skill(store):
     from cognits.agent.pedagogical_plan import SavePedagogicalPlan
 
-    tool = SavePedagogicalPlan(pedagogy=store)
+    tool = SavePedagogicalPlan(skills=store, pedagogy=store)
     result = asyncio.run(tool.execute(json.dumps({
         "skill_name": "Nonexistent",
         "plan_markdown": "Plan",
@@ -195,7 +195,7 @@ def test_teacher_config_builds(store):
     cfg = teacher_config(
         model="m", reasoning="", max_steps=10,
         llm_client=FakeLLM(), rag_engine=None, tf_client=FakeTF(),
-        report_store=store, session_id=lambda: "s_test",
+        reports=store, skills=store, learner_state=store, pedagogy=store, session_id=lambda: "s_test",
         emit=lambda e: None,
     )
     assert cfg.name == "maestro"

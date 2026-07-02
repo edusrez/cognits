@@ -14,6 +14,8 @@ from cognits.storage.db import (
     StudyPlanItem,
     new_skill_id,
 )
+from cognits.storage.database import Database
+from cognits.storage.learner_state import LearnerStateRepository
 
 
 # --- helpers ---------------------------------------------------------
@@ -213,10 +215,11 @@ def test_plan_study_creates_plan_and_items(store):
     store.upsert_skill(c)
     store.add_edge(b.id, a.id, "prereq")
     store.add_edge(c.id, b.id, "prereq")
-    # Give A high mastery -> B should be unlocked in frontier.
     store.upsert_learner_state(_state(a.id, p=0.95, status="mastered"))
 
-    tool = PlanStudy(plans=store, skills=store, learner_state=store, session_id=lambda: "s_test")
+    db = Database(store.db_path)
+    ls_repo = LearnerStateRepository(db)
+    tool = PlanStudy(plans=store, skills=store, learner_state=ls_repo, session_id=lambda: "s_test")
     result = asyncio.run(tool.execute(json.dumps({"goal": "C"})))
     data = json.loads(result)
     assert "plan_id" in data
