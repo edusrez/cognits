@@ -267,34 +267,52 @@ class DeploySubagent(Tool):
             subagent=subagent_type,
         )
 
-        if self.report_store is not None:
-            try:
-                await asyncio.to_thread(self.report_store.save, report)
-            except Exception as e:
-                log.error("deploy: save report %s: %s", report_id, e)
+        save_done = False
+        emitted = False
 
-        if self.rag_engine is not None and content:
-            from cognits.rag.chunker import split_markdown
+        def _emit_end() -> None:
+            nonlocal emitted
+            if not emitted and self.emit is not None:
+                emitted = True
+                self.emit(
+                    {
+                        "type": "subagent_end",
+                        "data": {"reportId": report_id, "title": title, "summary": summary},
+                    }
+                )
 
-            chunks = split_markdown(content, report_id, title)
-            if chunks:
+        try:
+            if self.report_store is not None:
                 try:
-                    n = await self.rag_engine.index(chunks)
-                    log.info("deploy: indexed %d chunks for report %s", n, report_id)
-                    del chunks
-                    import gc; gc.collect()
-                except asyncio.CancelledError:
-                    raise
+                    await asyncio.to_thread(self.report_store.save, report)
                 except Exception as e:
-                    log.error("deploy: index chunks (report %s): %s", report_id, e)
+                    log.error("deploy: save report %s: %s", report_id, e)
+                save_done = True
 
-        if self.emit is not None:
-            self.emit(
-                {
-                    "type": "subagent_end",
-                    "data": {"reportId": report_id, "title": title, "summary": summary},
-                }
-            )
+            if self.rag_engine is not None and content:
+                from cognits.rag.chunker import split_markdown
+
+                chunks = split_markdown(content, report_id, title)
+                if chunks:
+                    try:
+                        n = await self.rag_engine.index(chunks)
+                        log.info("deploy: indexed %d chunks for report %s", n, report_id)
+                        del chunks
+                        import gc; gc.collect()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as e:
+                        log.error("deploy: index chunks (report %s): %s", report_id, e)
+
+            _emit_end()
+
+        except asyncio.CancelledError:
+            if not save_done and self.report_store is not None:
+                await asyncio.shield(asyncio.to_thread(self.report_store.save, report))
+            _emit_end()
+            if self.rag_engine is not None and content:
+                log.warning("deploy: RAG index skipped for report %s (cancelled)", report_id)
+            raise
 
         result = {
             "reportId": report_id,
