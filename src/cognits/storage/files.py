@@ -22,12 +22,20 @@ NONCE_SIZE = 12
 
 
 def write_file_atomic(path: Path, data: bytes) -> None:
-    # Write to a temp file and rename: a crash mid-write cannot leave the
-    # destination file truncated or corrupted.
     tmp = path.with_name(path.name + ".tmp")
     try:
-        tmp.write_bytes(data)
+        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, data)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
         os.replace(tmp, path)
+        dfd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
@@ -322,8 +330,8 @@ class Store:
         self._sessions_dir().mkdir(parents=True, exist_ok=True)
 
     def save_session(self, session: Session) -> None:
-        data = json.dumps(session.to_json(), indent=2, ensure_ascii=False)
-        self._session_path(session.id).write_text(data, encoding="utf-8")
+        data = json.dumps(session.to_json(), indent=2, ensure_ascii=False).encode("utf-8")
+        write_file_atomic(self._session_path(session.id), data)
 
     def list_sessions(self) -> list[Session]:
         sessions: list[Session] = []
@@ -372,7 +380,8 @@ class Store:
         return self.base_path / "session_order.json"
 
     def reorder_sessions(self, ordered_ids: list[str]) -> None:
-        self._order_path().write_text(json.dumps(ordered_ids), encoding="utf-8")
+        data = json.dumps(ordered_ids).encode("utf-8")
+        write_file_atomic(self._order_path(), data)
 
     def _load_order(self) -> list[str]:
         try:
