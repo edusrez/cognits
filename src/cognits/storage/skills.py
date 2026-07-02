@@ -74,7 +74,7 @@ class SkillRepository:
             )
 
     def upsert(self, s: Skill) -> None:
-        with self.db.lock:
+        with self.db.transaction():
             self.db.conn.execute(
                 """INSERT INTO skills (id, domain, name, description, bloom_level,
                                        difficulty, parent_skill_id, status,

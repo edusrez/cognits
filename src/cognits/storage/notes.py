@@ -63,7 +63,7 @@ class NoteRepository:
             )
 
     def reorder(self, ordered_ids: list[str]) -> None:
-        with self.db.lock:
+        with self.db.transaction():
             for i, nid in enumerate(ordered_ids):
                 self.db.conn.execute(
                     "UPDATE notes SET sort_order = ? WHERE id = ?",

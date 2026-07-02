@@ -80,7 +80,7 @@ class StudyPlanRepository:
         return item_id
 
     def replace_items(self, plan_id: str, items: list[StudyPlanItem]) -> None:
-        with self.db.lock:
+        with self.db.transaction():
             self.db.conn.execute(
                 "DELETE FROM study_plan_items WHERE plan_id = ?", (plan_id,)
             )

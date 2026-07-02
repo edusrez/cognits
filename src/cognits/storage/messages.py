@@ -11,23 +11,16 @@ class MessageRepository:
         self.db = db
 
     def save(self, session_id: str, msgs: list[MessageRow]) -> None:
-        with self.db.lock:
-            cur = self.db.conn.cursor()
-            cur.execute("BEGIN")
-            try:
-                cur.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
-                cur.executemany(
-                    """INSERT INTO messages (session_id, role, content, reasoning, report_id, report_title, reports)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    [
-                        (session_id, m.role, m.content, m.reasoning, m.report_id, m.report_title, m.reports)
-                        for m in msgs
-                    ],
-                )
-                cur.execute("COMMIT")
-            except BaseException:
-                cur.execute("ROLLBACK")
-                raise
+        with self.db.transaction():
+            self.db.conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+            self.db.conn.executemany(
+                """INSERT INTO messages (session_id, role, content, reasoning, report_id, report_title, reports)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (session_id, m.role, m.content, m.reasoning, m.report_id, m.report_title, m.reports)
+                    for m in msgs
+                ],
+            )
 
     def append(self, session_id: str, m: MessageRow) -> None:
         with self.db.lock:
