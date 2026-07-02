@@ -223,6 +223,11 @@ def main() -> None:
     app = create_app(state)
 
     def _cleanup_engines() -> None:
+        if state.report_store is not None:
+            try:
+                state.report_store.shutdown()
+            except Exception:
+                pass
         if state.rag is not None:
             state.rag.shutdown()
         if state.docling_engine is not None:

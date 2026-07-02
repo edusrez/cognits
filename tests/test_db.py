@@ -395,9 +395,12 @@ def test_plan_json_shapes(store):
 
 
 def test_shutdown_checkpoint(tmp_path):
-    rs = ReportStore(tmp_path / "test.db")
+    db_path = tmp_path / "test.db"
+    rs = ReportStore(db_path)
     rs.shutdown()
     assert rs._closed
+    with pytest.raises(Exception):
+        rs._conn.execute("SELECT 1")
 
 
 def test_shutdown_idempotent(tmp_path):
