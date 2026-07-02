@@ -9,7 +9,8 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from cognits.constants import DEFAULT_FLASH_MODEL, DEFAULT_MODEL, ORCHESTRATOR_MAX_STEPS
-from cognits.server.util import mask_key, text_error
+from cognits.server.exceptions import CognitsError, NotFoundError
+from cognits.server.util import mask_key
 from cognits.storage.files import Config, StudentProfile
 
 VALID_MODELS = (DEFAULT_MODEL, DEFAULT_FLASH_MODEL)
@@ -33,14 +34,14 @@ def register(app: FastAPI, st) -> None:
         try:
             cfg = await asyncio.to_thread(st.store.load_config)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise CognitsError(str(e), "ERROR", 500)
 
         return JSONResponse(_config_response(cfg))
 
     @app.put("/api/config")
     async def put_config(request: Request):
         if st.store is None:
-            return text_error("store not initialized", 500)
+            raise CognitsError("store not initialized", "ERROR", 500)
 
         try:
             body = await request.json()
@@ -48,22 +49,22 @@ def register(app: FastAPI, st) -> None:
                 raise ValueError("body")
             cfg = Config.from_json(body)
         except (json.JSONDecodeError, ValueError, TypeError, UnicodeDecodeError):
-            return text_error("invalid body", 400)
+            raise CognitsError("invalid body", "ERROR", 400)
 
         if cfg.llm_provider and cfg.llm_provider != "deepseek":
-            return text_error("invalid provider", 400)
+            raise CognitsError("invalid provider", "ERROR", 400)
         if cfg.llm_model and cfg.llm_model not in VALID_MODELS:
-            return text_error("invalid model", 400)
+            raise CognitsError("invalid model", "ERROR", 400)
         if cfg.llm_reasoning and cfg.llm_reasoning not in VALID_REASONING:
-            return text_error("invalid reasoning value", 400)
+            raise CognitsError("invalid reasoning value", "ERROR", 400)
         if cfg.max_tokens and not (0 < cfg.max_tokens <= MAX_TOKENS_LIMIT):
-            return text_error("invalid maxTokens", 400)
+            raise CognitsError("invalid maxTokens", "ERROR", 400)
         if cfg.temperature and not (0 <= cfg.temperature <= 2.0):
-            return text_error("invalid temperature", 400)
+            raise CognitsError("invalid temperature", "ERROR", 400)
         if cfg.top_p and not (0 <= cfg.top_p <= 1.0):
-            return text_error("invalid topP", 400)
+            raise CognitsError("invalid topP", "ERROR", 400)
         if cfg.max_steps and not (0 <= cfg.max_steps <= ORCHESTRATOR_MAX_STEPS):
-            return text_error("invalid maxSteps", 400)
+            raise CognitsError("invalid maxSteps", "ERROR", 400)
 
         current = st.cached_config
         if current is not None:
@@ -75,7 +76,7 @@ def register(app: FastAPI, st) -> None:
         try:
             await asyncio.to_thread(st.store.save_config, cfg)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise CognitsError(str(e), "ERROR", 500)
 
         st.cached_config = cfg
         return Response(status_code=204)
@@ -87,34 +88,34 @@ def register(app: FastAPI, st) -> None:
         try:
             profile = await asyncio.to_thread(st.store.load_profile)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise CognitsError(str(e), "ERROR", 500)
         return JSONResponse(profile.to_json())
 
     @app.put("/api/profile")
     async def put_profile(request: Request):
         if st.store is None:
-            return text_error("store not initialized", 500)
+            raise CognitsError("store not initialized", "ERROR", 500)
         try:
             body = await request.json()
             if not isinstance(body, dict):
                 raise ValueError("body")
             profile = StudentProfile.from_json(body)
         except (json.JSONDecodeError, ValueError, TypeError, UnicodeDecodeError):
-            return text_error("invalid body", 400)
+            raise CognitsError("invalid body", "ERROR", 400)
         try:
             await asyncio.to_thread(st.store.save_profile, profile)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise CognitsError(str(e), "ERROR", 500)
         return Response(status_code=204)
 
     @app.delete("/api/setup/state")
     async def delete_setup_state():
         if st.store is None:
-            return text_error("store not initialized", 500)
+            raise CognitsError("store not initialized", "ERROR", 500)
         try:
             await asyncio.to_thread(st.store.reset_setup_state)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise CognitsError(str(e), "ERROR", 500)
         st.cached_config = Config()
         return Response(status_code=204)
 
@@ -124,7 +125,7 @@ def register(app: FastAPI, st) -> None:
             body = await request.json()
             api_key = body.get("apiKey", "")
         except (json.JSONDecodeError, ValueError):
-            return text_error("invalid body", 400)
+            raise CognitsError("invalid body", "ERROR", 400)
         if not api_key:
             return JSONResponse({"valid": False, "error": "No API key provided"})
         try:
