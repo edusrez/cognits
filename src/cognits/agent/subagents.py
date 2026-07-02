@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 from cognits.agent.agent import AgentConfig, Emit
 from cognits.agent.tool_rag import RagSearch
+from cognits.constants import DEFAULT_FLASH_MODEL, RESEARCHER_MAX_STEPS
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.tinyfish import TinyfishClient, TinyfishError
 from cognits.tools import Registry, Tool, tool_error
@@ -274,7 +275,7 @@ def directory_reader_config(
 
 
 def session_namer_config(
-    model: str = "deepseek-v4-flash",
+    model: str = DEFAULT_FLASH_MODEL,
     max_tokens: int | None = None,
     temperature: float | None = None,
     top_p: float | None = None,
@@ -356,7 +357,7 @@ Return a JSON object with exactly this structure:
 
 
 def session_analyzer_config(
-    model: str = "deepseek-v4-flash",
+    model: str = DEFAULT_FLASH_MODEL,
     reasoning: str = "disabled",
     max_tokens: int | None = None,
     temperature: float | None = None,
@@ -773,7 +774,7 @@ def skill_planner_config(
         SkillTreeSave(report_store=report_store, session_id=session_id, emit=tool_emit)
     )
 
-    researcher_max_steps = 100  # DEFAULT_RESEARCHER_MAX_STEPS in routes_chat
+    researcher_max_steps = RESEARCHER_MAX_STEPS  # DEFAULT_RESEARCHER_MAX_STEPS in routes_chat
     subagents = {
         "web_researcher": AgentConfig(
             name="web_researcher",
@@ -938,7 +939,7 @@ def study_planner_config(
 
     subagents: dict[str, AgentConfig] = {}
     if llm_client is not None and tf_client is not None:
-        researcher_max_steps = 100
+        researcher_max_steps = RESEARCHER_MAX_STEPS
         subagents["web_researcher"] = AgentConfig(
             name="web_researcher",
             model=model,
@@ -1086,7 +1087,7 @@ def evaluator_config(
         registry.register(RagSearch(rag_engine))
     registry.register(UpdateMastery(report_store=report_store))
 
-    researcher_max_steps = 100
+    researcher_max_steps = RESEARCHER_MAX_STEPS
     subagents = {
         "web_researcher": AgentConfig(
             name="web_researcher",

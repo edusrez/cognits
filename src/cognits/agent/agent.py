@@ -12,22 +12,29 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from cognits.constants import (
+    MAX_CONCURRENT_DEPLOYS,
+    MAX_CONCURRENT_TOOLS,
+    MEM_CRITICAL,
+    MEM_HIGH,
+    MEM_WARN,
+    TOOL_SEM_LOW,
+)
 from cognits.llm.deepseek import DeepSeekClient
 
-_MAX_CONCURRENT_TOOLS = 4
-_tool_sem = asyncio.Semaphore(_MAX_CONCURRENT_TOOLS)
-_MAX_CONCURRENT_DEPLOYS = 2
-_deploy_sem = asyncio.Semaphore(_MAX_CONCURRENT_DEPLOYS)
-_tool_sem_low = asyncio.Semaphore(1)
+_tool_sem = asyncio.Semaphore(MAX_CONCURRENT_TOOLS)
+_deploy_sem = asyncio.Semaphore(MAX_CONCURRENT_DEPLOYS)
+_tool_sem_low = asyncio.Semaphore(TOOL_SEM_LOW)
 _memory_pressure: str = "ok"
+
 
 def set_memory_pressure(rss_mb: int) -> None:
     global _memory_pressure
-    if rss_mb > 6800:
+    if rss_mb > MEM_CRITICAL:
         _memory_pressure = "critical"
-    elif rss_mb > 6200:
+    elif rss_mb > MEM_HIGH:
         _memory_pressure = "high"
-    elif rss_mb > 5000:
+    elif rss_mb > MEM_WARN:
         _memory_pressure = "warn"
     else:
         _memory_pressure = "ok"

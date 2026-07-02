@@ -12,6 +12,7 @@ from collections.abc import Callable
 
 import httpx
 
+from cognits.constants import HTTPX_MAX_CONNECTIONS, HTTPX_MAX_KEEPALIVE
 from cognits.llm.types import Message
 
 # If the API stops sending data for this duration, the stream is considered dead.
@@ -33,7 +34,7 @@ class DeepSeekClient:
             timeout=httpx.Timeout(
                 connect=10.0, read=STREAM_IDLE_TIMEOUT, write=30.0, pool=10.0
             ),
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=4),
+            limits=httpx.Limits(max_connections=HTTPX_MAX_CONNECTIONS, max_keepalive_connections=HTTPX_MAX_KEEPALIVE),
         )
 
     async def aclose(self) -> None:

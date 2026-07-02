@@ -11,12 +11,10 @@ from fastapi.responses import JSONResponse
 
 from cognits import paths
 from cognits.agent.prompts import DEFAULT_AGENTS
+from cognits.constants import DEFAULT_MODEL, TREE_MAX_DEPTH, TREE_MAX_ENTRIES
 from cognits.server.util import text_error
 from cognits.storage.db import SessionConfigRow
 from cognits.storage.files import write_file_atomic
-
-TREE_MAX_DEPTH = 6
-TREE_MAX_ENTRIES = 2000
 TREE_SKIP_DIRS = {"node_modules", "dist", "vendor"}
 
 
@@ -110,7 +108,7 @@ def register(app: FastAPI, st) -> None:
             cfg = SessionConfigRow(
                 session_id=session_id,
                 provider="deepseek",
-                model="deepseek-v4-pro",
+                model=DEFAULT_MODEL,
                 reasoning="max",
                 agent_id="orchestrator",
             )

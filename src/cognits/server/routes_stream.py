@@ -18,9 +18,8 @@ from fastapi.responses import Response, StreamingResponse
 
 from cognits.server.session_agent import SessionAgent
 from cognits.server.util import text_error
+from cognits.constants import KEEPALIVE_SECONDS
 from cognits.storage.db import MessageRow
-
-KEEPALIVE_SECONDS = 15
 
 SSE_HEADERS = {
     "Cache-Control": "no-cache",

@@ -8,6 +8,7 @@ import logging
 from collections.abc import Callable
 
 from cognits.agent.agent import Agent, AgentConfig, Emit
+from cognits.constants import AGENT_LABELS, DEFAULT_MODEL
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import ROLE_USER, Message
 from cognits.storage.db import Report, new_report_id
@@ -15,18 +16,8 @@ from cognits.tools import Tool, tool_error
 
 log = logging.getLogger("cognits.deploy")
 
-# Display labels for subagent types, used when the outer deploy wrapper
-# translates a tool_start(deploy_subagent) into a "Deploying <label>..."
-# tool_progress message.
-SUBAGENT_LABELS: dict[str, str] = {
-    "web_researcher": "Web Researcher",
-    "directory_reader": "Directory Reader",
-    "skill_planner": "Skill Planner",
-    "study_planner": "Study Planner",
-    "evaluator": "Evaluator",
-    "teacher": "Teacher",
-    "session_analyzer": "Session Analyzer",
-}
+# Re-export for subagent type → display label lookup.
+SUBAGENT_LABELS = AGENT_LABELS
 
 
 def extract_title(content: str, fallback: str) -> str:
@@ -126,7 +117,7 @@ class DeploySubagent(Tool):
             thoroughness = parsed.get("thoroughness", "high")
             if thoroughness == "max":
                 import dataclasses
-                cfg = dataclasses.replace(cfg, model="deepseek-v4-pro", reasoning="max")
+                cfg = dataclasses.replace(cfg, model=DEFAULT_MODEL, reasoning="max")
 
         if subagent_type == "skill_planner":
             # The planner iterates with web_researcher and needs the Pro
@@ -135,7 +126,7 @@ class DeploySubagent(Tool):
             # here protects against caller-supplied overrides that would
             # cripple it (e.g. a flash default).
             import dataclasses
-            cfg = dataclasses.replace(cfg, model="deepseek-v4-pro", reasoning="max")
+            cfg = dataclasses.replace(cfg, model=DEFAULT_MODEL, reasoning="max")
 
         if subagent_type in ("web_researcher", "skill_planner") and not self.tinyfish_api_key:
             return tool_error(

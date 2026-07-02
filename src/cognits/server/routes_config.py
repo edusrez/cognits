@@ -8,10 +8,11 @@ import json
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from cognits.constants import DEFAULT_FLASH_MODEL, DEFAULT_MODEL
 from cognits.server.util import mask_key, text_error
 from cognits.storage.files import Config, StudentProfile
 
-VALID_MODELS = ("deepseek-v4-pro", "deepseek-v4-flash")
+VALID_MODELS = (DEFAULT_MODEL, DEFAULT_FLASH_MODEL)
 VALID_REASONING = ("disabled", "high", "max")
 MAX_TOKENS_LIMIT = 384000
 

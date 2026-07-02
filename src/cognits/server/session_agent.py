@@ -16,9 +16,8 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from cognits.constants import SUBSCRIBER_BUFFER
 from cognits.storage.db import MessageRow
-
-SUBSCRIBER_BUFFER = 1024
 
 
 @dataclass

@@ -7,8 +7,7 @@ Python counts codepoints, same as utf8.RuneCountInString.
 
 from __future__ import annotations
 
-CHUNK_SIZE = 1600
-CHUNK_OVERLAP = 160
+from cognits.constants import CHUNK_OVERLAP, CHUNK_SIZE
 
 
 def split_paragraphs(md: str) -> list[str]:

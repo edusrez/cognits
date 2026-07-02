@@ -18,6 +18,7 @@ from textual.widgets.option_list import Option
 
 from cognits import __version__
 from cognits.bootstrap import _Server, _log_exception, _log_handler
+from cognits.constants import MEM_CRITICAL, MEM_HIGH
 from cognits.server.app import AppState
 from cognits.server.browser import open_browser
 
@@ -287,14 +288,14 @@ class CognitsTUI(App):
                         "cognits.mem", logging.DEBUG, "", 0,
                         f"RSS memory: {rss_mb} MB", (), None,
                     ))
-                if rss_mb > 6200:
+                if rss_mb > MEM_HIGH:
                     gc.collect()
                     if _log_handler is not None:
                         _log_handler.emit(logging.LogRecord(
                             "cognits.mem", logging.WARNING, "", 0,
                             f"High memory ({rss_mb} MB) — forced GC", (), None,
                         ))
-                if rss_mb > 6800:
+                if rss_mb > MEM_CRITICAL:
                     if _log_handler is not None:
                         _log_handler.emit(logging.LogRecord(
                             "cognits.mem", logging.CRITICAL, "", 0,

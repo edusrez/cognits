@@ -33,6 +33,13 @@ from cognits.agent.prompts import (
     default_agent_prompt,
 )
 from cognits.agent.tool_deploy import DeploySubagent
+from cognits.constants import (
+    AGENT_LABELS,
+    DEFAULT_FLASH_MODEL,
+    DEFAULT_MODEL,
+    ORCHESTRATOR_MAX_STEPS,
+    RESEARCHER_MAX_STEPS,
+)
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import ROLE_SYSTEM, ROLE_USER, Message
 from cognits.server.session_agent import SessionAgent
@@ -44,20 +51,6 @@ from cognits.tools import Registry
 
 log = logging.getLogger("cognits.chat")
 
-DEFAULT_MODEL = "deepseek-v4-pro"
-DEFAULT_RESEARCHER_MAX_STEPS = 100
-DEFAULT_ORCHESTRATOR_MAX_STEPS = 999
-
-AGENT_LABELS = {
-    "web_researcher": "Web Researcher",
-    "documentalist": "Documentalist",
-    "session_analyzer": "Session Analyzer",
-    "directory_reader": "Directory Reader",
-    "skill_planner": "Skill Planner",
-    "study_planner": "Study Planner",
-    "maestro": "Maestro",
-    "system_support": "System Support",
-}
 
 def _build_profile_context(profile: StudentProfile) -> str:
     d = profile.declared
@@ -427,7 +420,7 @@ async def _run_session_namer(
             context += f"Their location is set to {cfg.user_location}. "
         context += f"The project directory is '{Path.cwd().name}'."
 
-        model = "deepseek-v4-flash"
+        model = DEFAULT_FLASH_MODEL
         ag_cfg = session_namer_config(
             model=model,
             max_tokens=20,
@@ -593,7 +586,7 @@ async def _run_agent(
         web_reasoning = web_cfg.reasoning if web_cfg else ""
         web_max_steps = web_cfg.max_steps if web_cfg else 0
         if web_max_steps <= 0:
-            web_max_steps = DEFAULT_RESEARCHER_MAX_STEPS
+            web_max_steps = RESEARCHER_MAX_STEPS
         web_max_tokens = web_cfg.max_tokens if web_cfg else 0
         web_temperature = web_cfg.temperature if web_cfg else 0.0
         web_top_p = web_cfg.top_p if web_cfg else 0.0
@@ -624,7 +617,7 @@ async def _run_agent(
             doc_reasoning = doc_cfg.reasoning if doc_cfg else ""
             doc_max_steps = doc_cfg.max_steps if doc_cfg else 0
             if doc_max_steps <= 0:
-                doc_max_steps = DEFAULT_RESEARCHER_MAX_STEPS
+                doc_max_steps = RESEARCHER_MAX_STEPS
             doc_max_tokens = doc_cfg.max_tokens if doc_cfg else 0
             doc_temperature = doc_cfg.temperature if doc_cfg else 0.0
             doc_top_p = doc_cfg.top_p if doc_cfg else 0.0

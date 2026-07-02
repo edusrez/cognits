@@ -15,6 +15,8 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
+from cognits.constants import BUSY_TIMEOUT_MS
+
 SCHEMA_VERSION = 1
 
 # The base schema is idempotent (CREATE IF NOT EXISTS). reports_fts is an
@@ -604,7 +606,7 @@ class ReportStore:
             self.db_path, check_same_thread=False, isolation_level=None
         )
         try:
-            self._conn.execute("PRAGMA busy_timeout = 5000")
+            self._conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
             self._conn.execute("PRAGMA journal_mode = WAL")
             self._conn.execute("PRAGMA synchronous = NORMAL")
             self._check_fts5()
