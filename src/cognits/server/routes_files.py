@@ -88,7 +88,7 @@ EXT_MAP: dict[str, tuple[str, str | None]] = {
     ".pdf": ("pdf", None),
 }
 
-MAX_TEXT_BYTES = 5 * 1024 * 1024  # 5 MB
+from cognits.constants import MAX_NAME_LENGTH, MAX_TEXT_BYTES
 
 
 def _resolve_file(rel_path: str) -> Path:

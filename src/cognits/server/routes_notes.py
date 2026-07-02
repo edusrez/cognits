@@ -8,7 +8,9 @@ import json
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
-from cognits.server.exceptions import StorageError
+from cognits.constants import MAX_NAME_LENGTH
+from cognits.server.exceptions import CognitsError, StorageError
+from cognits.server.util import text_error
 
 
 def register(app: FastAPI, st) -> None:

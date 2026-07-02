@@ -34,9 +34,9 @@ from cognits.agent.prompts import (
 )
 from cognits.agent.tool_deploy import DeploySubagent
 from cognits.constants import (
-    AGENT_LABELS,
     DEFAULT_FLASH_MODEL,
     DEFAULT_MODEL,
+    MAX_SESSION_NAME_LENGTH,
     ORCHESTRATOR_MAX_STEPS,
     RESEARCHER_MAX_STEPS,
 )

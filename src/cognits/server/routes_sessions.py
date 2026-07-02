@@ -10,6 +10,7 @@ from datetime import datetime
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from cognits.constants import MAX_NAME_LENGTH
 from cognits.server.util import text_error
 from cognits.storage.files import Session
 
@@ -60,7 +61,7 @@ def register(app: FastAPI, st) -> None:
                 raise ValueError("name")
         except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
             return text_error("invalid body", 400)
-        if len(name) > 120:
+        if len(name) > MAX_NAME_LENGTH:
             return text_error("name too long", 400)
 
         try:

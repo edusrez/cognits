@@ -38,7 +38,6 @@ def _message_dict(m: MessageRow) -> dict:
         "reasoning": m.reasoning,
     }
     if m.reports:
-        import json
         try:
             result["reports"] = json.loads(m.reports)
         except (json.JSONDecodeError, TypeError):
