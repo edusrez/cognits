@@ -204,3 +204,24 @@ def test_teacher_config_builds(store):
     assert "deploy_subagent" in tool_names
     assert "evaluator" in cfg.subagents
     assert "documentalist" in cfg.subagents
+
+
+def test_build_teacher_system_prompt_with_real_repos(skills, learner_state, pedagogy):
+    """Verify the teacher prompt assembles with real repos (not LegacyStore)."""
+    from cognits.server.routes_chat import _build_teacher_system_prompt
+    from cognits.storage.models import Skill, new_skill_id
+
+    s = Skill(id=new_skill_id(), domain="test", name="Variables", description="Declaring vars")
+    skills.upsert(s)
+    ls = LearnerState(skill_id=s.id, p_mastery=0.85, status_enum="practicing")
+    learner_state.upsert(ls)
+    pedagogy.save(s.id, "# Lesson Plan\n\n## Stage 1\nIntro")
+
+    result = _build_teacher_system_prompt(
+        s.id, store=skills, learner_state=learner_state, pedagogy=pedagogy
+    )
+    assert "Variables" in result
+    assert "Declaring vars" in result
+    assert "practicing" in result
+    assert "0.85" in result
+    assert "Lesson Plan" in result

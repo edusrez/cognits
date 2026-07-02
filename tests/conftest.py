@@ -59,3 +59,26 @@ def pedagogy(db):
 def session_config(db):
     return SessionConfigRepository(db)
 
+
+@pytest.fixture
+def real_state(tmp_path, monkeypatch):
+    """AppState wired to real repos on a tmp_path Database (no LegacyStore).
+    
+    Use this for integration tests that must exercise production code paths."""
+    monkeypatch.chdir(tmp_path)
+    from cognits.server.app import AppState, create_app
+    from cognits.storage.database import Database
+
+    state = AppState()
+    db = Database(tmp_path / "test.db")
+    state.db = db
+    state.reports = ReportRepository(db)
+    state.messages = MessageRepository(db)
+    state.notes = NoteRepository(db)
+    state.skills = SkillRepository(db)
+    state.learner_state = LearnerStateRepository(db)
+    state.study_plans = StudyPlanRepository(db)
+    state.pedagogy = PedagogicalPlanRepository(db)
+    state.session_config = SessionConfigRepository(db)
+    return state, create_app(state)
+
