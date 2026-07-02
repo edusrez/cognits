@@ -67,7 +67,8 @@ class UpdateMastery(Tool):
         if correctness < 0.0 or correctness > 1.0:
             return tool_error(f"correctness must be 0..1, got {correctness}")
 
-        state = await asyncio.to_thread(self.store.get_learner_state, skill_id)
+        state = await asyncio.to_thread(
+            getattr(self.store, "get_learner_state", self.store.get), skill_id)
         if state is None:
             return tool_error(f"skill '{skill_id}' not found or no learner state")
 
@@ -85,7 +86,8 @@ class UpdateMastery(Tool):
             hints_used=hints_used,
         )
 
-        await asyncio.to_thread(self.store.upsert_learner_state, state)
+        await asyncio.to_thread(
+            getattr(self.store, "upsert_learner_state", self.store.upsert), state)
 
         return json.dumps(
             {

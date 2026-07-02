@@ -123,7 +123,7 @@ def _build_skills_summary(store, tree: dict) -> str:
         pname = id_to_name.get(pid, pid)
         prereq_names.setdefault(e["skillId"], []).append(pname)
 
-    all_states = store.get_all_learner_states()
+    all_states = (store.get_all_learner_states if hasattr(store, "get_all_learner_states") else store.get_all)()
 
     lines: list[str] = []
     for s in skills:
