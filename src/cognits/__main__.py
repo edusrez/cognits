@@ -1,3 +1,3 @@
-from cognits.main import main
+from cognits.cli import main
 
 main()
