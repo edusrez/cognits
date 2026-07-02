@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from cognits.constants import MAX_NAME_LENGTH
 from cognits.server.exceptions import CognitsError, StorageError
-from cognits.server.util import text_error
+
 
 
 def register(app: FastAPI, st) -> None:
@@ -40,7 +40,7 @@ def register(app: FastAPI, st) -> None:
         try:
             note = await asyncio.to_thread(st.notes.create, title)
         except Exception as e:
-            return text_error(f"storage: create note: {e}", 500)
+            raise StorageError(f"create note: {e}")
 
         return JSONResponse(note.to_json())
 
