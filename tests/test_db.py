@@ -392,3 +392,16 @@ def test_plan_json_shapes(store):
     for k in ("id", "planId", "skillId", "mode", "status", "orderIndex"):
         assert k in ij
     assert ij.get("learningSessionId") is None  # null when unset
+
+
+def test_shutdown_checkpoint(tmp_path):
+    rs = ReportStore(tmp_path / "test.db")
+    rs.shutdown()
+    assert rs._closed
+
+
+def test_shutdown_idempotent(tmp_path):
+    rs = ReportStore(tmp_path / "test.db")
+    rs.shutdown()
+    rs.shutdown()  # second call must not raise
+    assert rs._closed

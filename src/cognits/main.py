@@ -420,6 +420,11 @@ class CognitsTUI(App):
         # server-thread join timed out the lifespan may not have completed.
         # shutdown() is idempotent and terminates the warm-cache subprocess.
         try:
+            if self._state.report_store is not None:
+                self._state.report_store.shutdown()
+        except Exception:
+            pass
+        try:
             if self._state.rag is not None:
                 self._state.rag.shutdown()
         except Exception:
@@ -430,20 +435,6 @@ class CognitsTUI(App):
         except Exception:
             pass
         await super()._shutdown()
-        # Belt-and-suspenders: the lifespan finally block should have called
-        # these, but if the server thread join timed out the lifespan may not
-        # have completed. shutdown() is idempotent and also terminates the
-        # warm-cache subprocess so atexit doesn't hang on thread.join.
-        try:
-            if self._state.rag is not None:
-                self._state.rag.shutdown()
-        except Exception:
-            pass
-        try:
-            if self._state.docling_engine is not None:
-                self._state.docling_engine.shutdown()
-        except Exception:
-            pass
 
 
 def _interactive_uninstall(skip_confirm: bool = False) -> None:

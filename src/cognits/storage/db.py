@@ -597,6 +597,7 @@ class ReportStore:
     def __init__(self, db_path: Path | str):
         self.db_path = str(db_path)
         self._lock = threading.Lock()
+        self._closed = False
         # isolation_level=None: autocommit; transactions are opened with an
         # explicit BEGIN. Same semantics as Go's database/sql.
         self._conn = sqlite3.connect(
@@ -672,6 +673,14 @@ class ReportStore:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+    def shutdown(self) -> None:
+        if self._closed:
+            return
+        with self._lock:
+            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self._conn.close()
+            self._closed = True
 
     # --- reports ---
 
