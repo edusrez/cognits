@@ -29,7 +29,7 @@ from cognits.storage.study_plans import StudyPlanRepository
 
 log = logging.getLogger("cognits.server")
 
-DEFAULT_PORT = 5173
+from cognits.constants import DEFAULT_PORT
 
 
 _DRAIN_TIMEOUT = float(os.environ.get("COGNITS_DRAIN_TIMEOUT", "5.0"))

@@ -15,9 +15,10 @@ class SessionConfigRepository:
     def save(self, cfg: SessionConfigRow) -> None:
         with self.db.lock:
             self.db.conn.execute(
-                """INSERT OR REPLACE INTO session_config
+                """INSERT INTO session_config
                    (session_id, provider, model, reasoning, agent_id, skill_id)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(session_id) DO UPDATE SET provider = excluded.provider, model = excluded.model, reasoning = excluded.reasoning, agent_id = excluded.agent_id, skill_id = excluded.skill_id""",
                 (cfg.session_id, cfg.provider, cfg.model, cfg.reasoning, cfg.agent_id, cfg.skill_id),
             )
 

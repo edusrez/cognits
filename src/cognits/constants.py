@@ -38,6 +38,16 @@ TREE_MAX_DEPTH = 6
 TREE_MAX_ENTRIES = 2000
 BUSY_TIMEOUT_MS = 5000
 
+# --- Server ---
+DEFAULT_PORT = 5173
+VITE_PORT = 5174
+MAX_TOKENS_LIMIT = 384000
+MAX_TEXT_BYTES = 5 * 1024 * 1024  # 5 MB
+MAX_NAME_LENGTH = 120
+MAX_SESSION_NAME_LENGTH = 80
+
+TREE_SKIP_DIRS = {"node_modules", "dist", "vendor", "__pycache__", ".git", ".cognits"}
+
 # --- Agent persona display labels ---
 # Canonical mapping: persona ID → user-visible name.
 # Serves both the backend (tool_progress banners) and the frontend

@@ -12,9 +12,10 @@ class PedagogicalPlanRepository:
     def save(self, skill_id: str, content: str) -> None:
         with self.db.lock:
             self.db.conn.execute(
-                """INSERT OR REPLACE INTO pedagogical_plans
+                """INSERT INTO pedagogical_plans
                    (skill_id, content, generated_at, updated_at)
-                   VALUES (?, ?, datetime('now'), datetime('now'))""",
+                   VALUES (?, ?, datetime('now'), datetime('now'))
+                   ON CONFLICT(skill_id) DO UPDATE SET content = excluded.content, updated_at = datetime('now')""",
                 (skill_id, content),
             )
 

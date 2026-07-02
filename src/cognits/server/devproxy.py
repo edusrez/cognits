@@ -16,7 +16,9 @@ from fastapi.responses import Response
 
 log = logging.getLogger("cognits.devproxy")
 
-VITE_PORT = 5174
+from cognits.constants import VITE_PORT
+
+VITE_PORT = VITE_PORT  # re-export for dev proxy
 
 # Hop-by-hop headers: not forwarded (h11 manages them per connection).
 _SKIP_HEADERS = {

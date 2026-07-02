@@ -458,8 +458,8 @@ async def _run_session_namer(
         name = content.strip().strip('"\'').strip()
         if not name:
             return
-        if len(name) > 80:
-            name = name[:77] + "..."
+        if len(name) > MAX_SESSION_NAME_LENGTH:
+            name = name[:MAX_SESSION_NAME_LENGTH - 3] + "..."
 
         logger.info("session_namer: renaming %s -> %s", sid, name)
         await asyncio.to_thread(st.store.rename_session, sid, name)

@@ -11,11 +11,12 @@ from fastapi.responses import JSONResponse
 
 from cognits import paths
 from cognits.agent.prompts import DEFAULT_AGENTS
+from cognits.constants import AGENT_LABELS
 from cognits.constants import DEFAULT_MODEL, TREE_MAX_DEPTH, TREE_MAX_ENTRIES
 from cognits.server.util import text_error
 from cognits.storage.models import SessionConfigRow
 from cognits.storage.files import write_file_atomic
-TREE_SKIP_DIRS = {"node_modules", "dist", "vendor"}
+from cognits.constants import TREE_SKIP_DIRS
 
 
 def build_tree(dir_path: str, max_depth: int, budget: list[int]) -> dict:
@@ -84,7 +85,7 @@ def register(app: FastAPI, st) -> None:
 
     @app.get("/api/agents")
     async def get_agents():
-        return JSONResponse(DEFAULT_AGENTS)
+        return JSONResponse(AGENT_LABELS)
 
     @app.get("/api/sessions/{session_id}/messages")
     async def get_messages(session_id: str):

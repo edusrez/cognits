@@ -32,7 +32,7 @@ def register(app: FastAPI, st) -> None:
             raise CognitsError("invalid body", "ERROR", 400)
         if not title:
             raise CognitsError("title is required", "ERROR", 400)
-        if len(title) > 120:
+        if len(title) > MAX_NAME_LENGTH:
             raise CognitsError("title too long", "ERROR", 400)
 
         try:

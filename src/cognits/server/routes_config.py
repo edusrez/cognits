@@ -14,7 +14,7 @@ from cognits.storage.files import Config, StudentProfile
 
 VALID_MODELS = (DEFAULT_MODEL, DEFAULT_FLASH_MODEL)
 VALID_REASONING = ("disabled", "high", "max")
-MAX_TOKENS_LIMIT = 384000
+from cognits.constants import MAX_TOKENS_LIMIT
 
 
 def _config_response(cfg: Config) -> dict:
