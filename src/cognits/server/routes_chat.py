@@ -156,14 +156,18 @@ def _build_teacher_system_prompt(
     with the static TEACHER_SYSTEM_PROMPT."""
     prompt = TEACHER_SYSTEM_PROMPT
 
-    # Legacy: store is a ReportStore or compat object with all methods.
-    # New: skills, learner_state, pedagogy are individual repos.
-    _skills = store if store is not None else None  # will determine later
+    # Accept both: a single ReportStore/LegacyStore (tests) or individual
+    # repos (production). Use long-name methods on the legacy object, short
+    # names on the real repos.
+    _skills = store  # skills repo (or ReportStore in tests)
     _ls = learner_state if learner_state is not None else store
     _ped = pedagogy if pedagogy is not None else store
 
     if skill_id:
-        skill = _skills.get_skill(skill_id) if _skills else None
+        skill = (
+            getattr(_skills, "get_skill", _skills.get)(skill_id)
+            if _skills is not None else None
+        )
         if skill:
             prompt += "\n\n## Skill\n\n"
             prompt += f"- Name: {skill.name}\n"
@@ -173,28 +177,34 @@ def _build_teacher_system_prompt(
             if skill.bloom_level:
                 prompt += f"- Bloom level: {skill.bloom_level}\n"
 
-            state = _ls.get_learner_state(skill_id) if _ls else None
-            if state:
-                prompt += "\n## Learner State\n\n"
-                prompt += f"- Status: {state.status_enum}\n"
-                prompt += f"- p_mastery (BKT): {state.p_mastery:.2f}\n"
-                prompt += f"- Sessions completed: {state.reps}\n"
-                if state.next_review:
-                    prompt += f"- FSRS next review: {state.next_review}\n"
-            else:
-                prompt += "\n## Learner State\n\n(No learner state yet)\n"
+        state = (
+            getattr(_ls, "get_learner_state", _ls.get)(skill_id)
+            if _ls is not None else None
+        )
+        if state:
+            prompt += "\n## Learner State\n\n"
+            prompt += f"- Status: {state.status_enum}\n"
+            prompt += f"- p_mastery (BKT): {state.p_mastery:.2f}\n"
+            prompt += f"- Sessions completed: {state.reps}\n"
+            if state.next_review:
+                prompt += f"- FSRS next review: {state.next_review}\n"
+        else:
+            prompt += "\n## Learner State\n\n(No learner state yet)\n"
 
-            plan = _ped.get_pedagogical_plan(skill_id) if _ped else None
-            if plan:
-                prompt += "\n## Pedagogical Plan\n\n" + plan
-            else:
-                prompt += (
-                    "\n## Pedagogical Plan\n\n"
-                    "(No pedagogical plan available yet. Teach from your own "
-                    "knowledge but follow a stage-based progression: activate "
-                    "prior knowledge → introduce concept → guided practice → "
-                    "assessment → wrap-up.)\n"
-                )
+        plan = (
+            getattr(_ped, "get_pedagogical_plan", _ped.get)(skill_id)
+            if _ped is not None else None
+        )
+        if plan:
+            prompt += "\n## Pedagogical Plan\n\n" + plan
+        else:
+            prompt += (
+                "\n## Pedagogical Plan\n\n"
+                "(No pedagogical plan available yet. Teach from your own "
+                "knowledge but follow a stage-based progression: activate "
+                "prior knowledge → introduce concept → guided practice → "
+                "assessment → wrap-up.)\n"
+            )
 
     if profile_ctx:
         prompt += "\n## Learner Profile\n\n" + profile_ctx
