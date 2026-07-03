@@ -147,7 +147,7 @@ class PlanStudy(Tool):
             # 4. Persist: supersede old, create new, replace items.
             if old_plan is not None:
                 await asyncio.to_thread(
-                    getattr(self.plans, "supersede_plan", self.plans.supersede),
+                    self.plans.supersede,
                     old_plan.id)
                 # Mark removed items as goal_removed.
                 if diff:

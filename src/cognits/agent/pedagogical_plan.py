@@ -56,7 +56,7 @@ class SavePedagogicalPlan(Tool):
             )
 
         await asyncio.to_thread(
-            getattr(self.pedagogy, "save_pedagogical_plan", self.pedagogy.save),
+            self.pedagogy.save,
             match.id, plan_md)
 
         return json.dumps({"skill_id": match.id, "saved": True}, ensure_ascii=False)

@@ -13,7 +13,6 @@ import httpx
 import pytest
 
 from cognits.server.app import AppState, create_app
-from _legacy import LegacyStore
 from cognits.storage.database import Database
 from cognits.storage.models import Skill, new_skill_id
 from cognits.storage.learner_state import LearnerStateRepository
@@ -26,7 +25,7 @@ def _skill(name: str, domain: str = "python") -> Skill:
     return Skill(id=new_skill_id(), domain=domain, name=name, description=name, source="test")
 
 
-def _seed(store: LegacyStore, *skills: Skill):
+def _seed(store, *skills: Skill):
     for s in skills:
         store.upsert(s)
 
@@ -62,7 +61,7 @@ def client_and_store(tmp_path, monkeypatch):
 def test_list_skills_empty(tmp_path, monkeypatch):
     async def run():
         state = _state()
-        state.skills = LegacyStore(tmp_path / "db.db")
+        state.skills = SkillRepository(Database(tmp_path / "db.db"))
         app = create_app(state)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
@@ -74,7 +73,7 @@ def test_list_skills_empty(tmp_path, monkeypatch):
 def test_list_skills_after_upsert(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     async def run():
-        store = LegacyStore(tmp_path / "db.db")
+        store = SkillRepository(Database(tmp_path / "db.db"))
         _seed(store, _skill("A"), _skill("B"), _skill("C"))
         state = _state(); state.skills = store
         app = create_app(state)
@@ -90,7 +89,7 @@ def test_list_skills_after_upsert(tmp_path, monkeypatch):
 def test_list_skills_filter_by_domain(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     async def run():
-        store = LegacyStore(tmp_path / "db.db")
+        store = SkillRepository(Database(tmp_path / "db.db"))
         _seed(store, _skill("A", "python"), _skill("B", "python"), _skill("C", "godot"))
         state = _state(); state.skills = store
         app = create_app(state)
@@ -108,7 +107,7 @@ def test_list_skills_filter_by_domain(tmp_path, monkeypatch):
 def test_get_skill_tree(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     async def run():
-        store = LegacyStore(tmp_path / "db.db")
+        store = SkillRepository(Database(tmp_path / "db.db"))
         a = _skill("A"); store.upsert(a)
         b = _skill("B"); store.upsert(b)
         store.add_edge(b.id, a.id, "soft_prereq", build_id="")
@@ -127,7 +126,7 @@ def test_get_skill_tree(tmp_path, monkeypatch):
 def test_get_tree_version(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     async def run():
-        store = LegacyStore(tmp_path / "db.db")
+        store = SkillRepository(Database(tmp_path / "db.db"))
         _seed(store, _skill("X"))
         state = _state(); state.skills = store
         app = create_app(state)
@@ -144,11 +143,11 @@ def test_get_tree_version(tmp_path, monkeypatch):
 def test_get_learner_state_existing(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     async def run():
-        store = LegacyStore(tmp_path / "db.db")
+        dbase = Database(tmp_path / "db.db")
+        store = SkillRepository(dbase)
         s = _skill("A"); store.upsert(s)
         state = _state(); state.skills = store
-        db = Database(store.db_path)
-        state.learner_state = LearnerStateRepository(db)
+        state.learner_state = LearnerStateRepository(dbase)
         app = create_app(state)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
@@ -164,7 +163,7 @@ def test_get_learner_state_existing(tmp_path, monkeypatch):
 def test_get_learner_state_not_found(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     async def run():
-        store = LegacyStore(tmp_path / "db.db")
+        store = SkillRepository(Database(tmp_path / "db.db"))
         _seed(store, _skill("A"))
         state = _state(); state.skills = store
         app = create_app(state)
@@ -177,7 +176,7 @@ def test_get_learner_state_not_found(tmp_path, monkeypatch):
 def test_list_skills_includes_tree_version(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     async def run():
-        store = LegacyStore(tmp_path / "db.db")
+        store = SkillRepository(Database(tmp_path / "db.db"))
         _seed(store, _skill("A"))
         state = _state(); state.skills = store
         app = create_app(state)
@@ -191,7 +190,7 @@ def test_list_skills_includes_tree_version(tmp_path, monkeypatch):
 def test_skills_list_returns_json_fields(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     async def run():
-        store = LegacyStore(tmp_path / "db.db")
+        store = SkillRepository(Database(tmp_path / "db.db"))
         _seed(store, _skill("A", "python"))
         state = _state(); state.skills = store
         app = create_app(state)

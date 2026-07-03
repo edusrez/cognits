@@ -1,9 +1,4 @@
 """Tests for the skill_planner subagent + skill_tree_save tool.
-
-Uses the ScriptedLLM pattern from test_agent.py (plain asyncio.run, no
-pytest-asyncio marker — matches the codebase convention).
-
-The SkillTreeSave tool exercises the real LegacyStore on a tmp_path DB.
 """
 
 import asyncio
@@ -11,9 +6,11 @@ import json
 
 import pytest
 
-from _legacy import LegacyStore
 from cognits.agent.agent import Agent, AgentConfig
 from cognits.agent.tool_skill import SkillTreeSave
+from cognits.storage.database import Database
+from cognits.storage.learner_state import LearnerStateRepository
+from cognits.storage.skills import SkillRepository
 from cognits.tools import Registry
 
 
@@ -52,22 +49,24 @@ def _delta(content=None, tool_calls=None, finish=None):
 
 @pytest.fixture
 def store(tmp_path):
-    rs = LegacyStore(tmp_path / "test.db")
-    yield rs
-    rs.close()
+    db = Database(tmp_path / "test.db")
+    yield SkillRepository(db), LearnerStateRepository(db), db
+    db.shutdown()
 
 
 # --- tool-level tests ------------------------------------------------
 
 def test_skill_tree_save_start_build(store):
-    tool = SkillTreeSave(skills=store, session_id=lambda: "s1")
+    skills, learner_state, db = store
+    tool = SkillTreeSave(skills=skills, session_id=lambda: "s1")
     result = asyncio.run(tool.execute(json.dumps({"action": "start_build", "trigger": "onboarding"})))
     data = json.loads(result)
     assert data["build_id"].startswith("b_")
 
 
 def test_skill_tree_save_upsert_and_get(store):
-    tool = SkillTreeSave(skills=store, session_id=lambda: "s1")
+    skills, learner_state, db = store
+    tool = SkillTreeSave(skills=skills, session_id=lambda: "s1")
     result = asyncio.run(tool.execute(json.dumps({
         "action": "upsert_skill",
         "domain": "python",
@@ -76,15 +75,16 @@ def test_skill_tree_save_upsert_and_get(store):
     })))
     skill_id = json.loads(result)["skill_id"]
     assert skill_id.startswith("k_")
-    fetched = store.get_skill(skill_id)
+    fetched = skills.get(skill_id)
     assert fetched.name == "Variables"
     assert fetched.domain == "python"
-    ls = store.get_learner_state(skill_id)
+    ls = learner_state.get(skill_id)
     assert ls is not None and ls.p_mastery == 0.5
 
 
 def test_skill_tree_save_add_edge_cycle_returns_tool_error(store):
-    tool = SkillTreeSave(skills=store, session_id=lambda: "s1")
+    skills, learner_state, db = store
+    tool = SkillTreeSave(skills=skills, session_id=lambda: "s1")
     a = json.loads(asyncio.run(tool.execute(json.dumps({"action": "upsert_skill", "domain": "d", "name": "A"}))))["skill_id"]
     b = json.loads(asyncio.run(tool.execute(json.dumps({"action": "upsert_skill", "domain": "d", "name": "B"}))))["skill_id"]
     ok = asyncio.run(tool.execute(json.dumps({"action": "add_edge", "skill_id": b, "prereq_id": a, "edge_type": "prereq"})))
@@ -96,7 +96,8 @@ def test_skill_tree_save_add_edge_cycle_returns_tool_error(store):
 
 
 def test_skill_tree_save_finish_build(store):
-    tool = SkillTreeSave(skills=store, session_id=lambda: "s1")
+    skills, learner_state, db = store
+    tool = SkillTreeSave(skills=skills, session_id=lambda: "s1")
     bid = json.loads(asyncio.run(tool.execute(json.dumps({"action": "start_build", "trigger": "test"}))))["build_id"]
     result = asyncio.run(tool.execute(json.dumps({
         "action": "finish_build",
@@ -105,8 +106,8 @@ def test_skill_tree_save_finish_build(store):
         "status": "done",
     })))
     assert json.loads(result) == {"ok": True}
-    with store._lock:
-        row = store._conn.execute(
+    with db.lock:
+        row = db.conn.execute(
             "SELECT status, summary, finished_at FROM skill_builds WHERE id = ?", (bid,)
         ).fetchone()
     assert row[0] == "done"
@@ -115,7 +116,8 @@ def test_skill_tree_save_finish_build(store):
 
 
 def test_skill_tree_save_missing_args_returns_tool_error(store):
-    tool = SkillTreeSave(skills=store)
+    skills, learner_state, db = store
+    tool = SkillTreeSave(skills=skills)
     result = asyncio.run(tool.execute(json.dumps({"action": "upsert_skill", "domain": "d"})))
     assert "error" in json.loads(result)
 
@@ -123,6 +125,7 @@ def test_skill_tree_save_missing_args_returns_tool_error(store):
 # --- agent-level end-to-end (no nested web_researcher) ---------------
 
 def test_skill_planner_run_end_to_end_scripted(store):
+    skills, learner_state, db = store
     """Drive skill_planner's loop with a ScriptedLLM that issues start_build,
     upsert_skill x2, add_edge, finish_build, then emits Markdown content.
 
@@ -130,7 +133,7 @@ def test_skill_planner_run_end_to_end_scripted(store):
     that we rewrite on the fly from earlier tool results seen in messages,
     so the agent loop sees consistent IDs without us hard-coding them.
     """
-    tool = SkillTreeSave(skills=store, session_id=lambda: "s_test")
+    tool = SkillTreeSave(skills=skills, session_id=lambda: "s_test")
     registry = Registry()
     registry.register(tool)
 
@@ -184,13 +187,13 @@ def test_skill_planner_run_end_to_end_scripted(store):
     result = asyncio.run(ag.run([], events.append))
     assert "Skill tree for Python" in result
 
-    skills = store.list_skills()
+    skills = skills.list_active()
     assert len(skills) == 2
     names = {s.name for s in skills}
     assert names == {"Variables", "Loops"}
     loops = next(s for s in skills if s.name == "Loops")
     variables = next(s for s in skills if s.name == "Variables")
-    prereqs = store.get_prerequisites(loops.id)
+    prereqs = skills.get_prerequisites(loops.id)
     assert len(prereqs) == 1
     assert prereqs[0].prereq_id == variables.id
     assert prereqs[0].proof_query == "loops need variables"
@@ -225,6 +228,7 @@ def test_skill_planner_appears_in_default_agents():
 
 
 def test_skill_planner_config_builds_registry(store):
+    skills, learner_state, db = store
     """skill_planner_config(...) returns a proper AgentConfig without touching
     the network. LLM and TinyFish clients are fakes that satisfy the type."""
     from cognits.agent.subagents import skill_planner_config
@@ -243,7 +247,7 @@ def test_skill_planner_config_builds_registry(store):
         llm_client=FakeLLM(),
         rag_engine=None,
         tf_client=FakeTF(),
-        reports=store, skills=store,
+        reports=skills, skills=skills,
         session_id=lambda: "s_test",
         emit=lambda ev: None,
         tinyfish_api_key="fake_key",

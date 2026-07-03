@@ -6,7 +6,11 @@ import json
 import pytest
 
 from cognits.learner import planner as P
-from _legacy import LegacyStore
+from cognits.storage.database import Database
+from cognits.storage.learner_state import LearnerStateRepository
+from cognits.storage.pedagogical import PedagogicalPlanRepository
+from cognits.storage.skills import SkillRepository
+from cognits.storage.study_plans import StudyPlanRepository
 from cognits.storage.models import (
     LearnerState,
     Skill,
@@ -201,25 +205,26 @@ def test_diff_plans_adds_newly_relevant(monkeypatch):
 
 @pytest.fixture
 def store(tmp_path):
-    rs = LegacyStore(tmp_path / "test.db")
-    yield rs
-    rs.close()
+    db = Database(tmp_path / "test.db")
+    yield SkillRepository(db), LearnerStateRepository(db), StudyPlanRepository(db), PedagogicalPlanRepository(db), db
+    db.shutdown()
 
 
 def test_plan_study_creates_plan_and_items(store):
+    skills, learner_state, study_plans, pedagogy, db = store
     from cognits.agent.tool_study_plan import PlanStudy
 
     a = _skill("A"); b = _skill("B"); c = _skill("C")
-    store.upsert_skill(a)
-    store.upsert_skill(b)
-    store.upsert_skill(c)
-    store.add_edge(b.id, a.id, "prereq")
-    store.add_edge(c.id, b.id, "prereq")
-    store.upsert_learner_state(_state(a.id, p=0.95, status="mastered"))
+    skills.upsert(a)
+    skills.upsert(b)
+    skills.upsert(c)
+    skills.add_edge(b.id, a.id, "prereq")
+    skills.add_edge(c.id, b.id, "prereq")
+    learner_state.upsert(_state(a.id, p=0.95, status="mastered"))
 
-    db = Database(store.db_path)
-    ls_repo = LearnerStateRepository(db)
-    tool = PlanStudy(plans=store, skills=store, learner_state=ls_repo, session_id=lambda: "s_test")
+    ls_db = Database(db.db_path)
+    ls_repo = LearnerStateRepository(ls_db)
+    tool = PlanStudy(plans=study_plans, skills=skills, learner_state=ls_repo, session_id=lambda: "s_test")
     result = asyncio.run(tool.execute(json.dumps({"goal": "C"})))
     data = json.loads(result)
     assert "plan_id" in data
@@ -232,26 +237,28 @@ def test_plan_study_creates_plan_and_items(store):
 
 
 def test_plan_study_supersedes_old_plan(store):
+    skills, learner_state, study_plans, pedagogy, db = store
     from cognits.agent.tool_study_plan import PlanStudy
 
-    a = _skill("A"); store.upsert_skill(a)
-    tool = PlanStudy(plans=store, skills=store, learner_state=store, session_id=lambda: "s_test")
+    a = _skill("A"); skills.upsert(a)
+    tool = PlanStudy(plans=study_plans, skills=skills, learner_state=learner_state, session_id=lambda: "s_test")
     r1 = asyncio.run(tool.execute(json.dumps({"goal": "A"})))
     pid1 = json.loads(r1)["plan_id"]
     # Second call supersedes.
     r2 = asyncio.run(tool.execute(json.dumps({"goal": "A"})))
     pid2 = json.loads(r2)["plan_id"]
     assert pid2 != pid1
-    assert store.get_active_plan().id == pid2
-    plan1, _ = store.get_plan_with_items(pid1)
+    assert study_plans.get_active().id == pid2
+    plan1, _ = study_plans.get_with_items(pid1)
     assert plan1.status == "superseded"
 
 
 def test_plan_study_returns_json_shape(store):
+    skills, learner_state, study_plans, pedagogy, db = store
     from cognits.agent.tool_study_plan import PlanStudy
 
-    a = _skill("A"); store.upsert_skill(a)
-    tool = PlanStudy(plans=store, skills=store, learner_state=store, session_id=lambda: "s_test")
+    a = _skill("A"); skills.upsert(a)
+    tool = PlanStudy(plans=study_plans, skills=skills, learner_state=learner_state, session_id=lambda: "s_test")
     result = asyncio.run(tool.execute(json.dumps({"goal": "A"})))
     data = json.loads(result)
     for k in ("plan_id", "items", "treeVersion", "frontierSize"):
@@ -277,6 +284,7 @@ def test_study_planner_in_default_agents():
 
 
 def test_study_planner_config_builds(store):
+    skills, learner_state, study_plans, pedagogy, db = store
     from cognits.agent.subagents import study_planner_config
 
     class FakeLLM:
@@ -287,7 +295,7 @@ def test_study_planner_config_builds(store):
         model="deepseek-v4-pro",
         reasoning="max",
         max_steps=10,
-        reports=store, plans=store, skills=store, learner_state=store, pedagogy=store,
+        reports=skills, plans=study_plans, skills=skills, learner_state=learner_state, pedagogy=pedagogy,
         session_id=lambda: "s_test",
         emit=lambda ev: None,
     )

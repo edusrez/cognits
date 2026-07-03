@@ -109,7 +109,7 @@ def _build_skills_summary(store, tree: dict) -> str:
         pname = id_to_name.get(pid, pid)
         prereq_names.setdefault(e["skillId"], []).append(pname)
 
-    all_states = (store.get_all_learner_states if hasattr(store, "get_all_learner_states") else store.get_all)()
+    all_states = store.get_all()
 
     lines: list[str] = []
     for s in skills:
@@ -151,7 +151,7 @@ def _build_teacher_system_prompt(
 
     if skill_id:
         skill = (
-            getattr(_skills, "get_skill", _skills.get)(skill_id)
+            _skills.get(skill_id)
             if _skills is not None else None
         )
         if skill:
@@ -164,7 +164,7 @@ def _build_teacher_system_prompt(
                 prompt += f"- Bloom level: {skill.bloom_level}\n"
 
         state = (
-            getattr(_ls, "get_learner_state", _ls.get)(skill_id)
+            _ls.get(skill_id)
             if _ls is not None else None
         )
         if state:
@@ -178,7 +178,7 @@ def _build_teacher_system_prompt(
             prompt += "\n## Learner State\n\n(No learner state yet)\n"
 
         plan = (
-            getattr(_ped, "get_pedagogical_plan", _ped.get)(skill_id)
+            _ped.get(skill_id)
             if _ped is not None else None
         )
         if plan:
