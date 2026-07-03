@@ -187,12 +187,12 @@ def test_skill_planner_run_end_to_end_scripted(store):
     result = asyncio.run(ag.run([], events.append))
     assert "Skill tree for Python" in result
 
-    skills = skills.list_active()
-    assert len(skills) == 2
-    names = {s.name for s in skills}
+    active = skills.list_active()
+    assert len(active) == 2
+    names = {s.name for s in active}
     assert names == {"Variables", "Loops"}
-    loops = next(s for s in skills if s.name == "Loops")
-    variables = next(s for s in skills if s.name == "Variables")
+    loops = next(s for s in active if s.name == "Loops")
+    variables = next(s for s in active if s.name == "Variables")
     prereqs = skills.get_prerequisites(loops.id)
     assert len(prereqs) == 1
     assert prereqs[0].prereq_id == variables.id

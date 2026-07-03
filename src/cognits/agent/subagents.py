@@ -568,8 +568,6 @@ def teacher_config(
     if doc_cfg is not None:
         subagents["documentalist"] = doc_cfg
 
-        emit(ev)
-
     registry = Registry()
     registry.register(
         DeploySubagent(

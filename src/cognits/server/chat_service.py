@@ -297,7 +297,7 @@ class ChatService:
                             sa.live_content = ""
                             sa.live_reasoning = ""
                             if st.db is not None:
-            try:
+                                try:
                                     st.messages.append(sid, partial)
                                 except Exception:
                                     pass
