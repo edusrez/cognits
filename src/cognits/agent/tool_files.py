@@ -138,7 +138,7 @@ class ReadFile(Tool):
                 return tool_error(f"PDF conversion failed: {e}")
             return json.dumps({"path": str(file_path), "content": content}, ensure_ascii=False)
 
-        if _is_binary(file_path):
+        if await asyncio.to_thread(_is_binary, file_path):
             return tool_error(f"{rel_path}: binary file (cannot read as text)")
 
         size = file_path.stat().st_size
@@ -194,6 +194,23 @@ class ReadFile(Tool):
         )
 
 
+def _list_dir_sync(dir_path):
+    entries = sorted(
+        os.scandir(dir_path),
+        key=lambda e: (not e.is_dir(follow_symlinks=False), e.name.lower()),
+    )
+    items = []
+    for entry in entries:
+        item = {"name": entry.name, "is_dir": entry.is_dir(follow_symlinks=False)}
+        try:
+            if not entry.is_dir(follow_symlinks=False):
+                item["size"] = entry.stat(follow_symlinks=False).st_size
+        except OSError:
+            pass
+        items.append(item)
+    return items
+
+
 class ListDir(Tool):
     name = "list_dir"
     description = (
@@ -222,27 +239,7 @@ class ListDir(Tool):
         except (PermissionError, FileNotFoundError, NotADirectoryError) as e:
             return tool_error(str(e))
 
-        try:
-            entries = sorted(
-                os.scandir(dir_path),
-                key=lambda e: (not e.is_dir(follow_symlinks=False), e.name.lower()),
-            )
-        except OSError as e:
-            return tool_error(str(e))
-
-        items = []
-        for entry in entries:
-            item: dict = {
-                "name": entry.name,
-                "is_dir": entry.is_dir(follow_symlinks=False),
-            }
-            try:
-                if not entry.is_dir(follow_symlinks=False):
-                    item["size"] = entry.stat(follow_symlinks=False).st_size
-            except OSError:
-                pass
-            items.append(item)
-
+        items = await asyncio.to_thread(_list_dir_sync, dir_path)
         return json.dumps(
             {"path": str(dir_path), "entries": items},
             ensure_ascii=False,
