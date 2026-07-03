@@ -55,10 +55,23 @@ LLM_READ_TIMEOUT = 120.0
 LLM_WRITE_TIMEOUT = 30.0
 LLM_POOL_TIMEOUT = 10.0
 LLM_BASE_URL = "https://api.deepseek.com/chat/completions"
+LLM_ERROR_BODY_MAX_BYTES = 8192
+
+VALID_REASONING = ("disabled", "enabled", "max")
+
+# --- TinyFish ---
+TINYFISH_SEARCH_URL = "https://api.search.tinyfish.ai"
+TINYFISH_FETCH_URL = "https://api.fetch.tinyfish.ai"
+TINYFISH_TIMEOUT = 150.0
+
+# --- Misc ---
+FAVICON_URL_TEMPLATE = "https://icons.duckduckgo.com/ip3/{domain}.ico"
 
 # --- Agent subagent defaults ---
 EVALUATOR_MAX_STEPS = 100
 STUDY_PLANNER_DEFAULT_STEPS = 10
+DOCUMENTALIST_MAX_STEPS = 50
+REFLECTION_REVISION_MAX_STEPS = 10
 
 # --- Learner model ---
 MASTERY_THRESHOLD = 0.95

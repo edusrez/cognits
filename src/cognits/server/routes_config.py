@@ -8,14 +8,23 @@ import json
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
-from cognits.constants import DEFAULT_FLASH_MODEL, DEFAULT_MODEL, ORCHESTRATOR_MAX_STEPS
+from cognits.constants import (
+    DEFAULT_FLASH_MODEL,
+    DEFAULT_MODEL,
+    LLM_BASE_URL,
+    LLM_CONNECT_TIMEOUT,
+    LLM_POOL_TIMEOUT,
+    LLM_READ_TIMEOUT,
+    LLM_WRITE_TIMEOUT,
+    MAX_TOKENS_LIMIT,
+    ORCHESTRATOR_MAX_STEPS,
+    VALID_REASONING,
+)
 from cognits.server.exceptions import CognitsError, NotFoundError
 from cognits.server.util import mask_key
 from cognits.storage.files import Config, StudentProfile
 
 VALID_MODELS = (DEFAULT_MODEL, DEFAULT_FLASH_MODEL)
-VALID_REASONING = ("disabled", "high", "max")
-from cognits.constants import MAX_TOKENS_LIMIT
 
 
 def _config_response(cfg: Config) -> dict:
@@ -130,12 +139,15 @@ def register(app: FastAPI, st) -> None:
             return JSONResponse({"valid": False, "error": "No API key provided"})
         try:
             import httpx
-            async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=15.0, write=10.0, pool=10.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(
+                connect=LLM_CONNECT_TIMEOUT, read=LLM_READ_TIMEOUT,
+                write=LLM_WRITE_TIMEOUT, pool=LLM_POOL_TIMEOUT,
+            )) as client:
                 resp = await client.post(
-                    "https://api.deepseek.com/chat/completions",
+                    LLM_BASE_URL,
                     headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                     json={
-                        "model": "deepseek-chat",
+                        "model": DEFAULT_FLASH_MODEL,
                         "messages": [{"role": "user", "content": "Hi"}],
                         "max_tokens": 1,
                         "stream": False,

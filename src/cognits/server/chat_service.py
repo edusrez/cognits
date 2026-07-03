@@ -41,6 +41,7 @@ from cognits.constants import (
     MODEL_CONTEXT_WINDOW,
     ORCHESTRATOR_MAX_STEPS,
     REFLECTION_MAX_ITERATIONS,
+    REFLECTION_REVISION_MAX_STEPS,
     RESEARCHER_MAX_STEPS,
     STUDY_PLANNER_DEFAULT_STEPS,
 )
@@ -160,7 +161,7 @@ class ChatService:
         cfg = self.cfg
         acc: dict[str, str] = {"content": "", "reasoning": ""}
 
-        from cognits.agent.tracer import NoopTracer, Tracer
+        from cognits.agent.tracer import Tracer
         tracer = Tracer(sid)
 
         llm_client = DeepSeekClient(cfg.llm_api_key)
@@ -685,7 +686,7 @@ class ChatService:
                 name=self.agent_id,
                 model=self.model,
                 reasoning=self.reasoning,
-                max_steps=10,  # short run for revision
+                max_steps=REFLECTION_REVISION_MAX_STEPS,  # short run for revision
                 max_tokens=self.cfg.max_tokens or None,
                 temperature=self.cfg.temperature or None,
                 top_p=self.cfg.top_p or None,

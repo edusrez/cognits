@@ -17,14 +17,13 @@ from cognits.constants import (
     HTTPX_MAX_KEEPALIVE,
     LLM_BASE_URL,
     LLM_CONNECT_TIMEOUT,
+    LLM_ERROR_BODY_MAX_BYTES,
     LLM_POOL_TIMEOUT,
     LLM_READ_TIMEOUT,
     LLM_WRITE_TIMEOUT,
 )
 from cognits.llm.types import Message
 
-STREAM_IDLE_TIMEOUT = LLM_READ_TIMEOUT
-BASE_URL = LLM_BASE_URL
 
 
 class DeepSeekError(Exception):
@@ -38,7 +37,7 @@ class DeepSeekClient:
         # legitimate multi-minute streams short.
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(
-                connect=LLM_CONNECT_TIMEOUT, read=STREAM_IDLE_TIMEOUT, write=LLM_WRITE_TIMEOUT, pool=LLM_POOL_TIMEOUT
+                connect=LLM_CONNECT_TIMEOUT, read=LLM_READ_TIMEOUT, write=LLM_WRITE_TIMEOUT, pool=LLM_POOL_TIMEOUT
             ),
             limits=httpx.Limits(max_connections=HTTPX_MAX_CONNECTIONS, max_keepalive_connections=HTTPX_MAX_KEEPALIVE),
         )
@@ -80,14 +79,14 @@ class DeepSeekClient:
         try:
             async with self._client.stream(
                 "POST",
-                BASE_URL,
+                LLM_BASE_URL,
                 json=body,
                 headers={"Authorization": f"Bearer {self.api_key}"},
             ) as resp:
                 if resp.status_code != 200:
                     # Limit the read (a huge body would bloat logs/chat) and
                     # extract the error message from the API JSON if present.
-                    raw = (await resp.aread())[: 8 << 10]
+                    raw = (await resp.aread())[: LLM_ERROR_BODY_MAX_BYTES]
                     msg = raw.decode("utf-8", errors="replace").strip()
                     try:
                         api_msg = json.loads(raw).get("error", {}).get("message", "")
@@ -110,7 +109,7 @@ class DeepSeekClient:
                     on_chunk(chunk)
         except httpx.ReadTimeout as e:
             raise DeepSeekError(
-                f"deepseek: stream idle for {int(STREAM_IDLE_TIMEOUT)}s"
+                f"deepseek: stream idle for {int(LLM_READ_TIMEOUT)}s"
             ) from e
         except httpx.HTTPError as e:
             raise DeepSeekError(f"deepseek: request: {e}") from e

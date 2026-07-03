@@ -2,7 +2,7 @@
 name: maestro
 description: Maestro agent for Cognits.
 model: deepseek-v4-pro
-reasoning: 
+reasoning: enabled
 max_steps: 100
 temperature: 0.0
 tool_registry: teacher

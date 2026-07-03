@@ -2,7 +2,7 @@
 name: directory_reader
 description: Directory Reader agent for Cognits.
 model: deepseek-v4-pro
-reasoning: 
+reasoning: enabled
 max_steps: 50
 temperature: 0.0
 tool_registry: files

@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 from cognits.agent.agent import AgentConfig, Emit
 from cognits.agent.agent_loader import load_agent_prompt
+from cognits.constants import DEFAULT_FLASH_MODEL, DOCUMENTALIST_MAX_STEPS, EVALUATOR_MAX_STEPS, FAVICON_URL_TEMPLATE, RESEARCHER_MAX_STEPS
 from cognits.agent.tool_rag import RagSearch
 from cognits.constants import DEFAULT_FLASH_MODEL, RESEARCHER_MAX_STEPS
 from cognits.llm.deepseek import DeepSeekClient
@@ -22,7 +23,7 @@ def _extract_domain(url: str) -> str:
 
 
 def _favicon_url(domain: str) -> str:
-    return f"https://icons.duckduckgo.com/ip3/{domain}.ico"
+    return fFAVICON_URL_TEMPLATE.format(domain=domain)
 
 
 
@@ -552,12 +553,12 @@ def teacher_config(
     doc_cfg: dict | None = None
     if tf_client is not None:
         doc_cfg = documentalist_config(
-            model, reasoning, 50, llm_client, rag_engine, tf_client,
+            model, reasoning, DOCUMENTALIST_MAX_STEPS, llm_client, rag_engine, tf_client,
             reports, session_id, emit,
         )
 
     eval_cfg = evaluator_config(
-        model, reasoning, 100, llm_client, rag_engine, tf_client,
+        model, reasoning, EVALUATOR_MAX_STEPS, llm_client, rag_engine, tf_client,
         reports, learner_state, session_id, emit,
         system_prompt_override=None,
         tinyfish_api_key=tinyfish_api_key,

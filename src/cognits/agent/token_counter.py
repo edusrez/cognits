@@ -20,7 +20,7 @@ class TokenCounter:
     def count(self, text: str) -> int:
         if self._encoder is not None:
             return len(self._encoder.encode(text))
-        return max(1, len(text) // 4)
+        return max(1, int(len(text) / 3.5))
 
     def count_messages(self, messages: list[Message]) -> int:
         total = 0

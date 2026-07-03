@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import httpx
 
-from cognits.constants import HTTPX_MAX_CONNECTIONS, HTTPX_MAX_KEEPALIVE
+from cognits.constants import (
+    HTTPX_MAX_CONNECTIONS,
+    HTTPX_MAX_KEEPALIVE,
+    TINYFISH_FETCH_URL,
+    TINYFISH_SEARCH_URL,
+    TINYFISH_TIMEOUT,
+)
 
-SEARCH_URL = "https://api.search.tinyfish.ai"
-FETCH_URL = "https://api.fetch.tinyfish.ai"
+SEARCH_URL = TINYFISH_SEARCH_URL
+FETCH_URL = TINYFISH_FETCH_URL
 
 
 class TinyfishError(Exception):
@@ -17,7 +23,7 @@ class TinyfishError(Exception):
 class TinyfishClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self._client = httpx.AsyncClient(timeout=150.0, limits=httpx.Limits(max_connections=HTTPX_MAX_CONNECTIONS, max_keepalive_connections=HTTPX_MAX_KEEPALIVE))
+        self._client = httpx.AsyncClient(timeout=TINYFISH_TIMEOUT, limits=httpx.Limits(max_connections=HTTPX_MAX_CONNECTIONS, max_keepalive_connections=HTTPX_MAX_KEEPALIVE))
 
     async def aclose(self) -> None:
         await self._client.aclose()
