@@ -189,57 +189,46 @@ When the user already has a profile, your role is to:
 DEFAULT_AGENTS = [
     {
         "id": "orchestrator",
-        "name": "Orchestrator",
         "systemPrompt": ORCHESTRATOR_SYSTEM_PROMPT,
     },
     {
         "id": "web_researcher",
-        "name": "Web Researcher",
         "systemPrompt": RESEARCHER_SYSTEM_PROMPT,
     },
     {
         "id": "documentalist",
-        "name": "Documentalist",
         "systemPrompt": DOCUMENTALIST_SYSTEM_PROMPT,
     },
     {
         "id": "session_namer",
-        "name": "Session Namer",
         "systemPrompt": SESSION_NAMER_SYSTEM_PROMPT,
     },
     {
         "id": "session_analyzer",
-        "name": "Session Analyzer",
         "systemPrompt": SESSION_ANALYZER_SYSTEM_PROMPT,
     },
     {
         "id": "directory_reader",
-        "name": "Directory Reader",
         "systemPrompt": DIRECTORY_READER_SYSTEM_PROMPT,
     },
     {
         "id": "skill_planner",
-        "name": "Skill Planner",
         "systemPrompt": SKILL_PLANNER_SYSTEM_PROMPT,
     },
     {
         "id": "study_planner",
-        "name": "Study Planner",
         "systemPrompt": STUDY_PLANNER_SYSTEM_PROMPT,
     },
     {
         "id": "evaluator",
-        "name": "Evaluator",
         "systemPrompt": EVALUATOR_SYSTEM_PROMPT,
     },
     {
         "id": "maestro",
-        "name": "Maestro",
         "systemPrompt": TEACHER_SYSTEM_PROMPT,
     },
     {
         "id": "system_support",
-        "name": "System Support",
         "systemPrompt": SYSTEM_SUPPORT_PROMPT,
     },
 ]

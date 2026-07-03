@@ -18,7 +18,7 @@ from cognits.tools import Tool, tool_error
 
 class UpdateMastery(Tool):
     def __init__(self, learner_state):
-        self.store = learner_state
+        self.learner_state = learner_state
 
     name = "update_mastery"
     description = (
@@ -68,7 +68,7 @@ class UpdateMastery(Tool):
             return tool_error(f"correctness must be 0..1, got {correctness}")
 
         state = await asyncio.to_thread(
-            getattr(self.store, "get_learner_state", self.store.get), skill_id)
+            getattr(self.learner_state, "get_learner_state", self.learner_state.get), skill_id)
         if state is None:
             return tool_error(f"skill '{skill_id}' not found or no learner state")
 
@@ -87,7 +87,7 @@ class UpdateMastery(Tool):
         )
 
         await asyncio.to_thread(
-            getattr(self.store, "upsert_learner_state", self.store.upsert), state)
+            getattr(self.learner_state, "upsert_learner_state", self.learner_state.upsert), state)
 
         return json.dumps(
             {

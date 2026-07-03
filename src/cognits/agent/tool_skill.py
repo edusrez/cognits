@@ -33,7 +33,7 @@ class SkillTreeSave(Tool):
         session_id: Callable[[], str] | None = None,
         emit=None,
     ):
-        self.store = skills
+        self.skills = skills
         self.session_id = session_id
         self.emit = emit
 
@@ -134,7 +134,7 @@ class SkillTreeSave(Tool):
     async def _start_build(self, args: dict) -> str:
         trigger = args.get("trigger", "")
         sid = self.session_id() if self.session_id is not None else ""
-        build_id = await asyncio.to_thread(self.store.start_build, sid, trigger)
+        build_id = await asyncio.to_thread(self.skills.start_build, sid, trigger)
         return json.dumps({"build_id": build_id}, ensure_ascii=False)
 
     async def _upsert_skill(self, args: dict) -> str:
@@ -153,7 +153,7 @@ class SkillTreeSave(Tool):
             parent_skill_id=args.get("parent_skill_id", "") or "",
             source="skill_planner",
         )
-        await asyncio.to_thread(self.store.upsert, skill)
+        await asyncio.to_thread(self.skills.upsert, skill)
         return json.dumps({"skill_id": skill_id}, ensure_ascii=False)
 
     async def _add_edge(self, args: dict) -> str:
@@ -166,7 +166,7 @@ class SkillTreeSave(Tool):
         build_id = args.get("build_id", "")
         try:
             await asyncio.to_thread(
-                self.store.add_edge,
+                self.skills.add_edge,
                 skill_id,
                 prereq_id,
                 edge_type,
@@ -184,6 +184,6 @@ class SkillTreeSave(Tool):
         summary = args.get("summary", "")
         status = args.get("status", "done")
         await asyncio.to_thread(
-            self.store.finish_build, build_id, summary, status
+            self.skills.finish_build, build_id, summary, status
         )
         return json.dumps({"ok": True}, ensure_ascii=False)
