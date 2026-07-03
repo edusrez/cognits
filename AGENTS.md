@@ -122,9 +122,10 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `agent/tool_deploy.py` | `deploy_subagent`: run subagent → save report → index chunks in RAG → `subagent_end`. Cancel ⇒ no report; failure ⇒ error tool result + clears banner | `internal/agent/tools/deploy.go` |
 | `agent/tool_rag.py` | `rag_search` tool | `internal/agent/tools/rag_search.go` |
 | `llm/types.py` | `Message`/`ToolCall` with omitempty payload semantics | `internal/llm/llm.go` |
-| `llm/deepseek.py` | httpx streaming; idle watchdog = `read=120` timeout; thinking omitted when tools present | `internal/llm/deepseek.go` |
+| `llm/deepseek.py` | httpx streaming; idle watchdog = `read=120` timeout; thinking omitted when tools present; retryable error classification (HTTP 429/5xx, ReadTimeout) | `internal/llm/deepseek.go` |
+| `llm/base.py` | `LLMClient` Protocol: async streaming interface for any LLM provider. Implementations: `DeepSeekClient` (future: OpenAI, Anthropic). | — |
 | `tools.py` | Tool registry, name-sorted `definitions()` (prefix cache) | `internal/tools/tools.go` |
-| `tinyfish.py` | TinyFish search/fetch (X-API-Key, 150s) | `internal/tinyfish/client.go` |
+| `tinyfish.py` | TinyFish search/fetch (X-API-Key, configurable timeout) | `internal/tinyfish/client.go` |
 | `rag/engine.py` | In-process ChromaDB + fastembed BGE-M3 (custom model registration identical to the old sidecar; reuses its model cache and `chroma_db`). 1-thread executor; background init; `ready`/`error` gating | `internal/rag/` + `sidecar.py` |
 | `rag/chunker.py` | Markdown chunker 1600/160 chars, fences atomic; IDs `{report_id}_c{idx}` byte-identical to Go (no re-index dupes) | `internal/rag/chunker.go` |
 | `storage/nn` | SQLite files |
@@ -203,6 +204,19 @@ calls are same-origin relative `/api/*`.
 - All research subagents (web_researcher, documentalist) MUST include a
   `key_findings_for_orchestrator` field (1-3 sentences) in their output.
   Prevents the "information withholding" anti-pattern.
+
+### LLM client architecture
+- `LLMClient` Protocol defines the async streaming interface. `DeepSeekClient`
+  is the current implementation. Adding a new provider (OpenAI, Anthropic)
+  = implement the Protocol + add a provider config block.
+- Model format: `provider/model-id` (e.g., `deepseek/deepseek-v4-pro`).
+  Backward compat with bare model IDs.
+- Provider config blocks: `api_key`, `base_url`, per-model capabilities
+  (`context_window`, `supports_thinking`).
+- Error classification: `DeepSeekError.retryable` for transient errors
+  (429, 5xx, ReadTimeout). Permanent errors fail immediately.
+- Prompt cache: `prompt_cache_hit_tokens` extracted from usage events
+  and logged in tracer for per-agent cache hit ratio.
 
 ## Design Patterns (frontend — unchanged)
 - Store-driven reactivity via `createMemo` (never destructure store props).
