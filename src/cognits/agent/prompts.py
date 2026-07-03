@@ -1,16 +1,16 @@
 """Port of internal/agent/prompts.go."""
 
-from cognits.agent.subagents import (
-    DIRECTORY_READER_SYSTEM_PROMPT,
-    DOCUMENTALIST_SYSTEM_PROMPT,
-    EVALUATOR_SYSTEM_PROMPT,
-    RESEARCHER_SYSTEM_PROMPT,
-    SESSION_NAMER_SYSTEM_PROMPT,
-    SESSION_ANALYZER_SYSTEM_PROMPT,
-    SKILL_PLANNER_SYSTEM_PROMPT,
-    STUDY_PLANNER_SYSTEM_PROMPT,
-    TEACHER_SYSTEM_PROMPT,
-)
+from cognits.agent.agent_loader import load_agent_prompt
+
+DIRECTORY_READER_SYSTEM_PROMPT = load_agent_prompt("directory_reader")
+DOCUMENTALIST_SYSTEM_PROMPT = load_agent_prompt("documentalist")
+EVALUATOR_SYSTEM_PROMPT = load_agent_prompt("evaluator")
+RESEARCHER_SYSTEM_PROMPT = load_agent_prompt("web_researcher")
+SESSION_NAMER_SYSTEM_PROMPT = load_agent_prompt("session_namer")
+SESSION_ANALYZER_SYSTEM_PROMPT = load_agent_prompt("session_analyzer")
+SKILL_PLANNER_SYSTEM_PROMPT = load_agent_prompt("skill_planner")
+STUDY_PLANNER_SYSTEM_PROMPT = load_agent_prompt("study_planner")
+TEACHER_SYSTEM_PROMPT = load_agent_prompt("maestro")
 
 DEFAULT_AGENT_ID = "orchestrator"
 

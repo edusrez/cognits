@@ -211,7 +211,7 @@ def test_subagent_labels_includes_skill_planner_and_web_researcher():
 
 
 def test_skill_planner_prompt_prohibits_timing():
-    from cognits.agent.subagents import SKILL_PLANNER_SYSTEM_PROMPT
+    from cognits.agent.prompts import SKILL_PLANNER_SYSTEM_PROMPT
     assert "Do NOT include timing" in SKILL_PLANNER_SYSTEM_PROMPT
     assert "dependency order" in SKILL_PLANNER_SYSTEM_PROMPT
     assert "Scheduling is the" in SKILL_PLANNER_SYSTEM_PROMPT

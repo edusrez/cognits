@@ -146,19 +146,19 @@ def test_teacher_in_default_agents():
 
 
 def test_teacher_prompt_includes_hint_ladder():
-    from cognits.agent.subagents import TEACHER_SYSTEM_PROMPT
+    from cognits.agent.prompts import TEACHER_SYSTEM_PROMPT
     assert "Hint 1" in TEACHER_SYSTEM_PROMPT or "Light" in TEACHER_SYSTEM_PROMPT
     assert "PROCTOR" in TEACHER_SYSTEM_PROMPT
 
 
 def test_teacher_prompt_no_hardcoded_spanish():
-    from cognits.agent.subagents import TEACHER_SYSTEM_PROMPT
+    from cognits.agent.prompts import TEACHER_SYSTEM_PROMPT
     for phrase in ("He construido", "pestaña", "para comenzar"):
         assert phrase not in TEACHER_SYSTEM_PROMPT
 
 
 def test_study_planner_prompt_mentions_pedagogical():
-    from cognits.agent.subagents import STUDY_PLANNER_SYSTEM_PROMPT
+    from cognits.agent.prompts import STUDY_PLANNER_SYSTEM_PROMPT
     assert "pedagogical plan" in STUDY_PLANNER_SYSTEM_PROMPT.lower()
     assert "Capability 2" in STUDY_PLANNER_SYSTEM_PROMPT
 

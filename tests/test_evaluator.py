@@ -95,20 +95,20 @@ def test_update_mastery_invalid_rating(store):
 # --- evaluator prompt checks -----------------------------------------
 
 def test_evaluator_prompt_describes_two_phases():
-    from cognits.agent.subagents import EVALUATOR_SYSTEM_PROMPT
+    from cognits.agent.prompts import EVALUATOR_SYSTEM_PROMPT
     assert "Phase 1" in EVALUATOR_SYSTEM_PROMPT
     assert "Phase 2" in EVALUATOR_SYSTEM_PROMPT
     assert "update_mastery" in EVALUATOR_SYSTEM_PROMPT
 
 
 def test_evaluator_prompt_requires_source_citation():
-    from cognits.agent.subagents import EVALUATOR_SYSTEM_PROMPT
+    from cognits.agent.prompts import EVALUATOR_SYSTEM_PROMPT
     assert "source" in EVALUATOR_SYSTEM_PROMPT.lower()
     assert "low_confidence" in EVALUATOR_SYSTEM_PROMPT
 
 
 def test_evaluator_prompt_describes_rating_scale():
-    from cognits.agent.subagents import EVALUATOR_SYSTEM_PROMPT
+    from cognits.agent.prompts import EVALUATOR_SYSTEM_PROMPT
     assert "Again" in EVALUATOR_SYSTEM_PROMPT
     assert "Hard" in EVALUATOR_SYSTEM_PROMPT
     assert "Good" in EVALUATOR_SYSTEM_PROMPT

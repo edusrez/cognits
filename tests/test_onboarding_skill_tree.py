@@ -72,7 +72,7 @@ def test_system_support_prompt_contains_no_hardcoded_spanish(phrase):
 
 @pytest.mark.parametrize("phrase", _SPANISH_PHRASES)
 def test_skill_planner_prompt_contains_no_hardcoded_spanish(phrase):
-    from cognits.agent.subagents import SKILL_PLANNER_SYSTEM_PROMPT
+    from cognits.agent.prompts import SKILL_PLANNER_SYSTEM_PROMPT
     assert phrase not in SKILL_PLANNER_SYSTEM_PROMPT
 
 
