@@ -258,9 +258,6 @@ def documentalist_config(
         )
     }
 
-    def wrapped_emit(ev: dict) -> None:
-        emit(ev)
-
     registry.register(
         DeploySubagent(
             llm_client=llm_client,
@@ -336,9 +333,6 @@ def skill_planner_config(
             tools=new_researcher_tools(tf_client, rag_engine),
         )
     }
-
-    def wrapped_emit(ev: dict) -> None:
-        emit(ev)
 
     registry.register(
         DeploySubagent(
@@ -422,10 +416,7 @@ def study_planner_config(
             tools=new_researcher_tools(tf_client, rag_engine),
         )
 
-        def wrapped_emit(ev: dict) -> None:
-            emit(ev)
-
-        registry.register(
+    registry.register(
             DeploySubagent(
                 llm_client=llm_client,
                 reports=reports,
@@ -500,9 +491,6 @@ def evaluator_config(
             tools=new_researcher_tools(tf_client, rag_engine),
         )
     }
-
-    def wrapped_emit(ev: dict) -> None:
-        emit(ev)
 
     registry.register(
         DeploySubagent(
@@ -580,7 +568,6 @@ def teacher_config(
     if doc_cfg is not None:
         subagents["documentalist"] = doc_cfg
 
-    def wrapped_emit(ev: dict) -> None:
         emit(ev)
 
     registry = Registry()
