@@ -7,7 +7,10 @@ import json
 import pytest
 
 from cognits.learner import record_review
-from _legacy import LegacyStore
+from cognits.storage.database import Database
+from cognits.storage.learner_state import LearnerStateRepository
+from cognits.storage.reports import ReportRepository
+from cognits.storage.skills import SkillRepository
 from cognits.storage.models import LearnerState, Skill, new_skill_id
 from cognits.tools import Registry
 
@@ -18,20 +21,19 @@ def _skill(name="Test", domain="d"):
     return Skill(id=new_skill_id(), domain=domain, name=name, source="test")
 
 
-@pytest.fixture
-def store(tmp_path):
-    rs = LegacyStore(tmp_path / "test.db")
-    yield rs
-    rs.close()
+def _make_repos(tmp_path):
+    db = Database(tmp_path / "test.db")
+    return SkillRepository(db), LearnerStateRepository(db), ReportRepository(db)
 
 
 # --- update_mastery tool ---------------------------------------------
 
-def test_update_mastery_first_review(store):
+def test_update_mastery_first_review(tmp_path):
+    skills, learner_state, reports = _make_repos(tmp_path)
     from cognits.agent.tool_mastery import UpdateMastery
 
-    s = _skill("Variables"); store.upsert_skill(s)
-    tool = UpdateMastery(learner_state=store)
+    s = _skill("Variables"); skills.upsert(s)
+    tool = UpdateMastery(learner_state=learner_state)
     args = json.dumps({"skill_id": s.id, "correctness": 0.95, "rating": 3})
     result = asyncio.run(tool.execute(args))
     data = json.loads(result)
@@ -40,33 +42,35 @@ def test_update_mastery_first_review(store):
     assert data["status_enum"] != "not_seen"
     assert data["next_review"] is not None
     # Verify state persisted in store.
-    st = store.get_learner_state(s.id)
+    st = learner_state.get(s.id)
     assert st is not None and st.reps == 1
     assert st.p_mastery > 0.5
 
 
-def test_update_mastery_failure_drops_mastery(store):
+def test_update_mastery_failure_drops_mastery(tmp_path):
+    skills, learner_state, reports = _make_repos(tmp_path)
     from cognits.agent.tool_mastery import UpdateMastery
 
-    s = _skill("FailSkill"); store.upsert_skill(s)
+    s = _skill("FailSkill"); skills.upsert(s)
     # First boost mastery.
-    tool = UpdateMastery(learner_state=store)
+    tool = UpdateMastery(learner_state=learner_state)
     asyncio.run(tool.execute(json.dumps({"skill_id": s.id, "correctness": 0.95, "rating": 3})))
-    before = store.get_learner_state(s.id)
+    before = learner_state.get(s.id)
     # Then fail.
     args = json.dumps({"skill_id": s.id, "correctness": 0.1, "rating": 1})
     result = asyncio.run(tool.execute(args))
     data = json.loads(result)
     assert data["p_mastery_after"] < before.p_mastery
-    after = store.get_learner_state(s.id)
+    after = learner_state.get(s.id)
     assert after.lapses == 1
 
 
-def test_update_mastery_returns_before_after(store):
+def test_update_mastery_returns_before_after(tmp_path):
+    skills, learner_state, reports = _make_repos(tmp_path)
     from cognits.agent.tool_mastery import UpdateMastery
 
-    s = _skill("BeforeAfter"); store.upsert_skill(s)
-    tool = UpdateMastery(learner_state=store)
+    s = _skill("BeforeAfter"); skills.upsert(s)
+    tool = UpdateMastery(learner_state=learner_state)
     result = asyncio.run(tool.execute(json.dumps({"skill_id": s.id, "correctness": 0.8, "rating": 2})))
     data = json.loads(result)
     assert data["p_mastery_before"] == 0.5
@@ -75,19 +79,21 @@ def test_update_mastery_returns_before_after(store):
     assert "status_enum" in data
 
 
-def test_update_mastery_unknown_skill(store):
+def test_update_mastery_unknown_skill(tmp_path):
+    skills, learner_state, reports = _make_repos(tmp_path)
     from cognits.agent.tool_mastery import UpdateMastery
 
-    tool = UpdateMastery(learner_state=store)
+    tool = UpdateMastery(learner_state=learner_state)
     result = asyncio.run(tool.execute(json.dumps({"skill_id": "k_nonexistent", "correctness": 0.5, "rating": 3})))
     assert "error" in json.loads(result)
 
 
-def test_update_mastery_invalid_rating(store):
+def test_update_mastery_invalid_rating(tmp_path):
+    skills, learner_state, reports = _make_repos(tmp_path)
     from cognits.agent.tool_mastery import UpdateMastery
 
-    s = _skill(); store.upsert_skill(s)
-    tool = UpdateMastery(learner_state=store)
+    s = _skill(); skills.upsert(s)
+    tool = UpdateMastery(learner_state=learner_state)
     result = asyncio.run(tool.execute(json.dumps({"skill_id": s.id, "correctness": 0.5, "rating": 5})))
     assert "error" in json.loads(result)
 
@@ -171,13 +177,14 @@ class _FakeTF:
 
 
 def test_deploy_resume_phase2(tmp_path):
+    skills, learner_state, reports = _make_repos(tmp_path)
     """Test the resume_token mechanism at the DeploySubagent level
     using a simple echo subagent, not the full evaluator stack."""
     from cognits.agent.tool_deploy import DeploySubagent
     from cognits.agent.agent import AgentConfig
 
-    store = LegacyStore(tmp_path / "db2.db")
-    s = _skill("ResumeTest"); store.upsert_skill(s)
+    store = LearnerStateRepository(Database(tmp_path / "db2.db"))
+    s = _skill("ResumeTest"); skills.upsert(s)
 
     # Build a minimal subagent that echoes its query back.
     echo_cfg = AgentConfig(
@@ -244,7 +251,9 @@ def test_evaluator_in_default_agents():
     assert "evaluator" in ids
 
 
-def test_evaluator_config_builds(store):
+def test_evaluator_config_builds(tmp_path):
+    skills, learner_state, reports = _make_repos(tmp_path)
+    store = learner_state  # compat for existing code
     from cognits.agent.subagents import evaluator_config
 
     class FakeLLM:

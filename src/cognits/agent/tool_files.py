@@ -145,7 +145,7 @@ class ReadFile(Tool):
         truncated = size > MAX_TEXT_BYTES
 
         try:
-            raw = file_path.read_bytes()
+            raw = await asyncio.to_thread(file_path.read_bytes)
         except OSError as e:
             return tool_error(str(e))
 
