@@ -6,6 +6,13 @@ All duplicated literals across the codebase resolve to a single source here.
 # --- LLM model names ---
 DEFAULT_MODEL = "deepseek-v4-pro"
 DEFAULT_FLASH_MODEL = "deepseek-v4-flash"
+DEFAULT_PROVIDER = "deepseek"
+
+# model_id -> (provider, context_window)
+MODEL_REGISTRY: dict[str, tuple[str, int]] = {
+    "deepseek-v4-pro": ("deepseek", 1_048_576),
+    "deepseek-v4-flash": ("deepseek", 1_048_576),
+}
 
 # --- Agent limits ---
 ORCHESTRATOR_MAX_STEPS = 999

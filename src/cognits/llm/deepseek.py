@@ -27,20 +27,33 @@ from cognits.llm.types import Message
 
 
 class DeepSeekError(Exception):
-    pass
+    def __init__(self, message: str, retryable: bool = False):
+        super().__init__(message)
+        self.retryable = retryable
+
+
+# Circuit breaker state: Tracks failures to avoid hammering a down API.
+_circuit_breaker: dict[str, int] = {}
+_CIRCUIT_THRESHOLD = 5
+_CIRCUIT_COOLDOWN_S = 30
+_last_fail_ts: dict[str, float] = {}
 
 
 class DeepSeekClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
-        # Phase timeouts, never a global one: a total timeout would cut
-        # legitimate multi-minute streams short.
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(
-                connect=LLM_CONNECT_TIMEOUT, read=LLM_READ_TIMEOUT, write=LLM_WRITE_TIMEOUT, pool=LLM_POOL_TIMEOUT
+                connect=LLM_CONNECT_TIMEOUT, read=LLM_READ_TIMEOUT,
+                write=LLM_WRITE_TIMEOUT, pool=LLM_POOL_TIMEOUT,
             ),
-            limits=httpx.Limits(max_connections=HTTPX_MAX_CONNECTIONS, max_keepalive_connections=HTTPX_MAX_KEEPALIVE),
+            limits=httpx.Limits(
+                max_connections=HTTPX_MAX_CONNECTIONS,
+                max_keepalive_connections=HTTPX_MAX_KEEPALIVE,
+            ),
         )
+        self._retries = 0
+        self._backoff = 1.0  # seconds, doubles per retry
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -48,13 +61,20 @@ class DeepSeekClient:
     async def chat_completion_stream(
         self,
         messages: list[Message],
-        tools: list[dict],
+        tools: list[dict] | None,
         model: str,
         reasoning: str,
         on_chunk: Callable[[dict], None],
         max_tokens: int | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
+    ) -> None:
+        await self._stream(messages, tools, model, reasoning,
+                           on_chunk, max_tokens, temperature, top_p)
+
+    async def _stream(
+        self, messages, tools, model, reasoning, on_chunk,
+        max_tokens, temperature, top_p,
     ) -> None:
         # The thinking API is binary: "high"/"max" → enabled. With tools, omit
         # the parameter (the API rejects that combination).
@@ -84,8 +104,6 @@ class DeepSeekClient:
                 headers={"Authorization": f"Bearer {self.api_key}"},
             ) as resp:
                 if resp.status_code != 200:
-                    # Limit the read (a huge body would bloat logs/chat) and
-                    # extract the error message from the API JSON if present.
                     raw = (await resp.aread())[: LLM_ERROR_BODY_MAX_BYTES]
                     msg = raw.decode("utf-8", errors="replace").strip()
                     try:
@@ -94,7 +112,11 @@ class DeepSeekClient:
                             msg = api_msg
                     except (json.JSONDecodeError, AttributeError):
                         pass
-                    raise DeepSeekError(f"deepseek: HTTP {resp.status_code}: {msg}")
+                    retryable = resp.status_code in (429, 500, 502, 503, 504)
+                    raise DeepSeekError(
+                        f"deepseek: HTTP {resp.status_code}: {msg}",
+                        retryable=retryable,
+                    )
 
                 async for line in resp.aiter_lines():
                     if not line.startswith("data: "):
@@ -109,7 +131,8 @@ class DeepSeekClient:
                     on_chunk(chunk)
         except httpx.ReadTimeout as e:
             raise DeepSeekError(
-                f"deepseek: stream idle for {int(LLM_READ_TIMEOUT)}s"
+                f"deepseek: stream idle for {int(LLM_READ_TIMEOUT)}s",
+                retryable=True,
             ) from e
         except httpx.HTTPError as e:
             raise DeepSeekError(f"deepseek: request: {e}") from e

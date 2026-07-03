@@ -30,6 +30,7 @@ class Tracer:
     def emit(self, *, span_id: str, parent_id: str = "root",
              agent_type: str = "", event: str = "",
              model: str = "", tokens_in: int = 0, tokens_out: int = 0,
+             cache_hit: int = 0, cache_miss: int = 0,
              tool_name: str = "", duration_ms: float = 0.0,
              error: str = "", **extra) -> None:
         record = {
@@ -42,6 +43,8 @@ class Tracer:
         if model: record["model"] = model
         if tokens_in: record["tokens_in"] = tokens_in
         if tokens_out: record["tokens_out"] = tokens_out
+        if cache_hit: record["cache_hit"] = cache_hit
+        if cache_miss: record["cache_miss"] = cache_miss
         if tool_name: record["tool_name"] = tool_name
         if duration_ms: record["duration_ms"] = duration_ms
         if error: record["error"] = error
