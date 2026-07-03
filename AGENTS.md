@@ -104,15 +104,24 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `server/frontend.py` | Serves `frontend_dist` package data; index no-store + cache-buster regex | `internal/server/frontend.go` |
 | `server/devproxy.py` | ENV=dev: HTTP+WebSocket passthrough to Vite (replaces rebuild.go/air) | `frontend.go:22-27` |
 | `server/browser.py` | Browser opener (WSL-aware) | `internal/server/browser.go` |
-| `server/chat_service.py` | `ChatService`: extracted from `routes_chat.py` — agent lifecycle, subagent map builder, tool registry, SSE event bridging, sync persist (`_persist_partial`) | — |
+| `server/chat_service.py` | `ChatService`: extracted from `routes_chat.py` — agent lifecycle, subagent map builder, tool registry, SSE event bridging, sync persist (`_persist_partial`), session naming (`_run_session_namer`), context compaction (`_compact`), reflection loop (`_reflect`) | — |
 | `server/exceptions.py` | `CognitsError` hierarchy (base + NotFoundError, SessionNotFound, AgentBusy, ConfigError, StorageError). Registered in `app.py` via `@app.exception_handler` → `{"error", "message", "details"}` JSON shape | — |
 | `server/routes_notes.py` | Notebook CRUD routes — notes stored in SQLite | — |
 | `server/routes_skills.py` | Skill tree read endpoints (list, tree, learner state) | — |
 | `server/routes_files.py` | File content/raw endpoints (text mode + Docling PDF→Markdown) | — |
+| `server/dependencies.py` | FastAPI dependency injection: `get_app_state(request)` | — |
+| `server/util.py` | Helpers: `text_error` (deprecated), `atoi`, `mask_key`, `MONTHS`/`WEEKDAYS` | — |
+| `constants.py` | Centralized literals: model names, max_steps, memory thresholds, concurrency limits, httpx limits, LLM timeouts, mastery threshold, chunk sizes, SSE buffer, name caps, subagent labels, context compaction, reflection loop | — |
+| `agent/agent_loader.py` | Parses `agent/agents/*.md` (YAML frontmatter + Markdown body) into `AgentConfig` | — |
+| `agent/agents/` | 9 persona `.md` files: web_researcher, documentalist, directory_reader, session_namer, session_analyzer, skill_planner, study_planner, evaluator, maestro | — |
+| `agent/tracer.py` | `Tracer`: structured JSONL trace logging to `.cognits/traces/{session_id}.jsonl` | — |
+| `agent/token_counter.py` | `TokenCounter` using `deepseek_tokenizer` (128K BPE, falls back to chars//4) | — |
+| `server/routes_skills.py` | Skill tree read endpoints (list, tree, learner state) | — |
+| `server/routes_files.py` | File content/raw endpoints (text mode + Docling PDF→Markdown) | — |
 | `constants.py` | Centralized literals: model names, max_steps, memory thresholds, concurrency limits, httpx limits, chunk sizes, SSE buffer, name caps, subagent labels | — |
 | `agent/agent.py` | Agentic loop: stream → sparse-index tool call accumulation → execute → repeat; tool errors fed back as `{"error": ...}` | `internal/agent/agent.go` |
-| `agent/prompts.py` | Agent personas (orchestrator, maestro, system_support, web_researcher, etc.) | `internal/agent/prompts.go` |
-| `agent/subagents.py` | 8 subagent configs (researcher, directory_reader, documentalist, skill_planner, study_planner, evaluator, teacher, session_analyzer) + TinyFish tools, emit wrapping | `internal/agent/subagents/` |
+| `agent/prompts.py` | Agent personas (orchestrator, maestro, system_support, web_researcher, etc.). Prompt text loaded from `agent/agents/*.md` via `agent_loader` | `internal/agent/prompts.go` |
+| `agent/subagents.py` | 9 subagent configs (researcher, directory_reader, documentalist, skill_planner, study_planner, evaluator, teacher, session_analyzer, session_namer) + TinyFish tools, deployment wrapping | `internal/agent/subagents/` |
 | `agent/tool_deploy.py` | `deploy_subagent`: run subagent → save report → index chunks in RAG → `subagent_end`. Cancel ⇒ no report; failure ⇒ error tool result + clears banner | `internal/agent/tools/deploy.go` |
 | `agent/tool_rag.py` | `rag_search` tool | `internal/agent/tools/rag_search.go` |
 | `llm/types.py` | `Message`/`ToolCall` with omitempty payload semantics | `internal/llm/llm.go` |
