@@ -20,6 +20,7 @@ from cognits.constants import (
     MEM_WARN,
     TOOL_SEM_LOW,
 )
+from cognits.llm.base import LLMClient
 from cognits.llm.deepseek import DeepSeekClient
 
 _tool_sem = asyncio.Semaphore(MAX_CONCURRENT_TOOLS)
@@ -66,7 +67,7 @@ class AgentConfig:
 
 
 class Agent:
-    def __init__(self, cfg: AgentConfig, llm_client: DeepSeekClient, tracer=None):
+    def __init__(self, cfg: AgentConfig, llm_client: LLMClient, tracer=None):
         self.cfg = cfg
         self.llm = llm_client
         from cognits.agent.tracer import NoopTracer
