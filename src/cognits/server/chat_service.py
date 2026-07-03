@@ -33,7 +33,6 @@ from cognits.agent.subagents import session_namer_config
 from cognits.constants import DEFAULT_FLASH_MODEL, MAX_SESSION_NAME_LENGTH, SESSION_NAMER_MAX_TOKENS, SESSION_NAMER_TEMPERATURE
 from cognits.llm.types import ROLE_SYSTEM, ROLE_USER
 from cognits.constants import (
-    COMPACTION_EARLY_WARNING,
     COMPACTION_PRESERVE_TURNS,
     COMPACTION_TRIGGER,
     DEFAULT_FLASH_MODEL,

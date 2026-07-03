@@ -17,7 +17,6 @@ from cognits.tools import Tool, tool_error
 log = logging.getLogger("cognits.deploy")
 
 # Re-export for subagent type → display label lookup.
-SUBAGENT_LABELS = AGENT_LABELS
 
 
 def extract_title(content: str, fallback: str) -> str:
@@ -185,7 +184,7 @@ class DeploySubagent(Tool):
                         sub_type = json.loads(raw_args).get("type", "") if isinstance(data, dict) else ""
                     except Exception:
                         sub_type = ""
-                    label = SUBAGENT_LABELS.get(sub_type, sub_type or "subagent")
+                    label = AGENT_LABELS.get(sub_type, sub_type or "subagent")
                     suffix = f" (x{deploy_count})" if deploy_count > 1 else ""
                     msg = f"Deploying {label}{suffix}..."
                     agent = data.get("agent", cfg.name) if isinstance(data, dict) else cfg.name

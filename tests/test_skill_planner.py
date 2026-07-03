@@ -207,10 +207,10 @@ def test_deploy_subagent_enum_includes_skill_planner():
 
 
 def test_subagent_labels_includes_skill_planner_and_web_researcher():
-    from cognits.agent.tool_deploy import SUBAGENT_LABELS
-    assert SUBAGENT_LABELS.get("skill_planner") == "Skill Planner"
-    assert SUBAGENT_LABELS.get("web_researcher") == "Web Researcher"
-    assert SUBAGENT_LABELS.get("directory_reader") == "Directory Reader"
+    from cognits.constants import AGENT_LABELS
+    assert AGENT_LABELS.get("skill_planner") == "Skill Planner"
+    assert AGENT_LABELS.get("web_researcher") == "Web Researcher"
+    assert AGENT_LABELS.get("directory_reader") == "Directory Reader"
 
 
 def test_skill_planner_prompt_prohibits_timing():
