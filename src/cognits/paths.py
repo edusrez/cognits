@@ -70,3 +70,7 @@ def encryption_key_path() -> Path:
 def go_encryption_key_path() -> Path:
     """Where the Go backend stored the key (~/.config/learnit/...)."""
     return user_config_dir() / "learnit" / "encryption.key"
+
+
+def traces_dir() -> Path:
+    return data_dir() / "traces"
