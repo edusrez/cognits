@@ -65,6 +65,11 @@ Structure your final report in Markdown:
 ## Executive Summary
 [2-3 sentences: what was researched, main finding, key conclusion]
 
+## Key Findings for Orchestrator (REQUIRED)
+[1-3 sentences explicitly designed for the orchestrator to consume.
+Summarize the single most important insight, the confidence level,
+and whether this research is complete or needs follow-up.]
+
 ## Findings
 [Each finding in its own ### subsection]
 

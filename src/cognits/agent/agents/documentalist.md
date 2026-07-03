@@ -35,6 +35,9 @@ in the knowledge base for future queries.
 From the fragments found (step 1) or the generated report (step 3), produce a synthesized
 answer for the Orchestrator. Include:
 - Clear and direct answer to the query
+- Key findings for orchestrator: 1-3 sentence summary specifically for
+  the orchestrator to consume. Include confidence level and whether
+  follow-up research is needed.
 - Sources consulted
 - If the information comes from the internet, indicate so
 
