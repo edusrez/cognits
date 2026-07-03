@@ -20,7 +20,7 @@ log = logging.getLogger("cognits.sessions")
 def register(app: FastAPI, st) -> None:
     def ensure_sessions():
         if st.store is None:
-            return text_error("storage not available", 503)
+            raise StorageError("storage not available")
         return None
 
     @app.post("/api/sessions")
@@ -35,7 +35,7 @@ def register(app: FastAPI, st) -> None:
         try:
             await asyncio.to_thread(st.store.save_session, session)
         except OSError as e:
-            return text_error(f"storage: write session: {e}", 500)
+            raise StorageError(f"write session: {e}")
 
         return JSONResponse(session.to_json())
 
@@ -46,7 +46,7 @@ def register(app: FastAPI, st) -> None:
         try:
             sessions = await asyncio.to_thread(st.store.list_sessions)
         except OSError as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
         return JSONResponse([s.to_json() for s in sessions])
 
     @app.put("/api/sessions/{session_id}")
@@ -67,7 +67,7 @@ def register(app: FastAPI, st) -> None:
         try:
             await asyncio.to_thread(st.store.rename_session, session_id, name)
         except (OSError, json.JSONDecodeError) as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
 
         return Response(status_code=204)
 
@@ -79,7 +79,7 @@ def register(app: FastAPI, st) -> None:
         try:
             await asyncio.to_thread(st.store.delete_session, session_id)
         except OSError as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
 
         if st.db is not None:
             try:
@@ -109,6 +109,6 @@ def register(app: FastAPI, st) -> None:
         try:
             await asyncio.to_thread(st.store.reorder_sessions, order)
         except OSError as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
 
         return Response(status_code=204)

@@ -51,7 +51,7 @@ def register(app: FastAPI, st) -> None:
         try:
             notes = await asyncio.to_thread(st.notes.list_all)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
         return JSONResponse([n.to_json() for n in notes])
 
     @app.get("/api/notes/{note_id}")
@@ -61,7 +61,7 @@ def register(app: FastAPI, st) -> None:
         try:
             note = await asyncio.to_thread(st.notes.get, note_id)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
         if note is None:
             raise CognitsError("note not found", "ERROR", 404)
         return JSONResponse(note.to_json())
@@ -87,7 +87,7 @@ def register(app: FastAPI, st) -> None:
             name = name.strip()
             if not name:
                 raise CognitsError("name is required", "ERROR", 400)
-            if len(name) > 120:
+            if len(name) > MAX_NAME_LENGTH:
                 raise CognitsError("name too long", "ERROR", 400)
 
         if content is not None:
@@ -100,7 +100,7 @@ def register(app: FastAPI, st) -> None:
             if content is not None:
                 await asyncio.to_thread(st.notes.save_content, note_id, content)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
 
         return Response(status_code=204)
 
@@ -112,7 +112,7 @@ def register(app: FastAPI, st) -> None:
         try:
             await asyncio.to_thread(st.notes.delete, note_id)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
 
         return Response(status_code=204)
 
@@ -132,6 +132,6 @@ def register(app: FastAPI, st) -> None:
         try:
             await asyncio.to_thread(st.notes.reorder, order)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
 
         return Response(status_code=204)

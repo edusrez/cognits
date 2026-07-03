@@ -129,7 +129,7 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `storage/notes.py` | `NoteRepository`: CRUD + reorder | — |
 | `storage/skills.py` | `SkillRepository`: skills tree + prerequisites + builds + FTS5 | — |
 | `storage/learner_state.py` | `LearnerStateRepository`: BKT+FSRS upsert/get/get_all | — |
-| `storage/stored_plans.py` | `StudyPlanRepository`: plans + items + lifecycle | — |
+| `storage/study_plans.py` | `StudyPlanRepository`: plans + items + lifecycle | — |
 | `storage/pedagogical.py` | `PedagogicalPlanRepository`: save/get | — |
 | `storage/session_config.py` | `SessionConfigRepository`: save/load/delete | — |
 | `storage/files.py` | Sessions JSON, config with AES-GCM (bit-compatible with Go; key reused from `~/.config/learnit/`, copied to `~/.config/cognits/`) | `internal/storage/storage.go` |
@@ -198,7 +198,7 @@ defining the canonical schema. Schema migrations (`ALTER TABLE`, new
 columns, etc.) run unconditionally for inherited databases (those that
 existed before versioning was introduced, detected as `PRAGMA user_version
 = 0`). Semantic versioning of the schema starts at 0.1.X when the DB
-format stabilizes. Until then, any agent touching `db.py` must:
+format stabilizes. Until then, any agent touching `database.py` must:
 
 - Keep `SCHEMA_VERSION = 1`.
 - Add new schema changes as idempotent `ALTER TABLE` checks inside the

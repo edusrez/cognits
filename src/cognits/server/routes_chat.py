@@ -17,22 +17,8 @@ from pathlib import Path
 from fastapi import FastAPI, Request, Response
 
 from cognits.agent.agent import Agent, AgentConfig
-from cognits.agent.prompts import DEFAULT_AGENT_ID, default_agent_prompt
-from cognits.agent.subagents import (
-    directory_reader_config,
-    documentalist_config,
-    evaluator_config,
-    researcher_config,
-    session_namer_config,
-    skill_planner_config,
-    study_planner_config,
-    teacher_config,
-)
-from cognits.agent.prompts import (
-    TEACHER_SYSTEM_PROMPT,
-    default_agent_prompt,
-)
-from cognits.agent.tool_deploy import DeploySubagent
+from cognits.agent.prompts import DEFAULT_AGENT_ID, TEACHER_SYSTEM_PROMPT, default_agent_prompt
+from cognits.agent.subagents import session_namer_config
 from cognits.constants import (
     DEFAULT_FLASH_MODEL,
     DEFAULT_MODEL,
@@ -46,8 +32,6 @@ from cognits.server.session_agent import SessionAgent
 from cognits.server.util import text_error
 from cognits.storage.models import MessageRow
 from cognits.storage.files import Config, StudentProfile
-from cognits.tinyfish import TinyfishClient
-from cognits.tools import Registry
 
 log = logging.getLogger("cognits.chat")
 
