@@ -61,6 +61,8 @@ class AgentConfig:
     max_tokens: int | None = None
     temperature: float | None = None
     top_p: float | None = None
+    critique_mode: bool = False
+    tool_registry: str = ""
 
 
 class Agent:

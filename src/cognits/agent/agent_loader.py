@@ -49,6 +49,8 @@ def load_agent_config(name: str) -> AgentConfig:
         max_tokens=fm.get("max_tokens"),
         temperature=fm.get("temperature"),
         top_p=fm.get("top_p"),
+        critique_mode=fm.get("critique_mode", False),
+        tool_registry=fm.get("tool_registry", ""),
         tools=None,
         subagents={},
     )

@@ -1,7 +1,7 @@
 ---
 name: web_researcher
 description: Autonomous web researcher. Searches the web and internal knowledge base to produce structured reports.
-model: deepseek/deepseek-v4-pro
+model: deepseek-v4-pro
 reasoning: enabled
 max_steps: 50
 temperature: 0.0
