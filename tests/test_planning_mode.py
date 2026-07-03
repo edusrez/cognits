@@ -9,7 +9,9 @@ import pytest
 
 from cognits.agent.tool_ui import CreateLearningSession
 from cognits.agent.prompts import ORCHESTRATOR_SYSTEM_PROMPT
-from _legacy import LegacyStore
+from cognits.storage.database import Database
+from cognits.storage.learner_state import LearnerStateRepository
+from cognits.storage.skills import SkillRepository
 from cognits.storage.models import Skill, new_skill_id
 from cognits.storage.models import LearnerState
 from cognits.server.app import AppState, create_app
@@ -24,19 +26,21 @@ def _skill_dict(sid, name, domain="python"):
 
 @pytest.fixture
 def store(tmp_path):
-    rs = LegacyStore(tmp_path / "test.db")
-    yield rs
-    rs.close()
+    db = Database(tmp_path / "test.db")
+    yield SkillRepository(db), LearnerStateRepository(db)
+    db.shutdown()
 
 
 def test_build_skills_summary_compact_format(store):
+    skills, learner_state = store
+    skills, learner_state = store
     a = Skill(id=new_skill_id(), domain="python", name="Variables", source="test")
     b = Skill(id=new_skill_id(), domain="python", name="Loops", source="test")
-    store.upsert_skill(a)
-    store.upsert_skill(b)
-    store.add_edge(b.id, a.id, "prereq")
-    tree = store.get_tree()
-    summary = _build_skills_summary(store, tree)
+    skills.upsert(a)
+    skills.upsert(b)
+    skills.add_edge(b.id, a.id, "prereq")
+    tree = skills.get_tree()
+    summary = _build_skills_summary(learner_state, tree)
     assert "Variables" in summary
     assert "Loops" in summary
     assert "python" in summary
@@ -46,16 +50,18 @@ def test_build_skills_summary_compact_format(store):
 
 
 def test_build_skills_summary_empty_tree(store):
+    skills, learner_state = store
     assert _build_skills_summary(store, {"skills": [], "edges": []}) == ""
 
 
 def test_build_skills_summary_marks_mastered(store):
+    skills, learner_state = store
     s = Skill(id=new_skill_id(), domain="d", name="MasteredSkill", source="test")
-    store.upsert_skill(s)
+    skills.upsert(s)
     from cognits.storage.models import LearnerState
-    store.upsert_learner_state(LearnerState(skill_id=s.id, p_mastery=0.96, status_enum="mastered"))
-    tree = store.get_tree()
-    summary = _build_skills_summary(store, tree)
+    learner_state.upsert(LearnerState(skill_id=s.id, p_mastery=0.96, status_enum="mastered"))
+    tree = skills.get_tree()
+    summary = _build_skills_summary(learner_state, tree)
     assert "mastered" in summary
     assert "p=0.96" in summary
 
@@ -63,10 +69,11 @@ def test_build_skills_summary_marks_mastered(store):
 # --- CreateLearningSession tool --------------------------------------
 
 def test_create_learning_session_emits_sse(store):
+    skills, learner_state = store
     a = Skill(id=new_skill_id(), domain="d", name="Variables", source="test")
-    store.upsert_skill(a)
+    skills.upsert(a)
     events = []
-    tool = CreateLearningSession(emit=events.append, skills=store)
+    tool = CreateLearningSession(emit=events.append, skills=skills)
     result = asyncio.run(tool.execute(json.dumps({"skill_name": "Variables"})))
     data = json.loads(result)
     assert "Learning session requested" in data["message"]
@@ -76,8 +83,9 @@ def test_create_learning_session_emits_sse(store):
 
 
 def test_create_learning_session_unknown_skill_returns_error(store):
+    skills, learner_state = store
     events = []
-    tool = CreateLearningSession(emit=events.append, skills=store)
+    tool = CreateLearningSession(emit=events.append, skills=skills)
     result = asyncio.run(tool.execute(json.dumps({"skill_name": "Nonexistent"})))
     data = json.loads(result)
     assert "error" in data
@@ -85,6 +93,7 @@ def test_create_learning_session_unknown_skill_returns_error(store):
 
 
 def test_create_learning_session_unified(store):
+    skills, learner_state = store
     events = []
     tool = CreateLearningSession(emit=events.append, skills=None)
     result = asyncio.run(tool.execute(json.dumps({"skill_name": "Anything"})))
@@ -107,11 +116,12 @@ def test_orchestrator_prompt_contains_planning_mode():
 # --- get_all_learner_states ------------------------------------------
 
 def test_get_all_learner_states(store):
+    skills, learner_state = store
     a = Skill(id=new_skill_id(), domain="d", name="A", source="test")
     b = Skill(id=new_skill_id(), domain="d", name="B", source="test")
-    store.upsert_skill(a)
-    store.upsert_skill(b)
-    states = store.get_all_learner_states()
+    skills.upsert(a)
+    skills.upsert(b)
+    states = learner_state.get_all()
     assert a.id in states
     assert b.id in states
     assert states[a.id].p_mastery == 0.5
@@ -123,9 +133,9 @@ def test_get_all_learner_states(store):
 def test_planning_mode_injects_skill_tree_context(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     async def run():
-        store = LegacyStore(tmp_path / "db.db")
+        store = SkillRepository(Database(tmp_path / "db.db"))
         a = Skill(id=new_skill_id(), domain="python", name="Variables", source="test")
-        store.upsert_skill(a)
+        store.upsert(a)
         state = AppState(); state.reports = store
         app = create_app(state)
         transport = httpx.ASGITransport(app=app)

@@ -7,79 +7,91 @@ import json
 
 import pytest
 
-from _legacy import LegacyStore
+from cognits.storage.database import Database
+from cognits.storage.learner_state import LearnerStateRepository
+from cognits.storage.pedagogical import PedagogicalPlanRepository
+from cognits.storage.reports import ReportRepository
+from cognits.storage.session_config import SessionConfigRepository
+from cognits.storage.skills import SkillRepository
 from cognits.storage.models import LearnerState, SessionConfigRow, Skill, new_skill_id
 
 
 @pytest.fixture
 def store(tmp_path):
-    rs = LegacyStore(tmp_path / "test.db")
-    yield rs
-    rs.close()
+    db = Database(tmp_path / "test.db")
+    yield SkillRepository(db), LearnerStateRepository(db), SessionConfigRepository(db), PedagogicalPlanRepository(db), ReportRepository(db)
+    db.shutdown()
 
 
 def _skill(name="Test", domain="d"):
     return Skill(id=new_skill_id(), domain=domain, name=name, source="test", description="A test skill")
 
 
-def _seed(store, *skills):
-    for s in skills:
-        store.upsert_skill(s)
+def _seed(store, *sk):
+    for s in sk:
+        store.upsert(s)
 
 
 # --- session_config skill_id -----------------------------------------
 
 def test_session_config_save_load_skill_id(store):
+    skills, learner_state, session_config, pedagogy, reports = store
     cfg = SessionConfigRow("s1", agent_id="maestro", skill_id="k_abc")
-    store.save_session_config(cfg)
-    loaded = store.load_session_config("s1")
+    session_config.save(cfg)
+    loaded = session_config.load("s1")
     assert loaded is not None and loaded.skill_id == "k_abc"
 
 
 def test_session_config_default_skill_id_empty(store):
+    skills, learner_state, session_config, pedagogy, reports = store
     cfg = SessionConfigRow("s2", agent_id="orchestrator")
-    store.save_session_config(cfg)
-    loaded = store.load_session_config("s2")
+    session_config.save(cfg)
+    loaded = session_config.load("s2")
     assert loaded is not None and loaded.skill_id == ""
 
 
 # --- pedagogical_plans CRUD ------------------------------------------
 
 def test_pedagogical_plan_save_and_get(store):
-    store.save_pedagogical_plan("k_x", "# Plan\n\nStage 1")
-    got = store.get_pedagogical_plan("k_x")
+    skills, learner_state, session_config, pedagogy, reports = store
+    pedagogy.save("k_x", "# Plan\n\nStage 1")
+    got = pedagogy.get("k_x")
     assert got == "# Plan\n\nStage 1"
 
 
 def test_pedagogical_plan_overwrite(store):
-    store.save_pedagogical_plan("k_x", "Plan A")
-    store.save_pedagogical_plan("k_x", "Plan B")
-    assert store.get_pedagogical_plan("k_x") == "Plan B"
+    skills, learner_state, session_config, pedagogy, reports = store
+    pedagogy.save("k_x", "Plan A")
+    pedagogy.save("k_x", "Plan B")
+    assert pedagogy.get("k_x") == "Plan B"
 
 
 def test_pedagogical_plan_nonexistent(store):
-    assert store.get_pedagogical_plan("k_nonexistent") is None
+    skills, learner_state, session_config, pedagogy, reports = store
+    assert pedagogy.get("k_nonexistent") is None
 
 
 # --- save_pedagogical_plan tool --------------------------------------
 
 def test_save_pedagogical_plan_tool_persists(store):
+    skills, learner_state, session_config, pedagogy, reports = store
     from cognits.agent.pedagogical_plan import SavePedagogicalPlan
 
-    s = _skill("Variables"); _seed(store, s)
-    tool = SavePedagogicalPlan(skills=store, pedagogy=store)
+    s = _skill("Variables"); _seed(skills, s)
+    tool = SavePedagogicalPlan(skills=skills, pedagogy=pedagogy)
     result = asyncio.run(tool.execute(json.dumps({
         "skill_name": "Variables",
         "plan_markdown": "# Plan\n\nStage 1: hello",
     })))
     assert json.loads(result)["saved"] is True
-    assert store.get_pedagogical_plan(s.id) == "# Plan\n\nStage 1: hello"
+    assert pedagogy.get(s.id) == "# Plan\n\nStage 1: hello"
 
 
 def test_save_pedagogical_plan_tool_unknown_skill(store):
+    skills, learner_state, session_config, pedagogy, reports = store
     from cognits.agent.pedagogical_plan import SavePedagogicalPlan
 
-    tool = SavePedagogicalPlan(skills=store, pedagogy=store)
+    tool = SavePedagogicalPlan(skills=skills, pedagogy=pedagogy)
     result = asyncio.run(tool.execute(json.dumps({
         "skill_name": "Nonexistent",
         "plan_markdown": "Plan",
@@ -90,50 +102,55 @@ def test_save_pedagogical_plan_tool_unknown_skill(store):
 # --- _build_teacher_system_prompt ------------------------------------
 
 def test_build_teacher_system_prompt_includes_skill_metadata(store):
+    skills, learner_state, session_config, pedagogy, reports = store
     from cognits.server.routes_chat import _build_teacher_system_prompt
 
     s = _skill("Variables"); s.domain = "python"; s.bloom_level = "understand"
-    _seed(store, s)
-    prompt = _build_teacher_system_prompt(s.id, store)
+    _seed(skills, s)
+    prompt = _build_teacher_system_prompt(s.id, skills, learner_state, pedagogy)
     assert "Variables" in prompt
     assert "python" in prompt
     assert "understand" in prompt
 
 
 def test_build_teacher_system_prompt_includes_learner_state(store):
+    skills, learner_state, session_config, pedagogy, reports = store
     from cognits.server.routes_chat import _build_teacher_system_prompt
 
-    s = _skill("FSM"); _seed(store, s)
-    store.upsert_learner_state(LearnerState(skill_id=s.id, p_mastery=0.78, status_enum="practicing", reps=3))
-    prompt = _build_teacher_system_prompt(s.id, store)
+    s = _skill("FSM"); _seed(skills, s)
+    learner_state.upsert(LearnerState(skill_id=s.id, p_mastery=0.78, status_enum="practicing", reps=3))
+    prompt = _build_teacher_system_prompt(s.id, skills, learner_state, pedagogy)
     assert "practicing" in prompt
     assert "0.78" in prompt
     assert "3" in prompt
 
 
 def test_build_teacher_system_prompt_handles_missing_plan(store):
+    skills, learner_state, session_config, pedagogy, reports = store
     from cognits.server.routes_chat import _build_teacher_system_prompt
 
-    s = _skill("Root"); _seed(store, s)
-    prompt = _build_teacher_system_prompt(s.id, store)
+    s = _skill("Root"); _seed(skills, s)
+    prompt = _build_teacher_system_prompt(s.id, skills, learner_state, pedagogy)
     assert "No pedagogical plan available" in prompt or "Teach from your own" in prompt
 
 
 def test_build_teacher_system_prompt_includes_plan_when_present(store):
+    skills, learner_state, session_config, pedagogy, reports = store
     from cognits.server.routes_chat import _build_teacher_system_prompt
 
-    s = _skill("X"); _seed(store, s)
-    store.save_pedagogical_plan(s.id, "# Plan\n\nStage 1")
-    prompt = _build_teacher_system_prompt(s.id, store)
+    s = _skill("X"); _seed(skills, s)
+    pedagogy.save(s.id, "# Plan\n\nStage 1")
+    prompt = _build_teacher_system_prompt(s.id, skills, learner_state, pedagogy)
     assert "# Plan" in prompt
     assert "Stage 1" in prompt
 
 
 def test_build_teacher_system_prompt_includes_profile_ctx(store):
+    skills, learner_state, session_config, pedagogy, reports = store
     from cognits.server.routes_chat import _build_teacher_system_prompt
 
-    s = _skill("Y"); _seed(store, s)
-    prompt = _build_teacher_system_prompt(s.id, store, profile_ctx="Background: physics")
+    s = _skill("Y"); _seed(skills, s)
+    prompt = _build_teacher_system_prompt(s.id, skills, learner_state, pedagogy, profile_ctx="Background: physics")
     assert "Background: physics" in prompt
 
 
@@ -169,11 +186,12 @@ def test_orchestrator_planning_mode_mentions_pedagogical():
 
 
 def test_create_learning_session_emits_skill_id(store):
+    skills, learner_state, session_config, pedagogy, reports = store
     from cognits.agent.tool_ui import CreateLearningSession
 
-    s = _skill("Variables"); _seed(store, s)
+    s = _skill("Variables"); _seed(skills, s)
     events = []
-    tool = CreateLearningSession(emit=events.append, skills=store)
+    tool = CreateLearningSession(emit=events.append, skills=skills)
     result = asyncio.run(tool.execute(json.dumps({"skill_name": "Variables"})))
     assert json.loads(result).get("message")
     assert len(events) == 1
@@ -183,6 +201,7 @@ def test_create_learning_session_emits_skill_id(store):
 
 
 def test_teacher_config_builds(store):
+    skills, learner_state, session_config, pedagogy, reports = store
     from cognits.agent.subagents import teacher_config
 
     class FakeLLM:
@@ -192,7 +211,7 @@ def test_teacher_config_builds(store):
     class FakeTF:
         async def aclose(self): pass
 
-    s = _skill(); _seed(store, s)
+    s = _skill(); _seed(skills, s)
     cfg = teacher_config(
         model="m", reasoning="", max_steps=10,
         llm_client=FakeLLM(), rag_engine=None, tf_client=FakeTF(),
