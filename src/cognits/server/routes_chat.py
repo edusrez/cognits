@@ -31,7 +31,7 @@ from cognits.constants import (
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import ROLE_SYSTEM, ROLE_USER, Message
 from cognits.server.session_agent import SessionAgent
-from cognits.server.util import text_error
+from cognits.server.util import MONTHS, WEEKDAYS, text_error
 from cognits.storage.models import MessageRow
 from cognits.storage.files import Config, StudentProfile
 
@@ -199,15 +199,6 @@ def _build_teacher_system_prompt(
 
 
 
-
-# Explicit lists instead of strftime %A/%B: those are locale-dependent.
-MONTHS = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
-]
-WEEKDAYS = [
-    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
-]
 
 FORMATTING_RULES = (
     "## Formatting rules\n"
@@ -390,73 +381,6 @@ def register(app: FastAPI, st) -> None:
         if sa is not None and sa.task is not None:
             sa.task.cancel()
         return Response(status_code=204)
-
-
-async def _run_session_namer(
-    st,
-    sa: SessionAgent,
-    cfg: Config,
-    sid: str,
-    incoming: list[dict],
-) -> None:
-    """Fire-and-forget: generates a session name from the first user message."""
-    logger = logging.getLogger("cognits.session_namer")
-    try:
-        user_msgs = [m for m in incoming if m.get("role") == "user"]
-        if not user_msgs:
-            return
-        first_msg = user_msgs[0].get("content", "").strip()
-        if not first_msg:
-            return
-
-        now = datetime.now().astimezone()
-        tz = now.strftime("%Z") or now.strftime("%z")
-        date_stamp = (
-            f"{WEEKDAYS[now.weekday()]}, {now.day} {MONTHS[now.month - 1]} "
-            f"{now.year}, {now.strftime('%H:%M')} {tz}"
-        )
-        context = f"Today is {date_stamp}. "
-        if cfg.user_name:
-            context += f"The user's name is {cfg.user_name}. "
-        if cfg.user_location:
-            context += f"Their location is set to {cfg.user_location}. "
-        context += f"The project directory is '{Path.cwd().name}'."
-
-        model = DEFAULT_FLASH_MODEL
-        ag_cfg = session_namer_config(
-            model=model,
-            max_tokens=SESSION_NAMER_MAX_TOKENS,
-            temperature=SESSION_NAMER_TEMPERATURE,
-        )
-        llm_client = DeepSeekClient(cfg.llm_api_key)
-        ag = Agent(ag_cfg, llm_client)
-
-        messages = [
-            Message(role=ROLE_SYSTEM, content=context),
-            Message(role=ROLE_USER, content=first_msg),
-        ]
-        try:
-            content = await ag.run(messages, emit=lambda _ev: None)
-        except Exception as e:
-            logger.error("session_namer: agent run: %s", e)
-            return
-
-        name = content.strip().strip('"\'').strip()
-        if not name:
-            return
-        if len(name) > MAX_SESSION_NAME_LENGTH:
-            name = name[:MAX_SESSION_NAME_LENGTH - 3] + "..."
-
-        logger.info("session_namer: renaming %s -> %s", sid, name)
-        await asyncio.to_thread(st.store.rename_session, sid, name)
-        sa.publish({"type": "session_renamed", "data": {"name": name}})
-    except asyncio.CancelledError:
-        pass
-    except Exception:
-        logger.exception("session_namer: failed")
-    finally:
-        with contextlib.suppress(Exception):
-            asyncio.get_running_loop().create_task(llm_client.aclose())
 
 
 async def _run_agent(

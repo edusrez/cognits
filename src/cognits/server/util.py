@@ -26,3 +26,13 @@ def mask_key(key: str) -> str:
     if len(key) <= 4:
         return "••••"
     return "••••" + key[-4:]
+
+
+# Explicit lists instead of strftime %A/%B: those are locale-dependent.
+MONTHS = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+]
+WEEKDAYS = [
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+]
