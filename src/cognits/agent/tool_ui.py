@@ -7,6 +7,7 @@ import datetime
 import json
 from collections.abc import Awaitable, Callable
 
+from cognits.constants import CHANGELOG_VALUE_MAX_CHARS
 from cognits.tools import Tool, tool_error
 from cognits.storage.files import StudentProfile
 

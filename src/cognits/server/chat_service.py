@@ -11,6 +11,8 @@ import asyncio
 import contextlib
 import json
 import logging
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable
 
 from cognits.agent.agent import Agent, AgentConfig
@@ -621,9 +623,8 @@ class ChatService:
         iterations with early exit on clean pass."""
         from cognits.agent.tool_deploy import DeploySubagent
 
-        draft = acc["content"]
-
         for iteration in range(REFLECTION_MAX_ITERATIONS):
+            draft = acc["content"]
             critique = None
             try:
                 deploy = DeploySubagent(
@@ -697,10 +698,6 @@ class ChatService:
 
             try:
                 await ag.run(self.llm_messages, _revise_emit)
-                acc["content"] = ""
-                acc["reasoning"] = ""
-                # The agent's output was streamed via process_event; acc
-                # is updated by _make_process_event closures
             except Exception:
                 break
 
