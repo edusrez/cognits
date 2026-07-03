@@ -76,7 +76,7 @@ uv publish              # publish to PyPI (when ready)
 
 ### Test commands
 ```bash
-uv run python -m pytest -q            # all tests (crypto, DB/FTS5, chunker, agent loop, SSE framing, teacher prompt, skills API, HTTP routes, planning mode, onboarding, learner model, deploy cancel, database, reports)
+uv run python -m pytest -q            # all tests (crypto, DB/FTS5, chunker, agent loop, SSE framing, teacher prompt, skills API, HTTP routes, planning mode, onboarding, learner model, deploy cancel, database, reports, deepseek streaming, exceptions, agent loader, tool files, tool RAG, chat service, tracer, apply profile)
 uv run pytest tests/test_X.py -x    # single file, stop on first failure
 uv run pytest tests/test_X.py::test_name -x --tb=short  # single test
 ```
@@ -113,13 +113,10 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `server/util.py` | Helpers: `text_error` (deprecated), `atoi`, `mask_key`, `MONTHS`/`WEEKDAYS` | — |
 | `constants.py` | Centralized literals: model names, max_steps, memory thresholds, concurrency limits, httpx limits, LLM timeouts, mastery threshold, chunk sizes, SSE buffer, name caps, subagent labels, context compaction, reflection loop | — |
 | `agent/agent_loader.py` | Parses `agent/agents/*.md` (YAML frontmatter + Markdown body) into `AgentConfig` | — |
-| `agent/agents/` | 9 persona `.md` files: web_researcher, documentalist, directory_reader, session_namer, session_analyzer, skill_planner, study_planner, evaluator, maestro | — |
-| `agent/tracer.py` | `Tracer`: structured JSONL trace logging to `.cognits/traces/{session_id}.jsonl` | — |
+| `agent/agents/` | 11 persona `.md` files: web_researcher, documentalist, directory_reader, session_namer, session_analyzer, skill_planner, study_planner, evaluator, maestro, orchestrator, system_support | — |
+| `agent/tracer.py` | `Tracer`: structured JSONL trace logging to `.cognits/traces/{session_id}.jsonl`. Wired into `ChatService.run_agent()` and `Agent.__init__` (constructor injection). `NoopTracer` for tests. | — |
 | `agent/token_counter.py` | `TokenCounter` using `deepseek_tokenizer` (128K BPE, falls back to chars//4) | — |
-| `server/routes_skills.py` | Skill tree read endpoints (list, tree, learner state) | — |
-| `server/routes_files.py` | File content/raw endpoints (text mode + Docling PDF→Markdown) | — |
-| `constants.py` | Centralized literals: model names, max_steps, memory thresholds, concurrency limits, httpx limits, chunk sizes, SSE buffer, name caps, subagent labels | — |
-| `agent/agent.py` | Agentic loop: stream → sparse-index tool call accumulation → execute → repeat; tool errors fed back as `{"error": ...}` | `internal/agent/agent.go` |
+| `agent/agent.py` | Agentic loop: stream → sparse-index tool call accumulation → execute → repeat; tool errors fed back as `{"error": ...}`. `AgentConfig` has `critique_mode` and `tool_registry` fields. Tracer injected via constructor. | `internal/agent/agent.go` |
 | `agent/prompts.py` | Agent personas (orchestrator, maestro, system_support, web_researcher, etc.). Prompt text loaded from `agent/agents/*.md` via `agent_loader` | `internal/agent/prompts.go` |
 | `agent/subagents.py` | 9 subagent configs (researcher, directory_reader, documentalist, skill_planner, study_planner, evaluator, teacher, session_analyzer, session_namer) + TinyFish tools, deployment wrapping | `internal/agent/subagents/` |
 | `agent/tool_deploy.py` | `deploy_subagent`: run subagent → save report → index chunks in RAG → `subagent_end`. Cancel ⇒ no report; failure ⇒ error tool result + clears banner | `internal/agent/tools/deploy.go` |
@@ -192,6 +189,20 @@ calls are same-origin relative `/api/*`.
 - Tool definitions sorted by name; date stamp only on the last user message;
   history persisted unstamped. Breaking either invalidates DeepSeek's prefix cache.
 - Thinking param omitted when tools are present (API rejects the combination).
+
+### Reflection loop (Teacher/Evaluator)
+- Pre-send quality gate: critique runs before response reaches the learner.
+- Evaluator uses V4-Pro (same model family, most capable) with Critique Mode
+  (structured JSON: `{verdict, socratic_violations[], scaffolding_assessment, suggested_revision, confidence}`).
+- Cap 2 iterations; early exit on `verdict: pass` + zero violations.
+- Coherence trap mitigation: evaluator prompt says "evaluating a DIFFERENT
+  agent's response. Be skeptical."
+- Gated on `agent_id == "maestro"` (Teacher only).
+
+### Subagent relay contract
+- All research subagents (web_researcher, documentalist) MUST include a
+  `key_findings_for_orchestrator` field (1-3 sentences) in their output.
+  Prevents the "information withholding" anti-pattern.
 
 ## Design Patterns (frontend — unchanged)
 - Store-driven reactivity via `createMemo` (never destructure store props).
