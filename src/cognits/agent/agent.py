@@ -66,9 +66,11 @@ class AgentConfig:
 
 
 class Agent:
-    def __init__(self, cfg: AgentConfig, llm_client: DeepSeekClient):
+    def __init__(self, cfg: AgentConfig, llm_client: DeepSeekClient, tracer=None):
         self.cfg = cfg
         self.llm = llm_client
+        from cognits.agent.tracer import NoopTracer
+        self.tracer = tracer or NoopTracer()
         # Set by run() after a completed execution — contains the full
         # accumulated message list (system + user + assistant + tools)
         # so callers (e.g. DeploySubagent) can resume paused subagents.

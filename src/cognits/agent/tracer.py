@@ -61,3 +61,9 @@ class Tracer:
             for r in records:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
             f.flush()
+
+
+class NoopTracer:
+    """Tracer that discards all events. Used in tests and when tracing is disabled."""
+    def emit(self, **kw) -> None: pass
+    async def flush(self) -> None: pass

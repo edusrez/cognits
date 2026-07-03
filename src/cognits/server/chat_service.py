@@ -160,6 +160,9 @@ class ChatService:
         cfg = self.cfg
         acc: dict[str, str] = {"content": "", "reasoning": ""}
 
+        from cognits.agent.tracer import NoopTracer, Tracer
+        tracer = Tracer(sid)
+
         llm_client = DeepSeekClient(cfg.llm_api_key)
         tf_client = TinyfishClient(cfg.tinyfish_api_key)
 
@@ -200,6 +203,7 @@ class ChatService:
                     subagents=subagent_map,
                 ),
                 llm_client,
+                tracer,
             )
 
             # --- context compaction ---
@@ -229,6 +233,7 @@ class ChatService:
                 log.error("chat: agent run (session %s): %s", sid, e)
                 sa.publish({"type": "error", "data": str(e)})
         finally:
+            asyncio.get_running_loop().create_task(tracer.flush())
             self._persist_partial(acc, sa, st, sid, llm_client, tf_client)
 
     # -----------------------------------------------------------------
