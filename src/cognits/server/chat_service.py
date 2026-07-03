@@ -39,6 +39,7 @@ from cognits.constants import (
     EVALUATOR_MAX_STEPS,
     MODEL_CONTEXT_WINDOW,
     ORCHESTRATOR_MAX_STEPS,
+    REFLECTION_MAX_ITERATIONS,
     RESEARCHER_MAX_STEPS,
     STUDY_PLANNER_DEFAULT_STEPS,
 )
@@ -215,6 +216,12 @@ class ChatService:
                     process_event(ev)
 
                 await ag.run(self.llm_messages, _orchestrator_emit)
+
+                # --- reflection loop (maestro only, pre-send quality gate) ---
+                if self.agent_id == "maestro" and acc["content"]:
+                    await self._reflect(acc, process_event, subagent_map,
+                                        registry, llm_client, tf_client, sid)
+
             except asyncio.CancelledError:
                 log.info("chat: agent run cancelled (session %s)", sid)
             except Exception as e:
@@ -605,4 +612,96 @@ class ChatService:
         if system_msg:
             result.insert(0, system_msg)
         return result
+
+    async def _reflect(self, acc, process_event, subagent_map, registry,
+                       llm_client, tf_client, sid):
+        """Pre-send reflection: deploy evaluator in critique_mode to review
+        the teacher's draft against Socratic principles. If violations are
+        found, feed the critique back to the teacher for revision. Cap 2
+        iterations with early exit on clean pass."""
+        from cognits.agent.tool_deploy import DeploySubagent
+
+        draft = acc["content"]
+
+        for iteration in range(REFLECTION_MAX_ITERATIONS):
+            critique = None
+            try:
+                deploy = DeploySubagent(
+                    llm_client=llm_client,
+                    reports=self.st.reports,
+                    subagents={"evaluator": subagent_map.get("evaluator")},
+                    session_id=lambda: sid,
+                    emit=process_event,
+                    rag_engine=None,
+                    tinyfish_api_key=None,
+                    suspended_subagents=self.st.suspended_subagents,
+                )
+                result = await deploy.execute(json.dumps({
+                    "type": "evaluator",
+                    "query": json.dumps({
+                        "mode": "critique",
+                        "teacher_draft": draft,
+                    }),
+                }))
+                critique = json.loads(result)
+            except json.JSONDecodeError:
+                break
+
+            if not critique or not isinstance(critique, dict):
+                break
+
+            violations = critique.get("socratic_violations", [])
+            verdict = critique.get("verdict", "pass")
+
+            # Quality gate: pass with zero violations → deliver as-is
+            if verdict == "pass" and not violations:
+                break
+
+            # If this is the last iteration, deliver whatever we have
+            if iteration == REFLECTION_MAX_ITERATIONS - 1:
+                break
+
+            # Feed critique back to teacher as a system message
+            critique_text = json.dumps(critique, ensure_ascii=False, indent=2)
+            self.llm_messages.append(Message(
+                role="system",
+                content=(
+                    "CRITIQUE OF YOUR DRAFT (by independent evaluator):\n\n"
+                    f"{critique_text}\n\n"
+                    "Revise your response to address ALL flagged violations. "
+                    "Do NOT argue with the critique — it comes from an "
+                    "independent evaluator. Maintain your Socratic approach "
+                    "while fixing the issues listed above."
+                ),
+            ))
+
+            # Re-run the agent with the critique in context
+            ag_cfg = AgentConfig(
+                name=self.agent_id,
+                model=self.model,
+                reasoning=self.reasoning,
+                max_steps=10,  # short run for revision
+                max_tokens=self.cfg.max_tokens or None,
+                temperature=self.cfg.temperature or None,
+                top_p=self.cfg.top_p or None,
+                system_prompt=self.system_prompt,
+                tools=registry,
+                subagents=subagent_map,
+            )
+            ag = Agent(ag_cfg, llm_client)
+
+            def _revise_emit(ev):
+                if ev.get("type") == "usage" and isinstance(ev.get("data"), dict):
+                    ev["data"]["source"] = "orchestrator-reflection"
+                process_event(ev)
+
+            try:
+                await ag.run(self.llm_messages, _revise_emit)
+                acc["content"] = ""
+                acc["reasoning"] = ""
+                # The agent's output was streamed via process_event; acc
+                # is updated by _make_process_event closures
+            except Exception:
+                break
+
 

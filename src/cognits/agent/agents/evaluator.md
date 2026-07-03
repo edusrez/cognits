@@ -6,6 +6,7 @@ reasoning:
 max_steps: 100
 temperature: 0.0
 tool_registry: evaluator
+critique_mode: false
 ---
 # Evaluator — Cognits Subagent
 

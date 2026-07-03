@@ -79,6 +79,11 @@ COMPACTION_EARLY_WARNING = 0.5   # trigger memory sync at 500K
 COMPACTION_TRIGGER = 0.6          # force compaction at 600K
 COMPACTION_PRESERVE_TURNS = 3     # keep last N user/assistant turns
 
+# --- Reflection loop ---
+REFLECTION_MAX_ITERATIONS = 2
+REFLECTION_DIRECT_ANSWER_STREAK = 3
+REFLECTION_MASTERY_DROP = 0.15
+
 # --- Agent persona display labels ---
 # Canonical mapping: persona ID → user-visible name.
 # Serves both the backend (tool_progress banners) and the frontend
