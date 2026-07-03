@@ -158,7 +158,7 @@ class FinishSetup(Tool):
                     "source": "onboarding",
                 },
             )
-            self.store.save_profile(profile)
+            await asyncio.to_thread(self.store.save_profile, profile)
 
         # Build the skill tree automatically when a deployer is wired (i.e.
         # TinyFish key is configured and the orchestrator registered skill_
@@ -275,7 +275,7 @@ class ApplyProfile(Tool):
             return tool_error("store not available")
 
         try:
-            profile = self.store.load_profile()
+            profile = await asyncio.to_thread(self.store.load_profile)
         except Exception:
             profile = StudentProfile()
 
@@ -307,7 +307,7 @@ class ApplyProfile(Tool):
         profile.meta["changelog"] = changelog
         profile.meta["last_session_at"] = now
 
-        self.store.save_profile(profile)
+        await asyncio.to_thread(self.store.save_profile, profile)
 
         return json.dumps({
             "message": "Profile updated successfully.",
