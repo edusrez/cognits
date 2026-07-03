@@ -251,6 +251,46 @@ SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist",
              ".pytest_cache", ".ruff_cache"}
 
 
+
+def _grep_files_sync(dir_path, pattern, regex, max_results, max_chars, case_sensitive, context_lines):
+    """Sync helper: search files recursively. Called via asyncio.to_thread."""
+    import fnmatch
+    results = []
+    for root, dirs, files in os.walk(str(dir_path)):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for fn in sorted(files):
+            fpath = Path(root) / fn
+            if _is_binary(fpath):
+                continue
+            try:
+                text = fpath.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            lines = text.split("\n")
+            for i, line in enumerate(lines, 1):
+                # simple string or regex matching
+                match = False
+                if regex:
+                    try:
+                        if re.search(pattern, line, 0 if case_sensitive else re.IGNORECASE):
+                            match = True
+                    except re.error:
+                        pass
+                else:
+                    check = line if case_sensitive else line.lower()
+                    if pattern.lower() if not case_sensitive else pattern in check:
+                        match = True
+                if match:
+                    disp = line[:max_chars]
+                    if len(line) > max_chars:
+                        disp += "..."
+                    results.append({"file": str(fpath.relative_to(dir_path)), "line": i, "text": disp})
+            if len(results) >= max_results:
+                break
+        if len(results) >= max_results:
+            break
+    return results[:max_results]
+
 class GrepCode(Tool):
     name = "grep_code"
     description = (
