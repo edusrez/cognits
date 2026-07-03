@@ -8,8 +8,9 @@ import pytest
 
 from cognits.agent.agent import AgentConfig
 from cognits.agent.tool_deploy import DeploySubagent
+from cognits.storage.database import Database
+from cognits.storage.reports import ReportRepository
 from cognits.tools import Registry
-from _legacy import LegacyStore
 
 
 class _FakeLLM:
@@ -30,7 +31,7 @@ class _FakeLLM:
         on_chunk({"choices": [{"delta": {}, "finish_reason": "stop"}]})
 
 
-def _make_deploy(database: LegacyStore, **overrides) -> DeploySubagent:
+def _make_deploy(reports: ReportRepository, **overrides) -> DeploySubagent:
     cfg = AgentConfig(
         name="test_sub",
         model="m",
@@ -39,7 +40,7 @@ def _make_deploy(database: LegacyStore, **overrides) -> DeploySubagent:
     )
     kwargs = dict(
         llm_client=_FakeLLM(),
-        reports=database,
+        reports=reports,
         subagents={"test_sub": cfg},
         session_id=lambda: "s_test",
         emit=None,
@@ -51,8 +52,9 @@ def _make_deploy(database: LegacyStore, **overrides) -> DeploySubagent:
 
 
 def test_normal_path_saves_indexes_emits(tmp_path):
-    db = LegacyStore(tmp_path / "test.db")
-    deploy = _make_deploy(db)
+    db = Database(tmp_path / "test.db")
+    reports = ReportRepository(db)
+    deploy = _make_deploy(reports)
     emits: list[dict] = []
     deploy.emit = lambda ev: emits.append(ev)
 
@@ -66,7 +68,7 @@ def test_normal_path_saves_indexes_emits(tmp_path):
     assert data["content"] == "hello DONE"
     assert data["reportId"]
 
-    report = db.get(data["reportId"])
+    report = reports.get(data["reportId"])
     assert report is not None
     assert report.content == "hello DONE"
     assert any(e["type"] == "subagent_end" for e in emits)
@@ -75,7 +77,8 @@ def test_normal_path_saves_indexes_emits(tmp_path):
 def test_cancel_during_save_shields_and_emits(tmp_path):
     """Cancel at the report_store.save await — the shielded save must
     complete and subagent_end must still emit."""
-    db = LegacyStore(tmp_path / "test.db")
+    db = Database(tmp_path / "test.db")
+    reports = ReportRepository(db)
     save_started = threading.Event()
     save_release = threading.Event()
     save_calls: list[str] = []
@@ -90,8 +93,16 @@ def test_cancel_during_save_shields_and_emits(tmp_path):
             save_release.wait(timeout=5)
             return self._inner.save(report)
 
-    gated = GatedSave(db)
-    deploy = _make_deploy(db, reports=gated)
+    gated = GatedSave(reports)
+    deploy = DeploySubagent(
+        llm_client=_FakeLLM(),
+        reports=gated,
+        subagents={"test_sub": AgentConfig(name="test_sub", model="m", system_prompt="Echo.", tools=Registry())},
+        session_id=lambda: "s_test",
+        emit=None,
+        rag_engine=None,
+        suspended_subagents={},
+    )
     emits: list[dict] = []
     deploy.emit = lambda ev: emits.append(ev)
 
@@ -110,14 +121,15 @@ def test_cancel_during_save_shields_and_emits(tmp_path):
     assert len(save_calls) >= 1
     assert any(e["type"] == "subagent_end" for e in emits)
     report_id = save_calls[0]
-    assert db.get(report_id) is not None
+    assert reports.get(report_id) is not None
 
 
 def test_cancel_during_index_emits_subagent_end(tmp_path):
     """Cancel at the rag_engine.index await — save already completed,
     subagent_end must still emit, CancelledError must re-raise."""
-    db = LegacyStore(tmp_path / "test.db")
-    deploy = _make_deploy(db)
+    db = Database(tmp_path / "test.db")
+    reports = ReportRepository(db)
+    deploy = _make_deploy(reports)
 
     class GatedRag:
         def __init__(self):
@@ -149,14 +161,15 @@ def test_cancel_during_index_emits_subagent_end(tmp_path):
     asyncio.run(run())
 
     assert any(e["type"] == "subagent_end" for e in emits)
-    result = db.search_reports(1, 10, "created_at DESC", "")
+    result = reports.search(1, 10, "created_at DESC", "")
     assert len(result["reports"]) >= 1
 
 
 def test_subagent_run_cancelled_no_report(tmp_path):
     """Cancelled during subagent.run — no report, no emit."""
-    db = LegacyStore(tmp_path / "test.db")
-    deploy = _make_deploy(db)
+    db = Database(tmp_path / "test.db")
+    reports = ReportRepository(db)
+    deploy = _make_deploy(reports)
 
     class CancellingLLM:
         async def aclose(self): pass
@@ -178,5 +191,5 @@ def test_subagent_run_cancelled_no_report(tmp_path):
     asyncio.run(run())
 
     assert not any(e["type"] == "subagent_end" for e in emits)
-    result = db.search_reports(1, 10, "created_at DESC", "")
+    result = reports.search(1, 10, "created_at DESC", "")
     assert len(result["reports"]) == 0
