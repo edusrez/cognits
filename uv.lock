@@ -435,10 +435,12 @@ source = { editable = "." }
 dependencies = [
     { name = "chromadb" },
     { name = "cryptography" },
+    { name = "deepseek-tokenizer" },
     { name = "docling" },
     { name = "fastapi" },
     { name = "fastembed" },
     { name = "httpx" },
+    { name = "pyyaml" },
     { name = "rich" },
     { name = "textual" },
     { name = "uvicorn", extra = ["standard"] },
@@ -447,23 +449,31 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "respx" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "chromadb", specifier = "==1.5.9" },
     { name = "cryptography", specifier = ">=42" },
+    { name = "deepseek-tokenizer", specifier = ">=0.3" },
     { name = "docling", specifier = ">=2.102.2" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "fastembed", specifier = "==0.8.0" },
     { name = "httpx", specifier = ">=0.27" },
+    { name = "pyyaml", specifier = ">=6" },
     { name = "rich", specifier = ">=13" },
     { name = "textual", specifier = ">=2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8" }]
+dev = [
+    { name = "pytest", specifier = ">=8" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "respx", specifier = ">=0.21" },
+]
 
 [[package]]
 name = "colorama"
@@ -593,6 +603,15 @@ nvrtc = [
 ]
 nvtx = [
     { name = "nvidia-nvtx", marker = "sys_platform == 'linux'" },
+]
+
+[[package]]
+name = "deepseek-tokenizer"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/7b/e1563c3d0208cf09c6c68cd5c5161df6f7513329148e0197e6fbdba3cade/deepseek_tokenizer-0.3.0.tar.gz", hash = "sha256:eda5e8cb98776bd72065841d4c51b6749deec1e19f4c6f1c569e6daeed3d5b56", size = 1876784, upload-time = "2026-06-28T11:15:07.186Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/63/a2/482cd79283a943740e2da16d0e2a0f6c6d00cf8587cd0b35ce17956fdc13/deepseek_tokenizer-0.3.0-py3-none-any.whl", hash = "sha256:b6617d0b92aabaebe71a7be23244b5c602a5b0c1bd2dcdc6fa0dfdaf735f9e88", size = 1918459, upload-time = "2026-06-28T11:15:05.524Z" },
 ]
 
 [[package]]
@@ -2672,6 +2691,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest-asyncio"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/43/7c/d36d04db312ecf4298932ef77e6e4a9e8ad017906e24e34f0b0c361a2473/pytest_asyncio-1.4.0.tar.gz", hash = "sha256:c6c0d2259945122819f171a32ecea2c349ead889ee28176caaf492143424be42", size = 58514, upload-time = "2026-05-26T09:56:04.083Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/03/e2/08a497ef684b88559c9cc5f4ad53a37e7b99e727094a86d6ea32536d5d3c/pytest_asyncio-1.4.0-py3-none-any.whl", hash = "sha256:933ca923a23075a87fb7070c0ec272a6848489824d887c85c812670932835aa1", size = 16930, upload-time = "2026-05-26T09:56:02.576Z" },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -2906,6 +2938,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/42/f2/05f29bc3913aea15eb670be136045bf5c5bbf4b99ecb839da9b422bb2c85/requests-oauthlib-2.0.0.tar.gz", hash = "sha256:b3dffaebd884d8cd778494369603a9e7b58d29111bf6b41bdc2dcd87203af4e9", size = 55650, upload-time = "2024-03-22T20:32:29.939Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3b/5d/63d4ae3b9daea098d5d6f5da83984853c1bbacd5dc826764b249fe119d24/requests_oauthlib-2.0.0-py2.py3-none-any.whl", hash = "sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36", size = 24179, upload-time = "2024-03-22T20:32:28.055Z" },
+]
+
+[[package]]
+name = "respx"
+version = "0.23.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/43/98/4e55c9c486404ec12373708d015ebce157966965a5ebe7f28ff2c784d41b/respx-0.23.1.tar.gz", hash = "sha256:242dcc6ce6b5b9bf621f5870c82a63997e8e82bc7c947f9ffe272b8f3dd5a780", size = 29243, upload-time = "2026-04-08T14:37:16.008Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1d/4a/221da6ca167db45693d8d26c7dc79ccfc978a440251bf6721c9aaf251ac0/respx-0.23.1-py2.py3-none-any.whl", hash = "sha256:b18004b029935384bccfa6d7d9d74b4ec9af73a081cc28600fffc0447f4b8c1a", size = 25557, upload-time = "2026-04-08T14:37:14.613Z" },
 ]
 
 [[package]]

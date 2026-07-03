@@ -73,6 +73,12 @@ STUDY_PLAN_MAX_ITEMS = 50
 SESSION_NAMER_MAX_TOKENS = 20
 SESSION_NAMER_TEMPERATURE = 0.3
 
+# --- Context compaction ---
+MODEL_CONTEXT_WINDOW = 1_048_576  # DeepSeek V4 Pro/Flash 1M tokens
+COMPACTION_EARLY_WARNING = 0.5   # trigger memory sync at 500K
+COMPACTION_TRIGGER = 0.6          # force compaction at 600K
+COMPACTION_PRESERVE_TURNS = 3     # keep last N user/assistant turns
+
 # --- Agent persona display labels ---
 # Canonical mapping: persona ID → user-visible name.
 # Serves both the backend (tool_progress banners) and the frontend

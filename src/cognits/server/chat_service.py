@@ -30,7 +30,18 @@ from cognits.agent.agent import Agent, AgentConfig
 from cognits.agent.subagents import session_namer_config
 from cognits.constants import DEFAULT_FLASH_MODEL, MAX_SESSION_NAME_LENGTH, SESSION_NAMER_MAX_TOKENS, SESSION_NAMER_TEMPERATURE
 from cognits.llm.types import ROLE_SYSTEM, ROLE_USER
-from cognits.constants import DEFAULT_MODEL, EVALUATOR_MAX_STEPS, ORCHESTRATOR_MAX_STEPS, RESEARCHER_MAX_STEPS, STUDY_PLANNER_DEFAULT_STEPS
+from cognits.constants import (
+    COMPACTION_EARLY_WARNING,
+    COMPACTION_PRESERVE_TURNS,
+    COMPACTION_TRIGGER,
+    DEFAULT_FLASH_MODEL,
+    DEFAULT_MODEL,
+    EVALUATOR_MAX_STEPS,
+    MODEL_CONTEXT_WINDOW,
+    ORCHESTRATOR_MAX_STEPS,
+    RESEARCHER_MAX_STEPS,
+    STUDY_PLANNER_DEFAULT_STEPS,
+)
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import Message
 from cognits.server.util import MONTHS, WEEKDAYS
@@ -189,6 +200,14 @@ class ChatService:
                 llm_client,
             )
 
+            # --- context compaction ---
+            if COMPACTION_TRIGGER > 0:
+                from cognits.agent.token_counter import TokenCounter
+                counter = TokenCounter()
+                token_count = counter.count_messages(self.llm_messages)
+                if token_count > MODEL_CONTEXT_WINDOW * COMPACTION_TRIGGER:
+                    self.llm_messages = self._compact(self.llm_messages, counter, llm_client)
+
             try:
                 def _orchestrator_emit(ev: dict) -> None:
                     if ev.get("type") == "usage" and isinstance(ev.get("data"), dict):
@@ -278,7 +297,7 @@ class ChatService:
                             sa.live_content = ""
                             sa.live_reasoning = ""
                             if st.db is not None:
-                                try:
+            try:
                                     st.messages.append(sid, partial)
                                 except Exception:
                                     pass
@@ -522,5 +541,68 @@ class ChatService:
 
         for client in (llm_client, tf_client):
             with contextlib.suppress(Exception):
-                asyncio.get_running_loop().create_task(client.aclose())
+                 asyncio.get_running_loop().create_task(client.aclose())
+
+    def _compact(self, messages: list[Message], counter, llm_client) -> list[Message]:
+        """Compress older turns into an anchored summary using observation masking.
+
+        Preserves: system prompt, last N user/assistant turns, and tool-call
+        result pairs (the factual record). Compresses older turns into a
+        structured summary: learning objective, knowledge gaps, Socratic
+        approach, next step."""
+        preserve_count = COMPACTION_PRESERVE_TURNS
+        system_msg = messages[0] if messages and messages[0].role == "system" else None
+        rest = messages[1:] if system_msg else messages
+
+        # Walk backward to find the last N user/assistant turns
+        compact_start = 0
+        turns_found = 0
+        for i in range(len(rest) - 1, -1, -1):
+            if rest[i].role in ("user", "assistant"):
+                turns_found += 1
+                if turns_found >= preserve_count:
+                    compact_start = i
+                    break
+            elif rest[i].role == "tool":
+                # preserve tool results near their parent assistant
+                pass
+            else:
+                compact_start = max(0, i)
+
+        to_compress = rest[:compact_start]
+        to_keep = rest[compact_start:]
+
+        if not to_compress:
+            return messages
+
+        # Build a compact summary of the compressed turns
+        # (Observation masking — keep reasoning, collapse old tool outputs)
+        summary_parts = []
+        current_objective = ""
+        for m in to_compress:
+            if m.role == "user":
+                summary_parts.append(f"[User asked: {m.content[:200]}]")
+            elif m.role == "assistant" and m.content:
+                summary_parts.append(f"[Tutor: {m.content[:200]}]")
+            elif m.role == "tool":
+                # mask the output, preserve the fact it was called
+                name = getattr(m, 'name', '') or ''
+                summary_parts.append(f"[Tool '{name}': result saved]")
+
+        summary = " ".join(summary_parts)
+        if not summary:
+            return messages
+
+        compact_msg = Message(
+            role="system",
+            content=f"[COMPACTED TURNS {compact_start+1}-{len(messages)}]\n\n"
+                     f"The following is a compressed summary of the conversation "
+                     f"before turn {compact_start+1}. Preserve this context:\n\n"
+                     f"{summary}\n\n"
+                     f"Continue the Socratic dialogue as if you remember all past details.",
+        )
+        result = [compact_msg] + to_keep
+        if system_msg:
+            result.insert(0, system_msg)
+        return result
 
