@@ -12,13 +12,19 @@ from collections.abc import Callable
 
 import httpx
 
-from cognits.constants import HTTPX_MAX_CONNECTIONS, HTTPX_MAX_KEEPALIVE
+from cognits.constants import (
+    HTTPX_MAX_CONNECTIONS,
+    HTTPX_MAX_KEEPALIVE,
+    LLM_BASE_URL,
+    LLM_CONNECT_TIMEOUT,
+    LLM_POOL_TIMEOUT,
+    LLM_READ_TIMEOUT,
+    LLM_WRITE_TIMEOUT,
+)
 from cognits.llm.types import Message
 
-# If the API stops sending data for this duration, the stream is considered dead.
-STREAM_IDLE_TIMEOUT = 120.0
-
-BASE_URL = "https://api.deepseek.com/chat/completions"
+STREAM_IDLE_TIMEOUT = LLM_READ_TIMEOUT
+BASE_URL = LLM_BASE_URL
 
 
 class DeepSeekError(Exception):
@@ -32,7 +38,7 @@ class DeepSeekClient:
         # legitimate multi-minute streams short.
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(
-                connect=10.0, read=STREAM_IDLE_TIMEOUT, write=30.0, pool=10.0
+                connect=LLM_CONNECT_TIMEOUT, read=STREAM_IDLE_TIMEOUT, write=LLM_WRITE_TIMEOUT, pool=LLM_POOL_TIMEOUT
             ),
             limits=httpx.Limits(max_connections=HTTPX_MAX_CONNECTIONS, max_keepalive_connections=HTTPX_MAX_KEEPALIVE),
         )

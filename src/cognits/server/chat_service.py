@@ -26,7 +26,7 @@ from cognits.agent.subagents import (
 )
 from cognits.agent.tool_deploy import DeploySubagent
 from cognits.agent.tool_ui import ApplyProfile, CreateLearningSession, FinishSetup
-from cognits.constants import DEFAULT_MODEL, ORCHESTRATOR_MAX_STEPS, RESEARCHER_MAX_STEPS
+from cognits.constants import DEFAULT_MODEL, EVALUATOR_MAX_STEPS, ORCHESTRATOR_MAX_STEPS, RESEARCHER_MAX_STEPS, STUDY_PLANNER_DEFAULT_STEPS
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import Message
 from cognits.server.session_agent import SessionAgent
@@ -306,7 +306,7 @@ class ChatService:
         sp_cfg = subagent_cfgs.get("study_planner")
         sp_model = (sp_cfg.model if sp_cfg else "") or DEFAULT_MODEL
         sp_reasoning = sp_cfg.reasoning if sp_cfg else self.reasoning
-        sp_max_steps = sp_cfg.max_steps if sp_cfg else 10
+        sp_max_steps = sp_cfg.max_steps if sp_cfg else STUDY_PLANNER_DEFAULT_STEPS
         sp_prompt = cfg.agent_overrides.get("study_planner") or None
         subagent_map["study_planner"] = study_planner_config(
             sp_model, sp_reasoning, sp_max_steps,
@@ -324,7 +324,7 @@ class ChatService:
             ev_cfg = subagent_cfgs.get("evaluator")
             ev_model = (ev_cfg.model if ev_cfg else "") or DEFAULT_MODEL
             ev_reasoning = ev_cfg.reasoning if ev_cfg else self.reasoning
-            ev_max_steps = ev_cfg.max_steps if ev_cfg else 100
+            ev_max_steps = ev_cfg.max_steps if ev_cfg else EVALUATOR_MAX_STEPS
             ev_prompt = cfg.agent_overrides.get("evaluator") or None
             subagent_map["evaluator"] = evaluator_config(
                 ev_model, ev_reasoning, ev_max_steps,
@@ -341,7 +341,7 @@ class ChatService:
             te_cfg = subagent_cfgs.get("maestro")
             te_model = (te_cfg.model if te_cfg else "") or DEFAULT_MODEL
             te_reasoning = te_cfg.reasoning if te_cfg else self.reasoning
-            te_max_steps = te_cfg.max_steps if te_cfg else 100
+            te_max_steps = te_cfg.max_steps if te_cfg else EVALUATOR_MAX_STEPS
             te_prompt = cfg.agent_overrides.get("maestro") or None
             doc_cfg = subagent_cfgs.get("documentalist")
             doc_model = (doc_cfg.model if doc_cfg else "") or DEFAULT_MODEL

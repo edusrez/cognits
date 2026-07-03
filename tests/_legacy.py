@@ -76,6 +76,7 @@ class LegacyStore:
     def upsert_learner_state(self, *a, **kw): return self.learner_state.upsert(*a, **kw)
     def get_learner_state(self, *a, **kw): return self.learner_state.get(*a, **kw)
     def get_all_learner_states(self, *a, **kw): return self.learner_state.get_all(*a, **kw)
+    get_all = get_all_learner_states  # short name
 
     # --- study_plans ---
     def create_plan(self, *a, **kw): return self.study_plans.create(*a, **kw)

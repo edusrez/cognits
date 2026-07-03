@@ -12,6 +12,7 @@ import json
 from collections.abc import Callable
 
 from cognits.learner import planner
+from cognits.constants import STUDY_PLAN_MAX_ITEMS
 from cognits.storage.models import StudyPlanItem
 from cognits.tools import Tool, tool_error
 
@@ -75,8 +76,8 @@ class PlanStudy(Tool):
         max_items = int(args.get("max_items", planner.MAX_PLAN_ITEMS))
         if max_items < 1:
             max_items = 1
-        if max_items > 50:
-            max_items = 50
+        if max_items > STUDY_PLAN_MAX_ITEMS:
+            max_items = STUDY_PLAN_MAX_ITEMS
 
         sid = self.session_id() if self.session_id is not None else ""
 

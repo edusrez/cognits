@@ -302,7 +302,7 @@ class ApplyProfile(Tool):
         changelog.append({
             "session_id": self.session_id,
             "timestamp": now,
-            "changes": {k: str(v)[:200] for k, v in inferred_patch.items()},
+            "changes": {k: str(v)[:CHANGELOG_VALUE_MAX_CHARS] for k, v in inferred_patch.items()},
         })
         profile.meta["changelog"] = changelog
         profile.meta["last_session_at"] = now

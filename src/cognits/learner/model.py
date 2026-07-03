@@ -36,7 +36,7 @@ EXPLORING_P: float = 0.60          # p < this           -> exploring
 PRACTICING_MIN_REPS: int = 3         # reps < this           -> practicing
 PROFICIENT_P: float = 0.80          # p < this           -> not yet proficient
 PROFICIENT_CONFIDENCE: float = 8.0   # α + β below this       -> practicing
-MASTERED_P: float = 0.95            # p < this           -> not yet mastered
+from cognits.constants import MASTERY_THRESHOLD as MASTERED_P
 MASTERED_CONFIDENCE: float = 12.0   # α + β below this       -> proficient
 MASTERED_RETENTION: float = 0.90    # post-review R below this -> not mastered
 DECAY_OVERDUE_FACTOR: float = 1.5   # elapsed > next_review * 1.5 -> decaying

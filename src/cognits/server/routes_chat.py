@@ -23,6 +23,8 @@ from cognits.constants import (
     DEFAULT_FLASH_MODEL,
     DEFAULT_MODEL,
     MAX_SESSION_NAME_LENGTH,
+    SESSION_NAMER_MAX_TOKENS,
+    SESSION_NAMER_TEMPERATURE,
     ORCHESTRATOR_MAX_STEPS,
     RESEARCHER_MAX_STEPS,
 )
@@ -423,8 +425,8 @@ async def _run_session_namer(
         model = DEFAULT_FLASH_MODEL
         ag_cfg = session_namer_config(
             model=model,
-            max_tokens=20,
-            temperature=0.3,
+            max_tokens=SESSION_NAMER_MAX_TOKENS,
+            temperature=SESSION_NAMER_TEMPERATURE,
         )
         llm_client = DeepSeekClient(cfg.llm_api_key)
         ag = Agent(ag_cfg, llm_client)

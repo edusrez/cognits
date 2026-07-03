@@ -47,6 +47,31 @@ MAX_NAME_LENGTH = 120
 MAX_SESSION_NAME_LENGTH = 80
 
 TREE_SKIP_DIRS = {"node_modules", "dist", "vendor", "__pycache__", ".git", ".cognits"}
+CODE_SKIP_DIRS = {"__pycache__", ".git", ".cognits", ".learnit", ".venv", "node_modules", "dist", "vendor", "build", "chroma_db", "frontend_dist"}
+
+# --- LLM client ---
+LLM_CONNECT_TIMEOUT = 10.0
+LLM_READ_TIMEOUT = 120.0
+LLM_WRITE_TIMEOUT = 30.0
+LLM_POOL_TIMEOUT = 10.0
+LLM_BASE_URL = "https://api.deepseek.com/chat/completions"
+
+# --- Agent subagent defaults ---
+EVALUATOR_MAX_STEPS = 100
+STUDY_PLANNER_DEFAULT_STEPS = 10
+
+# --- Learner model ---
+MASTERY_THRESHOLD = 0.95
+
+# --- Tool caps ---
+REPORT_TITLE_MAX_CHARS = 80
+REPORT_SUMMARY_MAX_CHARS = 200
+CHANGELOG_VALUE_MAX_CHARS = 200
+STUDY_PLAN_MAX_ITEMS = 50
+
+# --- Session namer ---
+SESSION_NAMER_MAX_TOKENS = 20
+SESSION_NAMER_TEMPERATURE = 0.3
 
 # --- Agent persona display labels ---
 # Canonical mapping: persona ID → user-visible name.

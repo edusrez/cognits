@@ -8,7 +8,7 @@ import logging
 from collections.abc import Callable
 
 from cognits.agent.agent import Agent, AgentConfig, Emit
-from cognits.constants import AGENT_LABELS, DEFAULT_MODEL
+from cognits.constants import AGENT_LABELS, DEFAULT_MODEL, REPORT_SUMMARY_MAX_CHARS, REPORT_TITLE_MAX_CHARS
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import ROLE_USER, Message
 from cognits.storage.models import Report, new_report_id
@@ -25,8 +25,8 @@ def extract_title(content: str, fallback: str) -> str:
         trimmed = line.strip()
         if trimmed.startswith("# "):
             return trimmed[2:]
-    if len(fallback) > 80:
-        return fallback[:80] + "..."
+    if len(fallback) > REPORT_TITLE_MAX_CHARS:
+        return fallback[:REPORT_TITLE_MAX_CHARS] + "..."
     return fallback
 
 
@@ -48,7 +48,7 @@ def extract_summary(content: str) -> str:
         if in_content and not trimmed.startswith("**"):
             parts.append(trimmed + " ")
             total += len(trimmed) + 1
-        if total > 200:
+        if total > REPORT_SUMMARY_MAX_CHARS:
             break
     return "".join(parts).strip()
 
