@@ -38,7 +38,9 @@ from cognits.server.session_agent import SessionAgent
 from cognits.storage.files import Config
 from cognits.storage.models import MessageRow
 from cognits.tinyfish import TinyfishClient
-from cognits.tools import Regasync def _run_session_namer(
+from cognits.tools import Registry
+
+async def _run_session_namer(
     st,
     sa: SessionAgent,
     cfg: Config,
@@ -106,8 +108,6 @@ from cognits.tools import Regasync def _run_session_namer(
 
 
 
-
-istry
 
 log = logging.getLogger("cognits.chat")
 
