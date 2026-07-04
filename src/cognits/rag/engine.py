@@ -261,6 +261,32 @@ class RagEngine:
         self._require_ready()
         return await self._run(self._collection.count)
 
+    async def search_hybrid(
+        self, query: str, reports_repo=None, db=None,
+        max_results: int = 10, rerank: bool = True,
+    ) -> list[dict]:
+        self._require_ready()
+        if max_results <= 0:
+            max_results = RAG_DEFAULT_MAX_RESULTS
+        dense = await self._run(self._search_sync, query, max_results * 2)
+        sparse = []
+        if reports_repo is not None:
+            try:
+                fts_result = reports_repo.search_fts(1, max_results * 2, "score", query)
+                for r in fts_result.get("reports", []):
+                    sparse.append({
+                        "id": r.get("id", ""), "report_id": r.get("id", ""),
+                        "text": r.get("content", "")[:500], "source_type": "fts5",
+                        "topic": r.get("title", ""), "distance": 0.0, "chunk_index": 0,
+                    })
+            except Exception:
+                pass
+        fused = rrf_fuse(dense, sparse, max_results=max_results * 2)
+        if rerank and len(fused) > max_results:
+            fused = rerank_cross_encoder(query, fused)
+            fused = fused[:max_results]
+        return fused[:max_results]
+
     # --- synchronous implementation (only on the executor thread) ---
 
     def _worker_embed(self, texts: list[str]) -> list[list[float]]:
@@ -322,3 +348,41 @@ class RagEngine:
         del embeddings, texts, ids, metadatas
         import gc; gc.collect()
         return len(chunks)
+
+
+# -- Hybrid search (RRF + cross-encoder) -----------------------------------
+
+def rrf_fuse(dense_results: list[dict], sparse_results: list[dict],
+             k: int = 60, max_results: int = 10) -> list[dict]:
+    """Reciprocal Rank Fusion: combine dense and sparse ranked results."""
+    scores: dict[str, float] = {}
+    docs: dict[str, dict] = {}
+
+    for rank, r in enumerate(dense_results):
+        doc_id = r.get("id", "")
+        scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
+        docs[doc_id] = r
+
+    for rank, r in enumerate(sparse_results):
+        doc_id = r.get("id", "")
+        scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
+        docs[doc_id] = r
+
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    return [docs[doc_id] for doc_id, _ in ranked[:max_results]]
+
+
+def rerank_cross_encoder(query: str, candidates: list[dict]) -> list[dict]:
+    """Re-rank top candidates using a cross-encoder model."""
+    try:
+        from fastembed import TextCrossEncoder
+        _ce = TextCrossEncoder(model_name="Xenova/ms-marco-MiniLM-L-6-v2")
+        passages = [c.get("text", "") for c in candidates]
+        scores = list(_ce.rerank(query, passages))
+        for c, s in zip(candidates, scores):
+            c["rerank_score"] = float(s)
+        candidates.sort(key=lambda c: c.get("rerank_score", 0), reverse=True)
+    except ImportError:
+        pass
+    return candidates
+
