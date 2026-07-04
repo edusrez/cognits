@@ -1,6 +1,6 @@
 """Token counter using deepseek-tokenizer (128K byte-level BPE).
 
-Falls back to a heuristic (chars // 4) if the tokenizer is not installed.
+Falls back to a heuristic (chars / 3.5) if the tokenizer is not installed.
 """
 
 from __future__ import annotations

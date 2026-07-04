@@ -115,7 +115,7 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `agent/agent_loader.py` | Parses `agent/agents/*.md` (YAML frontmatter + Markdown body) into `AgentConfig` | — |
 | `agent/agents/` | 11 persona `.md` files: web_researcher, documentalist, directory_reader, session_namer, session_analyzer, skill_planner, study_planner, evaluator, maestro, orchestrator, system_support | — |
 | `agent/tracer.py` | `Tracer`: structured JSONL trace logging to `.cognits/traces/{session_id}.jsonl`. Wired into `ChatService.run_agent()` and `Agent.__init__` (constructor injection). `NoopTracer` for tests. | — |
-| `agent/token_counter.py` | `TokenCounter` using `deepseek_tokenizer` (128K BPE, falls back to chars//4) | — |
+| `agent/token_counter.py` | `TokenCounter` using `deepseek_tokenizer` (128K BPE, falls back to chars/3.5) | — |
 | `agent/agent.py` | Agentic loop: stream → sparse-index tool call accumulation → execute → repeat; tool errors fed back as `{"error": ...}`. `AgentConfig` has `critique_mode` and `tool_registry` fields. Tracer injected via constructor. | `internal/agent/agent.go` |
 | `agent/prompts.py` | Agent personas (orchestrator, maestro, system_support, web_researcher, etc.). Prompt text loaded from `agent/agents/*.md` via `agent_loader` | `internal/agent/prompts.go` |
 | `agent/subagents.py` | 9 subagent configs (researcher, directory_reader, documentalist, skill_planner, study_planner, evaluator, teacher, session_analyzer, session_namer) + TinyFish tools, deployment wrapping | `internal/agent/subagents/` |

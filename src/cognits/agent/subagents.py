@@ -9,7 +9,6 @@ from cognits.agent.agent import AgentConfig, Emit
 from cognits.agent.agent_loader import load_agent_prompt
 from cognits.constants import DEFAULT_FLASH_MODEL, DOCUMENTALIST_MAX_STEPS, EVALUATOR_MAX_STEPS, FAVICON_URL_TEMPLATE, RESEARCHER_MAX_STEPS
 from cognits.agent.tool_rag import RagSearch
-from cognits.constants import DEFAULT_FLASH_MODEL, RESEARCHER_MAX_STEPS
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.tinyfish import TinyfishClient, TinyfishError
 from cognits.tools import Registry, Tool, tool_error
@@ -23,7 +22,7 @@ def _extract_domain(url: str) -> str:
 
 
 def _favicon_url(domain: str) -> str:
-    return fFAVICON_URL_TEMPLATE.format(domain=domain)
+    return FAVICON_URL_TEMPLATE.format(domain=domain)
 
 
 

@@ -32,13 +32,6 @@ class DeepSeekError(Exception):
         self.retryable = retryable
 
 
-# Circuit breaker state: Tracks failures to avoid hammering a down API.
-_circuit_breaker: dict[str, int] = {}
-_CIRCUIT_THRESHOLD = 5
-_CIRCUIT_COOLDOWN_S = 30
-_last_fail_ts: dict[str, float] = {}
-
-
 class DeepSeekClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
