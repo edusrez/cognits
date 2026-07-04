@@ -54,11 +54,6 @@ class AppState:
         self.rag = None
         self.docling_engine = None
 
-    @property
-    def rag_or_none(self):
-        r = self.rag
-        return r if r is not None and r.error is None else None
-
         try:
             base = paths.data_dir()
         except OSError as e:
@@ -90,6 +85,11 @@ class AppState:
             self.session_config = SessionConfigRepository(self.db)
         except Exception as e:
             log.error("storage: init db: %s", e)
+
+    @property
+    def rag_or_none(self):
+        r = self.rag
+        return r if r is not None and r.error is None else None
 
     async def drain_agents(self, timeout: float) -> None:
         """Cancels all active runs and waits for their finally blocks to

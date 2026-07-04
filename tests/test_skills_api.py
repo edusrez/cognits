@@ -48,6 +48,7 @@ def client_and_store(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     state = _state()
     db = Database(tmp_path / "test.db")
+    state.db = db
     state.skills = SkillRepository(db)
     state.learner_state = LearnerStateRepository(db)
     app = create_app(state)
