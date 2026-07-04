@@ -12,7 +12,7 @@ import json
 from collections.abc import Callable
 
 from cognits.learner import planner
-from cognits.constants import STUDY_PLAN_MAX_ITEMS
+from cognits.constants import DEFAULT_SKILL_DIFFICULTY, STUDY_PLAN_MAX_ITEMS
 from cognits.storage.models import StudyPlanItem
 from cognits.tools import Tool, tool_error
 
@@ -113,11 +113,12 @@ class PlanStudy(Tool):
                 for e in edges_raw
             ]
 
+            # Load all learner states in one batch call.
+            all_states = await asyncio.to_thread(self.learner_state.get_all)
             states: dict[str, LearnerState] = {}
             for sid_key in skill_map:
-                st = await asyncio.to_thread(self.learner_state.get, sid_key)
-                if st is not None:
-                    states[sid_key] = st
+                if sid_key in all_states:
+                    states[sid_key] = all_states[sid_key]
                 else:
                     states[sid_key] = LearnerState(skill_id=sid_key)
 
