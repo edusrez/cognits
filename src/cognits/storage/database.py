@@ -204,6 +204,20 @@ BASE_SCHEMA = """
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (skill_id) REFERENCES skills(id)
     );
+
+    CREATE TABLE IF NOT EXISTS report_chunks (
+        id TEXT PRIMARY KEY,
+        report_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        source_type TEXT NOT NULL DEFAULT 'web',
+        topic TEXT NOT NULL DEFAULT '',
+        chunk_index INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_chunks_report ON report_chunks(report_id);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
+        embedding float[1024]
+    );
 """
 
 
@@ -222,6 +236,10 @@ class Database:
             self.conn.execute("PRAGMA journal_mode = WAL")
             self.conn.execute("PRAGMA synchronous = NORMAL")
             self._check_fts5()
+            self.conn.enable_load_extension(True)
+            import sqlite_vec
+            sqlite_vec.load(self.conn)
+            self.conn.enable_load_extension(False)
             self._migrate()
         except BaseException:
             self.conn.close()
@@ -321,3 +339,58 @@ class Database:
             pass
         escaped = bak.replace("'", "''")
         self.conn.execute(f"VACUUM INTO '{escaped}'")
+
+    # -- vector search -------------------------------------------------------
+
+    def vector_index(self, chunks: list[dict]) -> int:
+        with self.lock:
+            count = 0
+            for chunk in chunks:
+                rowid = _chunk_id_to_int(chunk["id"])
+                self.conn.execute(
+                    """INSERT OR REPLACE INTO report_chunks
+                       (rowid, id, report_id, text, source_type, topic, chunk_index)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (rowid, chunk["id"], chunk["report_id"], chunk["text"],
+                     chunk.get("source_type", "web"), chunk.get("topic", ""),
+                     chunk.get("chunk_index", 0)),
+                )
+                self.conn.execute(
+                    "INSERT OR REPLACE INTO chunks_vec (rowid, embedding) VALUES (?, ?)",
+                    (rowid, _embed_to_json(chunk["embedding"])),
+                )
+                count += 1
+        return count
+
+    def vector_search(self, query_embedding, max_results: int = 10) -> list[dict]:
+        emb_json = _embed_to_json(query_embedding)
+        with self.lock:
+            rows = self.conn.execute(
+                """SELECT rc.id, rc.report_id, rc.text, rc.source_type, rc.topic,
+                          rc.chunk_index, vec_distance_L2(cv.embedding, ?) as dist
+                   FROM chunks_vec cv
+                   JOIN report_chunks rc ON rc.rowid = cv.rowid
+                   ORDER BY dist LIMIT ?""",
+                (emb_json, max_results),
+            ).fetchall()
+        return [
+            {
+                "id": r[0], "report_id": r[1], "text": r[2],
+                "source_type": r[3], "topic": r[4], "chunk_index": r[5],
+                "distance": r[6],
+            }
+            for r in rows
+        ]
+
+    def vector_count(self) -> int:
+        with self.lock:
+            return self.conn.execute("SELECT COUNT(*) FROM chunks_vec").fetchone()[0]
+
+
+def _chunk_id_to_int(chunk_id: str) -> int:
+    return abs(hash(chunk_id)) % (2**62)
+
+
+def _embed_to_json(floats) -> str:
+    import json
+    return f"[{','.join(str(f) for f in floats)}]"
