@@ -51,9 +51,10 @@ and discover answers through guided inquiry.
 - Runtime: Bun (dev/build only, not for distribution)
 - LLM: DeepSeek V4 Pro via OpenAI-compatible API (httpx streaming)
 - Web Search: TinyFish (search + fetch API)
-- DB: SQLite stdlib (`sqlite3`, FTS5, WAL, single locked connection)
-- RAG: in-process ChromaDB 1.5.9 + fastembed 0.8.0 (BGE-M3 ONNX) in a
-  1-thread executor (the old Python sidecar + venv is gone)
+- DB: SQLite stdlib (`sqlite3`, FTS5, WAL, sqlite-vec 0.1.9, single locked connection)
+- RAG: ChromaDB 1.5.9 (legacy) + sqlite-vec vec0 (migrating) + fastembed 0.8.0
+  (BGE-M3 ONNX) in a worker_proc (embed/query_embed via Pipe RPC).
+  Hybrid search: FTS5 BM25 + vec0 dense → RRF → cross-encoder reranker.
 - Packaging: uv + hatchling, wheel `py3-none-any` with the frontend dist as
   package data; `uv tool install cognits`
 
@@ -126,8 +127,9 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `llm/base.py` | `LLMClient` Protocol: async streaming interface for any LLM provider. Implementations: `DeepSeekClient` (future: OpenAI, Anthropic). | — |
 | `tools.py` | Tool registry, name-sorted `definitions()` (prefix cache) | `internal/tools/tools.go` |
 | `tinyfish.py` | TinyFish search/fetch (X-API-Key, configurable timeout) | `internal/tinyfish/client.go` |
-| `rag/engine.py` | In-process ChromaDB + fastembed BGE-M3 (custom model registration identical to the old sidecar; reuses its model cache and `chroma_db`). 1-thread executor; background init; `ready`/`error` gating | `internal/rag/` + `sidecar.py` |
-| `rag/chunker.py` | Markdown chunker 1600/160 chars, fences atomic; IDs `{report_id}_c{idx}` byte-identical to Go (no re-index dupes) | `internal/rag/chunker.go` |
+| `rag/engine.py` | RagEngine: ChromaDB (current) + sqlite-vec (migrating). BGE-M3 ONNX via fastembed in worker_proc. `search_hybrid()` with RRF fusion (FTS5 + vec0 + cross-encoder reranker). `ready`/`error` gating. | `internal/rag/` + `sidecar.py` |
+| `rag/chunker.py` | Markdown chunker: `split_markdown()` (1600/160 chars, fences atomic) + `split_markdown_v2()` (paragraph-aware, respects headers, `parent_section` metadata). IDs `{report_id}_c{idx}`. | `internal/rag/chunker.go` |
+| `rag/embedding_worker.py` | BGE-M3 ONNX inference worker process (embed/query_embed via Pipe RPC, 3 GB RLIMIT) | — |
 | `storage/nn` | SQLite files |
 | `storage/database.py` | `Database` (single connection, RLock, WAL pragmas, `_migrate`, `transaction()` context manager, `shutdown`) | `internal/storage/db.go` |
 | `storage/models.py` | Data models: 10 dataclasses (Report, MessageRow, Skill, etc.) + ID generators + FTS helpers | — |
@@ -226,6 +228,8 @@ calls are same-origin relative `/api/*`.
 - Don't dump docs into LLM context — use curated reports (context rot).
 
 ## DB Schema Versioning Rule
+
+**SCHEMA_VERSION stays at 1 during all 0.0.X pre-releases.** We are still
 
 **SCHEMA_VERSION stays at 1 during all 0.0.X pre-releases.** We are still
 defining the canonical schema. Schema migrations (`ALTER TABLE`, new
