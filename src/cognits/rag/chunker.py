@@ -61,7 +61,7 @@ def _overlap_count(paragraphs: list[str], target_chars: int) -> int:
     return count
 
 
-def split_markdown(md: str, report_id: str, topic: str) -> list[dict]:
+def split_markdown(md: str, report_id: str, topic: str, source_type: str = "web") -> list[dict]:
     paragraphs = split_paragraphs(md)
     chunks: list[dict] = []
 
@@ -83,7 +83,7 @@ def split_markdown(md: str, report_id: str, topic: str) -> list[dict]:
                 "id": f"{report_id}_c{idx}",
                 "text": text,
                 "report_id": report_id,
-                "source_type": "web",
+                "source_type": source_type,
                 "chunk_index": idx,
                 "topic": topic,
             }

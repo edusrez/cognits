@@ -346,7 +346,7 @@ class ChatService:
         subagent_map: dict[str, AgentConfig] = {
             "web_researcher": researcher_config(
                 web_model, web_reasoning, web_max_steps, tf_client,
-                rag_engine=st.rag if st.rag is not None and st.rag.error is None else None,
+                rag_engine=st.rag_or_none,
                 max_tokens=web_max_tokens or None,
                 temperature=web_temperature or None,
                 top_p=web_top_p or None,
@@ -397,7 +397,7 @@ class ChatService:
             subagent_map["skill_planner"] = skill_planner_config(
                 planner_model, planner_reasoning, planner_max_steps,
                 llm_client,
-                st.rag if st.rag is not None and st.rag.error is None else None,
+                st.rag_or_none,
                 tf_client,
                 st.reports, st.skills,
                 lambda: sid, process_event,
@@ -418,7 +418,7 @@ class ChatService:
             st.reports, st.study_plans, st.skills, st.learner_state, st.pedagogy,
             lambda: sid, process_event,
             system_prompt_override=sp_prompt,
-            rag_engine=st.rag if st.rag is not None and st.rag.error is None else None,
+            rag_engine=st.rag_or_none,
             tf_client=tf_client,
             llm_client=llm_client,
             tinyfish_api_key=cfg.tinyfish_api_key,
@@ -434,7 +434,7 @@ class ChatService:
             subagent_map["evaluator"] = evaluator_config(
                 ev_model, ev_reasoning, ev_max_steps,
                 llm_client,
-                st.rag if st.rag is not None and st.rag.error is None else None,
+                st.rag_or_none,
                 tf_client,
                 st.reports, st.learner_state, lambda: sid, process_event,
                 system_prompt_override=ev_prompt,
@@ -455,7 +455,7 @@ class ChatService:
             subagent_map["maestro"] = teacher_config(
                 te_model, te_reasoning, te_max_steps,
                 llm_client,
-                st.rag if st.rag is not None and st.rag.error is None else None,
+                st.rag_or_none,
                 tf_client,
                 st.reports, st.skills, st.learner_state, st.pedagogy,
                 lambda: sid, process_event,
@@ -486,7 +486,7 @@ class ChatService:
             subagents=subagent_map,
             session_id=lambda: sid,
             emit=process_event,
-            rag_engine=st.rag if st.rag is not None and st.rag.error is None else None,
+            rag_engine=st.rag_or_none,
             tinyfish_api_key=cfg.tinyfish_api_key,
             suspended_subagents=st.suspended_subagents,
         )

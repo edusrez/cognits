@@ -282,7 +282,7 @@ class DeploySubagent(Tool):
             if self.rag_engine is not None and content:
                 from cognits.rag.chunker import split_markdown
 
-                chunks = split_markdown(content, report_id, title)
+                chunks = split_markdown(content, report_id, title, source_type=subagent_type)
                 if chunks:
                     try:
                         n = await self.rag_engine.index(chunks)

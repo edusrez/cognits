@@ -54,6 +54,11 @@ class AppState:
         self.rag = None
         self.docling_engine = None
 
+    @property
+    def rag_or_none(self):
+        r = self.rag
+        return r if r is not None and r.error is None else None
+
         try:
             base = paths.data_dir()
         except OSError as e:

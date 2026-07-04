@@ -22,11 +22,15 @@ from cognits import paths
 
 log = logging.getLogger("cognits.rag")
 
-COLLECTION_NAME = "reports"
+from cognits.constants import RAG_COLLECTION_NAME, RAG_DEFAULT_MAX_RESULTS
+from cognits.server.exceptions import CognitsError
+
+COLLECTION_NAME = RAG_COLLECTION_NAME
 
 
-class RagNotReady(Exception):
-    pass
+class RagNotReady(CognitsError):
+    def __init__(self, message: str):
+        super().__init__(message, "RAG_NOT_READY", 503)
 
 
 class RagEngine:
