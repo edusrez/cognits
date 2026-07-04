@@ -107,3 +107,60 @@ def split_markdown(md: str, report_id: str, topic: str, source_type: str = "web"
     flush()
 
     return chunks
+
+
+def split_markdown_v2(md: str, report_id: str, topic: str, source_type: str = "web") -> list[dict]:
+    """Paragraph-aware markdown chunker. Respects ##/### headers, sub-splits
+    on paragraphs within sections, falls back to fixed-size for very large
+    sections. Stores parent_section in each chunk's metadata."""
+    import re
+    sections = re.split(r"\n(?=## )", md)
+    chunks: list[dict] = []
+    chunk_idx = 0
+
+    for section in sections:
+        header_match = re.match(r"^(#{1,3}\s+.+)", section)
+        parent_section = header_match.group(1).strip() if header_match else topic
+
+        # Split section into paragraphs, then chunk
+        body = section
+        paragraphs = split_paragraphs(body)
+        current: list[str] = []
+        current_len = 0
+
+        def flush_section() -> None:
+            nonlocal current, current_len, chunk_idx
+            if not current:
+                return
+            text = "\n\n".join(current).strip()
+            if not text:
+                current = []
+                current_len = 0
+                return
+            chunks.append({
+                "id": f"{report_id}_c{chunk_idx}",
+                "text": text,
+                "report_id": report_id,
+                "source_type": source_type,
+                "chunk_index": chunk_idx,
+                "topic": topic,
+                "parent_section": parent_section,
+            })
+            chunk_idx += 1
+            ov = _overlap_count(current, CHUNK_OVERLAP)
+            if ov < len(current):
+                current = current[ov:]
+                current_len = sum(len(p) for p in current)
+            else:
+                current = []
+                current_len = 0
+
+        for p in paragraphs:
+            p_len = len(p)
+            if current_len + p_len > CHUNK_SIZE and current:
+                flush_section()
+            current.append(p)
+            current_len += p_len
+        flush_section()
+
+    return chunks
