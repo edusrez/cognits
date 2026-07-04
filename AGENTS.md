@@ -142,6 +142,10 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `storage/pedagogical.py` | `PedagogicalPlanRepository`: save/get | — |
 | `storage/session_config.py` | `SessionConfigRepository`: save/load/delete | — |
 | `storage/files.py` | Sessions JSON, config with AES-GCM (bit-compatible with Go; key reused from `~/.config/learnit/`, copied to `~/.config/cognits/`) | `internal/storage/storage.go` |
+| `learner/model.py` | BKT soft-evidence model + 6-level mastery classifier + FSRS integration | — |
+| `learner/fsrs.py` | FSRS-6 spaced repetition scheduler (Anki 24.11 defaults) | — |
+| `learner/planner.py` | Deterministic study plan generation: ALEKS outer fringe, BFS goal distances, weighted scoring, adaptive proficiency thresholds | — |
+| `learner/pedagogy_engine.py` | External stage management for pedagogical plans: 5-stage progression (activate→introduce→guided→assess→wrap_up). Prevents LLM non-compliance by managing transitions externally. | — |
 
 ### Frontend (`frontend/src/`) — unchanged
 See git-less history in `legacy/` docs; key files: `lib/chat-stream.ts` (SSE
