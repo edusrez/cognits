@@ -214,6 +214,7 @@ class LearnerState:
     lapses: int = 0
     last_review: str | None = None
     next_review: str | None = None
+    scaffolding_level: int = 1
     updated_at: str = ""
 
     def to_json(self) -> dict:

@@ -21,7 +21,7 @@ from cognits.storage.models import LearnerState, Skill, SkillPrereq, StudyPlanIt
 # --- constants --------------------------------------------------------
 
 # BKT p_mastery above which a skill is considered mastered.
-from cognits.constants import MASTERY_THRESHOLD
+from cognits.constants import MASTERY_PROFICIENT_P, MASTERY_THRESHOLD
 
 # Rolling window: how many items the plan contains by default.
 # Math Academy and ALEKS re-evaluate after every session — long plans
@@ -54,6 +54,17 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _proficient_threshold(skill_id: str, dependent_count: dict[str, int]) -> float:
+    """Adaptive threshold: foundational skills (many dependents) need higher
+    confidence. Leaf skills with no dependents can use a lower bar."""
+    dc = dependent_count.get(skill_id, 0)
+    if dc > 3:
+        return 0.90
+    elif dc == 0:
+        return 0.75
+    return MASTERY_PROFICIENT_P  # 0.80
+
+
 # --- frontier ---------------------------------------------------------
 
 def compute_frontier(
@@ -62,11 +73,21 @@ def compute_frontier(
     states: dict[str, LearnerState],
 ) -> set[str]:
     """ALEKS outer fringe: set of skill IDs whose hard prerequisites are
-    all mastered and the skill itself is NOT yet mastered."""
+    all mastered and the skill itself is NOT yet mastered.
+    
+    Uses adaptive proficiency thresholds: skills with many downstream
+    dependents require higher confidence (0.90), leaf skills with none
+    can use a lower bar (0.75), default is 0.80."""
+    # Count how many skills depend on each skill (as hard prereq).
+    dependent_count: dict[str, int] = {}
+    for e in edges:
+        if e.edge_type == "prereq":
+            dependent_count[e.prereq_id] = dependent_count.get(e.prereq_id, 0) + 1
+
     mastered: set[str] = {
         sid
         for sid, st in states.items()
-        if st.p_mastery >= MASTERY_THRESHOLD
+        if st.p_mastery >= _proficient_threshold(sid, dependent_count)
     }
     # Build lookup: skill_id -> set of hard prereq IDs.
     hard_prereqs: dict[str, set[str]] = {}

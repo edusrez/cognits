@@ -164,6 +164,7 @@ BASE_SCHEMA = """
         lapses INTEGER NOT NULL DEFAULT 0,
         last_review TEXT,
         next_review TEXT,
+        scaffolding_level INTEGER NOT NULL DEFAULT 1,
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (skill_id) REFERENCES skills(id)
     );
@@ -324,6 +325,16 @@ class Database:
                 cur.execute(
                     "ALTER TABLE messages ADD COLUMN"
                     " reports TEXT NOT NULL DEFAULT ''"
+                )
+
+            has_scaffold = cur.execute(
+                "SELECT COUNT(*) FROM pragma_table_info('learner_state')"
+                " WHERE name='scaffolding_level'"
+            ).fetchone()[0]
+            if not has_scaffold:
+                cur.execute(
+                    "ALTER TABLE learner_state ADD COLUMN"
+                    " scaffolding_level INTEGER NOT NULL DEFAULT 1"
                 )
 
         if version < SCHEMA_VERSION:
