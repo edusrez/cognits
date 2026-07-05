@@ -41,12 +41,16 @@ export const conversationStarted = createMemo(() => messages.length > 0)
 
 let pendingBuffer = ""
 let rafId: number | null = null
+let lastDrainTime = 0
 
 function drainFrame() {
   rafId = null
   if (!pendingBuffer) return
-  const bufferLen = pendingBuffer.length
-  const charsToDrain = Math.max(1, Math.min(Math.ceil(bufferLen * 0.1), 20))
+  const now = performance.now()
+  const dt = lastDrainTime ? (now - lastDrainTime) : 16.67
+  lastDrainTime = now
+  const targetCharsPerMs = 1.2
+  const charsToDrain = Math.max(1, Math.min(Math.ceil(targetCharsPerMs * dt), pendingBuffer.length))
   const chunk = pendingBuffer.slice(0, charsToDrain)
   pendingBuffer = pendingBuffer.slice(charsToDrain)
   batch(() => setStreamingContent(prev => prev + chunk))
@@ -61,6 +65,7 @@ function startDrain() {
 }
 
 function stopDrain() {
+  lastDrainTime = 0
   if (rafId !== null) {
     cancelAnimationFrame(rafId)
     rafId = null
