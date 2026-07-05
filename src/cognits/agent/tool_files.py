@@ -253,6 +253,55 @@ SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist",
              ".pytest_cache", ".ruff_cache"}
 
 
+def _grep_code_sync(dir_path: Path, compiled, include: str, max_results: int):
+    results: list[dict] = []
+    total = 0
+    for root, dirs, files in os.walk(str(dir_path)):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
+
+        for fname in sorted(files):
+            if include and not Path(fname).match(include):
+                continue
+
+            fpath = os.path.join(root, fname)
+            if _is_binary(Path(fpath)):
+                continue
+
+            try:
+                size = os.path.getsize(fpath)
+            except OSError:
+                continue
+            if size > MAX_TEXT_BYTES:
+                continue
+
+            try:
+                text = Path(fpath).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+
+            file_matches = []
+            for lineno, line in enumerate(text.split("\n"), start=1):
+                match = compiled.search(line)
+                if match:
+                    display = line[:300]
+                    if len(line) > 300:
+                        display += "..."
+                    file_matches.append({"line": lineno, "text": display})
+                    total += 1
+                    if total >= max_results:
+                        break
+
+            if file_matches:
+                rel = os.path.relpath(fpath, dir_path)
+                results.append({"file": rel, "matches": file_matches})
+
+            if total >= max_results:
+                break
+
+        if total >= max_results:
+            break
+    return results, total
+
 
 class GrepCode(Tool):
     name = "grep_code"
@@ -309,54 +358,10 @@ class GrepCode(Tool):
         except re.error as e:
             return tool_error(f"invalid regex: {e}")
 
-        results: list[dict] = []
-        total = 0
-
         try:
-            for root, dirs, files in os.walk(str(dir_path)):
-                dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
-
-                for fname in sorted(files):
-                    if include and not Path(fname).match(include):
-                        continue
-
-                    fpath = os.path.join(root, fname)
-                    if _is_binary(Path(fpath)):
-                        continue
-
-                    try:
-                        size = os.path.getsize(fpath)
-                    except OSError:
-                        continue
-                    if size > MAX_TEXT_BYTES:
-                        continue
-
-                    try:
-                        text = Path(fpath).read_text(encoding="utf-8", errors="replace")
-                    except OSError:
-                        continue
-
-                    file_matches = []
-                    for lineno, line in enumerate(text.split("\n"), start=1):
-                        match = compiled.search(line)
-                        if match:
-                            display = line[:300]
-                            if len(line) > 300:
-                                display += "..."
-                            file_matches.append({"line": lineno, "text": display})
-                            total += 1
-                            if total >= max_results:
-                                break
-
-                    if file_matches:
-                        rel = os.path.relpath(fpath, dir_path)
-                        results.append({"file": rel, "matches": file_matches})
-
-                    if total >= max_results:
-                        break
-
-                if total >= max_results:
-                    break
+            results, total = await asyncio.to_thread(
+                _grep_code_sync, dir_path, compiled, include, max_results
+            )
         except OSError as e:
             return tool_error(str(e))
 
@@ -370,6 +375,25 @@ class GrepCode(Tool):
             },
             ensure_ascii=False,
         )
+
+
+def _glob_files_sync(dir_path: Path, pattern: str) -> list[str]:
+    results: list[str] = []
+    for root, dirs, files in os.walk(str(dir_path)):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
+
+        for fname in files:
+            full = os.path.join(root, fname)
+            if Path(fname).match(pattern):
+                results.append(os.path.relpath(full, dir_path))
+
+            if len(results) >= 200:
+                break
+
+        if len(results) >= 200:
+            break
+
+    return results
 
 
 class GlobFiles(Tool):
@@ -407,21 +431,10 @@ class GlobFiles(Tool):
         except (PermissionError, FileNotFoundError, NotADirectoryError) as e:
             return tool_error(str(e))
 
-        results: list[str] = []
         try:
-            for root, dirs, files in os.walk(str(dir_path)):
-                dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
-
-                for fname in files:
-                    full = os.path.join(root, fname)
-                    if Path(fname).match(pattern):
-                        results.append(os.path.relpath(full, dir_path))
-
-                    if len(results) >= 200:
-                        break
-
-                if len(results) >= 200:
-                    break
+            results = await asyncio.to_thread(
+                _glob_files_sync, dir_path, pattern
+            )
         except OSError as e:
             return tool_error(str(e))
 
