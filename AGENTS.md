@@ -115,7 +115,7 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `constants.py` | Centralized literals: model names, max_steps, memory thresholds, concurrency limits, httpx limits, LLM timeouts, mastery threshold, chunk sizes, SSE buffer, name caps, subagent labels, context compaction, reflection loop | — |
 | `agent/agent_loader.py` | Parses `agent/agents/*.md` (YAML frontmatter + Markdown body) into `AgentConfig` | — |
 | `agent/agents/` | 11 persona `.md` files: web_researcher, documentalist, directory_reader, session_namer, session_analyzer, skill_planner, study_planner, evaluator, maestro, orchestrator, system_support | — |
-| `agent/tracer.py` | `Tracer`: structured JSONL trace logging to `.cognits/traces/{session_id}.jsonl`. Wired into `ChatService.run_agent()` and `Agent.__init__` (constructor injection). `NoopTracer` for tests. | — |
+| `agent/tracer.py` | `Tracer`: structured JSONL trace logging to `.cognits/traces/{session_id}.jsonl`. Wired into `ChatService.run_agent()` and `Agent.__init__` (constructor injection). `emit()` called in agent loop with 6 event types (llm_start, usage, tool_start, tool_end, finish, error). Passed to subagents via `DeploySubagent(tracer=)`. `NoopTracer` for tests. | — |
 | `agent/token_counter.py` | `TokenCounter` using `deepseek_tokenizer` (128K BPE, falls back to chars/3.5) | — |
 | `agent/agent.py` | Agentic loop: stream → sparse-index tool call accumulation → execute → repeat; tool errors fed back as `{"error": ...}`. `AgentConfig` has `critique_mode` and `tool_registry` fields. Tracer injected via constructor. | `internal/agent/agent.go` |
 | `agent/prompts.py` | Agent personas (orchestrator, maestro, system_support, web_researcher, etc.). Prompt text loaded from `agent/agents/*.md` via `agent_loader` | `internal/agent/prompts.go` |
@@ -127,7 +127,7 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `llm/base.py` | `LLMClient` Protocol: async streaming interface for any LLM provider. Implementations: `DeepSeekClient` (future: OpenAI, Anthropic). | — |
 | `tools.py` | Tool registry, name-sorted `definitions()` (prefix cache) | `internal/tools/tools.go` |
 | `tinyfish.py` | TinyFish search/fetch (X-API-Key, configurable timeout) | `internal/tinyfish/client.go` |
-| `rag/engine.py` | RagEngine: ChromaDB (current) + sqlite-vec (migrating). BGE-M3 ONNX via fastembed in worker_proc. `search_hybrid()` with RRF fusion (FTS5 + vec0 + cross-encoder reranker). `ready`/`error` gating. | `internal/rag/` + `sidecar.py` |
+| `rag/engine.py` | RagEngine: ChromaDB (current) + sqlite-vec (migrating). BGE-M3 ONNX via fastembed in worker_proc. `search_hybrid()` with RRF fusion (FTS5 BM25 + dense + cross-encoder reranker) — activated in `rag_search` tool. `collection.upsert` for idempotent re-index. Worker respawns on `EOFError` (OOM recovery). `ready`/`error` gating. | `internal/rag/` + `sidecar.py` |
 | `rag/chunker.py` | Markdown chunker: `split_markdown()` (1600/160 chars, fences atomic) + `split_markdown_v2()` (paragraph-aware, respects headers, `parent_section` metadata). IDs `{report_id}_c{idx}`. | `internal/rag/chunker.go` |
 | `rag/embedding_worker.py` | BGE-M3 ONNX inference worker process (embed/query_embed via Pipe RPC, 3 GB RLIMIT) | — |
 | `storage/nn` | SQLite files |
@@ -145,7 +145,7 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `learner/model.py` | BKT soft-evidence model + 6-level mastery classifier + FSRS integration | — |
 | `learner/fsrs.py` | FSRS-6 spaced repetition scheduler (Anki 24.11 defaults) | — |
 | `learner/planner.py` | Deterministic study plan generation: ALEKS outer fringe, BFS goal distances, weighted scoring, adaptive proficiency thresholds | — |
-| `learner/pedagogy_engine.py` | External stage management for pedagogical plans: 5-stage progression (activate→introduce→guided→assess→wrap_up). Prevents LLM non-compliance by managing transitions externally. | — |
+| `learner/pedagogy_engine.py` | External stage management for pedagogical plans: 5-stage progression (activate→introduce→guided→assess→wrap_up). Wired into `ChatService` per maestro session; manages transitions externally to prevent LLM non-compliance. `scaffolding_level` persisted in `learner_state`. | — |
 
 ### Frontend (`frontend/src/`) — 65 files, 8615 lines
 
@@ -209,7 +209,9 @@ All API calls are same-origin relative `/api/*`. AGENT_LABELS loaded from `/api/
 - Routes raise `CognitsError` subclasses (`NotFoundError`, `StorageError`,
   `AgentBusy`, `ConfigError`, etc.) which the `@app.exception_handler` in
   `app.py` converts to `{"error": code, "message": msg, "details": {...}}`.
-- Legacy `text_error` (plain-text) is deprecated and being phased out.
+- All route files migrated from legacy `text_error` (plain-text) to
+  `CognitsError` subclasses (0.0.7 hardening). `text_error` is removed
+  from all route imports.
 
 ### LLM / prompt cache
 - Tool definitions sorted by name; date stamp only on the last user message;
@@ -235,19 +237,48 @@ All API calls are same-origin relative `/api/*`. AGENT_LABELS loaded from `/api/
   is the current implementation. Adding a new provider (OpenAI, Anthropic)
   = implement the Protocol + add a provider config block.
 - Model format: `provider/model-id` (e.g., `deepseek/deepseek-v4-pro`).
-  Backward compat with bare model IDs.
+  Backward compat with bare model IDs (`parse_model()` in `constants.py`).
 - Provider config blocks: `api_key`, `base_url`, per-model capabilities
-  (`context_window`, `supports_thinking`).
+  (`context_window`, `supports_thinking`) in `MODEL_REGISTRY` +
+  `Config.providers` dict (flat `llm_*` fields remain as backward compat).
+- `DeepSeekClient` accepts a per-provider `base_url` parameter.
+- `get_context_window(model)` looks up `MODEL_REGISTRY` for compaction
+  (replaces the hardcoded `MODEL_CONTEXT_WINDOW` constant).
 - Error classification: `DeepSeekError.retryable` for transient errors
   (429, 5xx, ReadTimeout). Permanent errors fail immediately.
 - Prompt cache: `prompt_cache_hit_tokens` extracted from usage events
   and logged in tracer for per-agent cache hit ratio.
 
+### Tracer (observability)
+- `Tracer.emit()` is called in the agent loop with 6 event types:
+  `llm_start`, `usage` (with `cache_hit`/`cache_miss`), `tool_start`,
+  `tool_end` (with `duration_ms`), `finish`, `error`.
+- Tracer is passed to subagents via `DeploySubagent(tracer=)` and to
+  the reflection revision agent + session namer.
+- `NoopTracer` is the default for tests.
+
+### PedagogyEngine (external stage management)
+- `PedagogyEngine` is instantiated per maestro session in `ChatService`,
+  restored from `learner_state.scaffolding_level`, and manages 5-stage
+  transitions externally (activate→introduce→guided→assess→wrap_up).
+- After each teacher turn: `record_interaction()` → `should_advance()`
+  → `advance()` + persist `scaffolding_level` + publish `ui_action`.
+- The `finally` block remains 100% synchronous (pedagogy logic is in
+  the `try` block, before `finally`).
+
+### RAG hybrid search
+- `rag_search` tool calls `search_hybrid()` (FTS5 BM25 + dense + RRF +
+  cross-encoder reranker), not dense-only `search()`.
+- `reports_repo` is wired into `RagSearch` at all call sites.
+- `search_fts` is wrapped in `asyncio.to_thread` (off the event loop).
+- `collection.upsert` (not `add`) — idempotent re-indexing.
+- Worker respawns on `EOFError`/`BrokenPipeError` (OOM recovery).
+
 ## Design Patterns (frontend)
 - Store-driven reactivity via `createMemo` (never destructure store props).
 - Unified global context-menu signal (discriminated union).
 - `structuredClone(unwrap(store))` to clone SolidJS stores.
-- Token batching in chat-store (50ms flush via `setTimeout`).
+- Token batching in chat-store (RAF-driven incremental draining, flushAll on tool boundaries).
 - Centralized `apiFetch()` wrapper in `lib/api.ts` (error normalization, JSON parsing).
 - SSE event types in `lib/sse-types.ts` (TypeScript contract mirroring backend wire format).
 - AGENT_LABELS loaded from `/api/agents` (single source of truth, no hardcoded labels).
@@ -260,6 +291,12 @@ All API calls are same-origin relative `/api/*`. AGENT_LABELS loaded from `/api/
   Auto-scroll via IntersectionObserver is already implemented.
 - **Tool files GrepCode/GlobFiles os.walk:** remaining sync I/O in async
   execute methods — low impact, directory operations are typically fast.
+- **vec0 dual-write / ChromaDB→sqlite-vec cutover:** `chunks_vec`/`report_chunks`
+  tables are created in schema but never populated; ChromaDB is the sole active
+  dense store. Migration cutover deferred.
+- **chat-store AGENT_LABELS from /api/agents:** F1 fix intentionally hardcoded
+  the labels (runtime crash fix); revisit when agent set changes.
+- **CI test workflow:** `publish.yml` publishes on tag without running tests.
 - **Phases 4-8 specs:** documentation specs deferred; implementation
   notes in AGENTS.md and commit history.
 
