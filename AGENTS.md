@@ -147,10 +147,27 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `learner/planner.py` | Deterministic study plan generation: ALEKS outer fringe, BFS goal distances, weighted scoring, adaptive proficiency thresholds | — |
 | `learner/pedagogy_engine.py` | External stage management for pedagogical plans: 5-stage progression (activate→introduce→guided→assess→wrap_up). Prevents LLM non-compliance by managing transitions externally. | — |
 
-### Frontend (`frontend/src/`) — unchanged
-See git-less history in `legacy/` docs; key files: `lib/chat-stream.ts` (SSE
-client), `stores/*.ts` (signals + API calls), `components/*.tsx`. All API
-calls are same-origin relative `/api/*`.
+### Frontend (`frontend/src/`) — 54 files, 8077 lines
+
+**Stores (10):** `chat-store.ts` (messages, streaming, tool status), `chat-connection.ts`
+(SSE reconnect wrapper), `session-store.ts`, `settings-store.ts` (config, agents, pricing),
+`desktop-store.ts` (multi-desktop), `learnit-store.ts` (report search), `notebook-store.ts`,
+`report-store.ts`, `setup-store.ts`, `viewport-tree-store.ts` (split-pane viewport tree, 667 lines),
+`skills-store.ts` (skill tree + learner state), `study-plan-store.ts` (study plans).
+
+**Components (25):** `Chat.tsx` (message list + streaming + tool status), `StreamingMessage.tsx`
+(streaming-markdown), `SkillsTree.tsx` (DAG with mastery badges), `MasteryDashboard.tsx`
+(learner state overview), `StudyPlanView.tsx` (active plan), `Viewport.tsx` (tab bar + content
+dispatcher), `Sessions.tsx`, `Settings.tsx`, `SetupWizard.tsx`, `LearnitView.tsx`
+(report search/browse), `ReportView.tsx`, `NoteView.tsx`, `CodeView.tsx`, `TextView.tsx`,
+`ImageView.tsx`, `PdfView.tsx`, `TabBar.tsx`, `ContextMenu.tsx`, `DragOverlay.tsx`,
+`Dropdown.tsx`, `SliderField.tsx`, `Write.tsx`, `MarkdownView.tsx`, `CollapsibleSection.tsx`.
+
+**Lib (8):** `chat-stream.ts` (SSE client via fetch+ReadableStream), `markdown.ts`
+(marked+hljs+DOMPurify), `api.ts` (centralized fetch wrapper), `sse-types.ts` (SSE event
+TypeScript types), `tab-kinds.ts`, `settings-sections.ts`, `clipboard.ts`, `file-category.ts`.
+
+All API calls are same-origin relative `/api/*`. AGENT_LABELS loaded from `/api/agents`.
 
 ## Architecture invariants (do not break)
 
@@ -173,6 +190,8 @@ calls are same-origin relative `/api/*`.
 - Token frames have NO `event:` line; payload `{"choices":[{"delta":{"content":...}}]}`.
 - Named events: `reasoning`, `error`, `tool_start`, `tool_end`,
   `tool_progress`, `subagent_end`, `usage` (usage is snake_case; all else camelCase).
+- Extra UI events: `session_renamed`, `ui_action`, `setup_complete`,
+  `create_learning_session` (sent by backend, consumed by frontend).
 - `: keepalive` comment every 15s. Queue (1024) drops on overflow — DB reload
   on `done` is the safety net.
 - Two `done` variants: `data: null` (live route) and `data: {}` (snapshot route).
@@ -224,11 +243,14 @@ calls are same-origin relative `/api/*`.
 - Prompt cache: `prompt_cache_hit_tokens` extracted from usage events
   and logged in tracer for per-agent cache hit ratio.
 
-## Design Patterns (frontend — unchanged)
+## Design Patterns (frontend)
 - Store-driven reactivity via `createMemo` (never destructure store props).
 - Unified global context-menu signal (discriminated union).
 - `structuredClone(unwrap(store))` to clone SolidJS stores.
-- Token batching in chat-store (50ms flush).
+- Token batching in chat-store (50ms flush via `setTimeout`).
+- Centralized `apiFetch()` wrapper in `lib/api.ts` (error normalization, JSON parsing).
+- SSE event types in `lib/sse-types.ts` (TypeScript contract mirroring backend wire format).
+- AGENT_LABELS loaded from `/api/agents` (single source of truth, no hardcoded labels).
 - Don't dump docs into LLM context — use curated reports (context rot).
 
 ## DB Schema Versioning Rule
