@@ -6,6 +6,7 @@ across all domain repositories, plus the reentrant lock that serializes access.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sqlite3
 import threading
@@ -353,23 +354,34 @@ class Database:
 
     # -- vector search -------------------------------------------------------
 
-    def vector_index(self, chunks: list[dict]) -> int:
+    def vector_index(
+        self,
+        chunks: list[dict],
+        embeddings: list[list[float]] | None = None,
+    ) -> int:
         with self.lock:
             count = 0
-            for chunk in chunks:
+            for i, chunk in enumerate(chunks):
                 rowid = _chunk_id_to_int(chunk["id"])
                 self.conn.execute(
-                    """INSERT OR REPLACE INTO report_chunks
+                    """INSERT INTO report_chunks
                        (rowid, id, report_id, text, source_type, topic, chunk_index)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(id) DO UPDATE SET
+                           report_id=excluded.report_id,
+                           text=excluded.text,
+                           source_type=excluded.source_type,
+                           topic=excluded.topic,
+                           chunk_index=excluded.chunk_index""",
                     (rowid, chunk["id"], chunk["report_id"], chunk["text"],
                      chunk.get("source_type", "web"), chunk.get("topic", ""),
                      chunk.get("chunk_index", 0)),
                 )
-                self.conn.execute(
-                    "INSERT OR REPLACE INTO chunks_vec (rowid, embedding) VALUES (?, ?)",
-                    (rowid, _embed_to_json(chunk["embedding"])),
-                )
+                if embeddings is not None:
+                    self.conn.execute(
+                        "INSERT OR REPLACE INTO chunks_vec (rowid, embedding) VALUES (?, ?)",
+                        (rowid, _embed_to_json(embeddings[i])),
+                    )
                 count += 1
         return count
 
@@ -378,10 +390,11 @@ class Database:
         with self.lock:
             rows = self.conn.execute(
                 """SELECT rc.id, rc.report_id, rc.text, rc.source_type, rc.topic,
-                          rc.chunk_index, vec_distance_L2(cv.embedding, ?) as dist
+                          rc.chunk_index, cv.distance
                    FROM chunks_vec cv
                    JOIN report_chunks rc ON rc.rowid = cv.rowid
-                   ORDER BY dist LIMIT ?""",
+                   WHERE cv.embedding MATCH ? AND k = ?
+                   ORDER BY cv.distance""",
                 (emb_json, max_results),
             ).fetchall()
         return [
@@ -399,7 +412,7 @@ class Database:
 
 
 def _chunk_id_to_int(chunk_id: str) -> int:
-    return abs(hash(chunk_id)) % (2**62)
+    return int(hashlib.sha1(str(chunk_id).encode()).hexdigest()[:16], 16) & ((1 << 62) - 1)
 
 
 def _embed_to_json(floats) -> str:
