@@ -24,6 +24,9 @@ export const TAB_LABELS: Record<string, string> = {
   text: "Text",
   image: "Image",
   pdf: "PDF",
+  skills: "Skills",
+  mastery: "Mastery",
+  plan: "Study Plan",
 }
 
 /** Kinds that may appear as dynamic tabs carrying a ":" payload. */
