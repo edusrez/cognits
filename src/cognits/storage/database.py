@@ -253,8 +253,14 @@ class Database:
         if self._closed:
             return
         with self.lock:
-            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            self.conn.close()
+            try:
+                self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.Error:
+                pass
+            try:
+                self.conn.close()
+            except sqlite3.Error:
+                pass
             self._closed = True
 
     # -- transactions --------------------------------------------------------
