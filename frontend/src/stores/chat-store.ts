@@ -42,10 +42,26 @@ export const conversationStarted = createMemo(() => messages.length > 0)
 let pendingBuffer = ""
 let rafId: number | null = null
 let lastDrainTime = 0
+let inactiveDrainActive = false
 
 function drainFrame() {
   rafId = null
-  if (!pendingBuffer) return
+  if (!pendingBuffer) {
+    if (inactiveDrainActive) {
+      inactiveDrainActive = false
+      const content = streamingContent()
+      batch(() => {
+        if (content) {
+          setMessages((prev: ChatMessage[]) => [...prev, { role: "assistant", content }])
+          setStreamingContent("")
+        }
+        setStreamingReasoning("")
+        setIsStreaming(false)
+        setToolStatus({}); setToolFaviconsByAgent({})
+      })
+    }
+    return
+  }
   const bufferLen = pendingBuffer.length
   const now = performance.now()
   const dt = lastDrainTime ? (now - lastDrainTime) : 16.67
@@ -67,6 +83,7 @@ function startDrain() {
 
 function stopDrain() {
   lastDrainTime = 0
+  inactiveDrainActive = false
   if (rafId !== null) {
     cancelAnimationFrame(rafId)
     rafId = null
@@ -174,6 +191,26 @@ function createCallbacks(): StreamCallbacks {
       stopDrain()
       pendingBuffer = ""
 
+      if (!snap.agentActive && !snap.liveContent && snap.messages.length > 0) {
+        const last = snap.messages[snap.messages.length - 1]
+        if (last.role === "assistant" && last.content) {
+          const rest = snap.messages.slice(0, -1)
+          batch(() => {
+            setMessages(rest)
+            setIsStreaming(true)
+            setIsThinking(false)
+            setStreamingContent("")
+            setStreamingReasoning("")
+            setToolStatus({})
+            setToolFaviconsByAgent({})
+          })
+          pendingBuffer = last.content
+          inactiveDrainActive = true
+          startDrain()
+          return
+        }
+      }
+
       batch(() => {
         setMessages(snap.messages)
         setIsStreaming(snap.agentActive || !!snap.liveContent)
@@ -278,6 +315,7 @@ function createCallbacks(): StreamCallbacks {
     },
 
     onDone() {
+      if (inactiveDrainActive) return
       flushAll()
       const content = streamingContent()
       if (content) {
