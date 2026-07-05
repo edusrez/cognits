@@ -40,7 +40,7 @@ export default function SkillsTree() {
                   <button
                     class="block w-full text-left px-3 py-2 rounded border border-gray-700 hover:border-gray-500 transition-colors text-xs"
                     classList={{
-                      "border-blue-500 bg-blue-900/20": selectedSkillId() === skill.id,
+                      "border-[#888] bg-[#333]": selectedSkillId() === skill.id,
                     }}
                     onClick={() => setSelectedSkillId(skill.id)}
                   >
