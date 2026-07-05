@@ -178,11 +178,15 @@ function createCallbacks(): StreamCallbacks {
         setMessages(snap.messages)
         setIsStreaming(snap.agentActive || !!snap.liveContent)
         setIsThinking(snap.agentActive && !snap.liveContent)
-        setStreamingContent(snap.liveContent ?? "")
+        setStreamingContent("")
         setStreamingReasoning(snap.liveReasoning ?? "")
         if (snap.toolStatus) setToolStatus({ Agent: snap.toolStatus })
         if (snap.toolFavicons) setToolFaviconsByAgent({ Agent: snap.toolFavicons })
       })
+      if (snap.liveContent) {
+        pendingBuffer = snap.liveContent
+        startDrain()
+      }
     },
 
     onReasoning(token: string) {
