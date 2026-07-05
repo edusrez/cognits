@@ -208,7 +208,7 @@ function createCallbacks(): StreamCallbacks {
     },
 
     onToolProgress(data: any) {
-      const agent = resolveAgentLabel(data?.agent)
+      const agent = AGENT_LABELS[data?.agent] ?? data?.agent ?? "Agent"
       const msg = data?.message || ""
       const favicons = data?.favicons
       if (msg) {

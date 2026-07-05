@@ -209,7 +209,7 @@ export default function Chat(props: { viewportId?: string }) {
           class="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
           onClick={() => { scrollRef.scrollTop = scrollRef.scrollHeight; setAutoScroll(true) }}
         >
-          &darr; Ir abajo
+          &darr; Scroll to bottom
         </button>
       </Show>
     </div>

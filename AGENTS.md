@@ -147,9 +147,9 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `learner/planner.py` | Deterministic study plan generation: ALEKS outer fringe, BFS goal distances, weighted scoring, adaptive proficiency thresholds | — |
 | `learner/pedagogy_engine.py` | External stage management for pedagogical plans: 5-stage progression (activate→introduce→guided→assess→wrap_up). Prevents LLM non-compliance by managing transitions externally. | — |
 
-### Frontend (`frontend/src/`) — 54 files, 8077 lines
+### Frontend (`frontend/src/`) — 65 files, 8615 lines
 
-**Stores (10):** `chat-store.ts` (messages, streaming, tool status), `chat-connection.ts`
+**Stores (12):** `chat-store.ts` (messages, streaming, tool status), `chat-connection.ts`
 (SSE reconnect wrapper), `session-store.ts`, `settings-store.ts` (config, agents, pricing),
 `desktop-store.ts` (multi-desktop), `learnit-store.ts` (report search), `notebook-store.ts`,
 `report-store.ts`, `setup-store.ts`, `viewport-tree-store.ts` (split-pane viewport tree, 667 lines),
@@ -253,9 +253,17 @@ All API calls are same-origin relative `/api/*`. AGENT_LABELS loaded from `/api/
 - AGENT_LABELS loaded from `/api/agents` (single source of truth, no hardcoded labels).
 - Don't dump docs into LLM context — use curated reports (context rot).
 
-## DB Schema Versioning Rule
+## Known deferred items (0.0.7 → 0.0.8)
 
-**SCHEMA_VERSION stays at 1 during all 0.0.X pre-releases.** We are still
+- **P3 (Chat UX enhancements):** favicon/title updates during tool execution,
+  active agent indicator (pulse animation), collapsible tool panels.
+  Auto-scroll via IntersectionObserver is already implemented.
+- **Tool files GrepCode/GlobFiles os.walk:** remaining sync I/O in async
+  execute methods — low impact, directory operations are typically fast.
+- **Phases 4-8 specs:** documentation specs deferred; implementation
+  notes in AGENTS.md and commit history.
+
+## DB Schema Versioning Rule
 
 **SCHEMA_VERSION stays at 1 during all 0.0.X pre-releases.** We are still
 defining the canonical schema. Schema migrations (`ALTER TABLE`, new
