@@ -199,7 +199,7 @@ export function subagentSelectorDefaults(): SubagentConfig {
   const prev = subagentConfig()[subagentSelector()]
   return {
     model: prev?.model || "deepseek-v4-flash",
-    reasoning: prev?.reasoning || "high",
+    reasoning: prev?.reasoning || "enabled",
     maxSteps: prev?.maxSteps ?? 0,
     maxTokens: prev?.maxTokens ?? 0,
     temperature: prev?.temperature ?? 0,

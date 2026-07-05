@@ -156,10 +156,10 @@ registerSection({
           <div class="flex flex-col gap-1">
             <label class="text-[#9a9a9a]">Reasoning</label>
             <Dropdown
-              value={activeReasoning() as "disabled" | "high" | "max"}
+              value={activeReasoning() as "disabled" | "enabled" | "max"}
               options={[
                 { value: "disabled" as const, label: "Disabled" },
-                { value: "high" as const, label: "High" },
+                { value: "enabled" as const, label: "High" },
                 { value: "max" as const, label: "Maximum" },
               ]}
               onChange={(v) => {
@@ -357,10 +357,10 @@ registerSection({
         <div class="flex flex-col gap-1">
           <label class="text-[#9a9a9a]">Reasoning</label>
           <Dropdown
-            value={(subagentConfig()[subagentSelector()]?.reasoning || "high") as "disabled" | "high" | "max"}
+            value={(subagentConfig()[subagentSelector()]?.reasoning || "enabled") as "disabled" | "enabled" | "max"}
             options={[
               { value: "disabled" as const, label: "Disabled" },
-              { value: "high" as const, label: "High" },
+              { value: "enabled" as const, label: "High" },
               { value: "max" as const, label: "Maximum" },
             ]}
             onChange={(v) => updateSelectedSubagent({ reasoning: v })}

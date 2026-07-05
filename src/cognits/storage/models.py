@@ -230,6 +230,7 @@ class LearnerState:
             "lapses": self.lapses,
             "lastReview": self.last_review,
             "nextReview": self.next_review,
+            "scaffoldingLevel": self.scaffolding_level,
             "updatedAt": self.updated_at,
         }
 

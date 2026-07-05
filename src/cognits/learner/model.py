@@ -20,26 +20,40 @@ import random
 
 from cognits.learner import fsrs
 from cognits.storage.models import LearnerState
+from cognits.constants import (
+    BKT_EVIDENCE_THRESHOLD,
+    BKT_LAMBDA_HINT,
+    BKT_LAMBDA_TIME,
+    BKT_PRIOR_ALPHA,
+    BKT_PRIOR_BETA,
+    MASTERY_DECAY_OVERDUE_FACTOR,
+    MASTERY_EXPLORING_P,
+    MASTERY_MASTERED_CONFIDENCE,
+    MASTERY_MASTERED_RETENTION,
+    MASTERY_PRACTICING_MIN_REPS,
+    MASTERY_PROFICIENT_CONFIDENCE,
+    MASTERY_PROFICIENT_P,
+    MASTERY_THRESHOLD as MASTERED_P,
+)
 
 # --- BKT prior / soft-evidence constants -------------------------------
-PRIOR_ALPHA: float = 1.0
-PRIOR_BETA: float = 1.0
-LAMBDA_HINT: float = 0.15      # per hint used
-LAMBDA_TIME: float = 0.10      # per unit of time_ratio above 1.0
-EVIDENCE_THRESHOLD: float = 4.0  # α+β below this -> low-confidence estimate
+PRIOR_ALPHA = BKT_PRIOR_ALPHA
+PRIOR_BETA = BKT_PRIOR_BETA
+LAMBDA_HINT = BKT_LAMBDA_HINT      # per hint used
+LAMBDA_TIME = BKT_LAMBDA_TIME      # per unit of time_ratio above 1.0
+EVIDENCE_THRESHOLD = BKT_EVIDENCE_THRESHOLD  # α+β below this -> low-confidence estimate
 
 # --- Mastery thresholds (six levels) ----------------------------------
 # Ladder (top to bottom of certainty): not_seen -> exploring -> practicing
 # -> proficient -> mastered -> decaying (decaying overlays mastered/
 # proficient when the FSRS schedule says the review is overdue).
-EXPLORING_P: float = 0.60          # p < this           -> exploring
-PRACTICING_MIN_REPS: int = 3         # reps < this           -> practicing
-PROFICIENT_P: float = 0.80          # p < this           -> not yet proficient
-PROFICIENT_CONFIDENCE: float = 8.0   # α + β below this       -> practicing
-from cognits.constants import MASTERY_THRESHOLD as MASTERED_P
-MASTERED_CONFIDENCE: float = 12.0   # α + β below this       -> proficient
-MASTERED_RETENTION: float = 0.90    # post-review R below this -> not mastered
-DECAY_OVERDUE_FACTOR: float = 1.5   # elapsed > next_review * 1.5 -> decaying
+EXPLORING_P = MASTERY_EXPLORING_P          # p < this           -> exploring
+PRACTICING_MIN_REPS = MASTERY_PRACTICING_MIN_REPS         # reps < this           -> practicing
+PROFICIENT_P = MASTERY_PROFICIENT_P          # p < this           -> not yet proficient
+PROFICIENT_CONFIDENCE = MASTERY_PROFICIENT_CONFIDENCE   # α + β below this       -> practicing
+MASTERED_CONFIDENCE = MASTERY_MASTERED_CONFIDENCE     # α + β below this       -> proficient
+MASTERED_RETENTION = MASTERY_MASTERED_RETENTION    # post-review R below this -> not mastered
+DECAY_OVERDUE_FACTOR = MASTERY_DECAY_OVERDUE_FACTOR   # elapsed > next_review * 1.5 -> decaying
 
 
 def _clamp01(x: float) -> float:

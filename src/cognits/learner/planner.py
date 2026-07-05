@@ -21,7 +21,19 @@ from cognits.storage.models import LearnerState, Skill, SkillPrereq, StudyPlanIt
 # --- constants --------------------------------------------------------
 
 # BKT p_mastery above which a skill is considered mastered.
-from cognits.constants import MASTERY_PROFICIENT_P, MASTERY_THRESHOLD
+from cognits.constants import (
+    MASTERY_PROFICIENT_P,
+    MASTERY_THRESHOLD,
+    PLANNER_BLOOM_WEIGHT,
+    PLANNER_DECAYING_BOOST,
+    PLANNER_DECAYING_OVERDUE_MAX,
+    PLANNER_DIFFICULTY_WEIGHT,
+    PLANNER_MAX_PLAN_ITEMS,
+    PLANNER_PATH_RELEVANCE_MAX,
+    PLANNER_QUICK_WIN_BONUS,
+    PLANNER_SOFT_PREREQ_BONUS,
+    PLANNER_USER_PRIORITY_MULTIPLIER,
+)
 
 # Rolling window: how many items the plan contains by default.
 # Math Academy and ALEKS re-evaluate after every session — long plans

@@ -41,7 +41,7 @@ export interface LLMConfig {
   llmAgentId: string
   llmApiKey: string
   llmModel: "deepseek-v4-pro" | "deepseek-v4-flash" | ""
-  llmReasoning: "disabled" | "high" | "max" | ""
+  llmReasoning: "disabled" | "enabled" | "max" | ""
   agentOverrides: Record<string, string>
   chatFontSize: number
   typewriterSpeed: number
