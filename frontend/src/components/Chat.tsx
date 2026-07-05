@@ -14,10 +14,18 @@ export default function Chat(props: { viewportId?: string }) {
   let anchorRef!: HTMLDivElement
   const [autoScroll, setAutoScroll] = createSignal(true)
   const [interviewStarted, setInterviewStarted] = createSignal(false)
+  const [toolsCollapsed, setToolsCollapsed] = createSignal(false)
 
   const chatMsgMenu = createMemo(() => {
     const m = ctxMenu()
     return m?.kind === "chat-message" ? m : null
+  })
+
+  const toolSummary = createMemo(() => {
+    const entries = Object.entries(currentToolStatus())
+    if (entries.length === 0) return ""
+    const activeAgent = entries.find(([, s]) => s.endsWith("..."))?.[0] ?? entries[0]?.[0] ?? ""
+    return `${entries.length} herramientas · ${activeAgent}`
   })
 
   onMount(() => {
@@ -136,21 +144,33 @@ export default function Chat(props: { viewportId?: string }) {
             style={{ "font-size": `${Math.max(10, chatFontSize() * 0.8)}px` }}
             class="text-[#5a5a5a] italic mt-1 flex flex-col gap-0.5"
           >
-            <For each={Object.entries(currentToolStatus())}>
-              {([agent, status]) => {
-                const isAnimated = status.endsWith("...")
-                const cleanStatus = isAnimated ? status.replace(/\.\.\.$/, "") : status
-                const favicons = currentFavicons()[agent] ?? []
-                return (
-                  <div class="flex items-center gap-1.5">
-                    <span class="inline-block min-w-[220px]" classList={{ "animate-dots": isAnimated }}>{agent}: {cleanStatus}</span>
-                    <For each={favicons}>
-                      {src => <img src={src} class="w-3.5 h-3.5 animate-fade-in" alt="" />}
-                    </For>
-                  </div>
-                )
-              }}
-            </For>
+            <div
+              class="flex items-center gap-1.5 cursor-pointer select-none hover:text-[#e0e0e0]"
+              onClick={() => setToolsCollapsed(!toolsCollapsed())}
+            >
+              <span class="inline-block w-4">{toolsCollapsed() ? "▸" : "▾"}</span>
+              <span>{toolsCollapsed() ? toolSummary() : "Tools"}</span>
+            </div>
+            <Show when={!toolsCollapsed()}>
+              <For each={Object.entries(currentToolStatus())}>
+                {([agent, status]) => {
+                  const isAnimated = status.endsWith("...")
+                  const cleanStatus = isAnimated ? status.replace(/\.\.\.$/, "") : status
+                  const favicons = currentFavicons()[agent] ?? []
+                  return (
+                    <div class="flex items-center gap-1.5">
+                      <Show when={isAnimated}>
+                        <span class="inline-block w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                      </Show>
+                      <span class="inline-block min-w-[220px]" classList={{ "animate-dots": isAnimated }}>{agent}: {cleanStatus}</span>
+                      <For each={favicons}>
+                        {src => <img src={src} class="w-3.5 h-3.5 animate-fade-in" alt="" />}
+                      </For>
+                    </div>
+                  )
+                }}
+              </For>
+            </Show>
           </div>
         </Show>
 
