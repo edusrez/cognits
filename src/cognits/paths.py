@@ -80,10 +80,6 @@ def rag_dir() -> Path:
     return data_dir() / "rag"
 
 
-def chroma_db_path() -> Path:
-    return rag_dir() / "chroma_db"
-
-
 def fastembed_cache_dir() -> Path:
     import os
     return Path(os.environ.get("FASTEMBED_CACHE_DIR", str(Path.home() / ".cache" / "fastembed")))

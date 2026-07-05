@@ -3,7 +3,7 @@
 Architecture:
 - BGE-M3 ONNX inference via fastembed in a worker process (embed/query_embed
   via Pipe RPC), keeping the event loop free.
-- ChromaDB PersistentClient with HNSW index for dense vector storage.
+- sqlite-vec vec0 virtual table for dense vector storage (cosine via L2 on normalized BGE-M3 embeddings).
 - Hybrid search: dense (cosine) + FTS5 BM25 sparse → RRF fusion → optional
   cross-encoder reranker (ms-marco-MiniLM-L-6-v2).
 - First-time model download (~2.3 GB) runs in a child process during startup;
@@ -20,14 +20,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from cognits import paths
-
 log = logging.getLogger("cognits.rag")
 
-from cognits.constants import RAG_COLLECTION_NAME, RAG_DEFAULT_MAX_RESULTS
+from cognits.constants import RAG_DEFAULT_MAX_RESULTS
 from cognits.server.exceptions import CognitsError
-
-COLLECTION_NAME = RAG_COLLECTION_NAME
 
 
 class RagNotReady(CognitsError):
@@ -36,13 +32,11 @@ class RagNotReady(CognitsError):
 
 
 class RagEngine:
-    def __init__(self, storage_path: Path):
-        self.storage_path = storage_path
+    def __init__(self):
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rag")
         self.ready = asyncio.Event()
         self.error: str | None = None
         self.progress: int = 0
-        self._collection = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._warm_proc: multiprocessing.Process | None = None
         self._worker_proc: multiprocessing.Process | None = None
@@ -54,7 +48,7 @@ class RagEngine:
 
     @classmethod
     def start_background(cls) -> "RagEngine":
-        engine = cls(paths.data_dir() / "rag" / "chroma_db")
+        engine = cls()
         engine._loop = asyncio.get_running_loop()
         loop = engine._loop
 
@@ -129,9 +123,6 @@ class RagEngine:
             raise
 
     def _load(self) -> None:
-        import chromadb
-        from chromadb.config import Settings
-
         log.debug("rag: loading BGE-M3 (first time downloads ~2.3 GB)...")
         # Phase 1: warm cache in subprocess — ONNX holds the GIL for seconds
         # during graph optimisation; a child process has its own GIL so the
@@ -170,31 +161,7 @@ class RagEngine:
         except Exception as e:
             log.warning("rag: warm-cache subprocess error: %s", e)
 
-        # Phase 2: init ChromaDB only (lightweight, no ONNX GIL).
-        # Model loading is deferred to _ensure_model() so the spinner
-        # stays smooth during startup.
-        saved = os.dup(2)
-        devnull = os.open(os.devnull, os.O_WRONLY)
-        os.dup2(devnull, 2)
-        os.close(devnull)
-        try:
-            client = chromadb.PersistentClient(
-                path=str(self.storage_path),
-                settings=Settings(anonymized_telemetry=False),
-            )
-            self._collection = client.get_or_create_collection(
-                name=COLLECTION_NAME,
-                metadata={"hnsw:space": "cosine"},
-            )
-        finally:
-            os.dup2(saved, 2)
-            os.close(saved)
-        log.debug(
-            "rag: ready in %s (collection %s, %d docs; model on demand)",
-            self.storage_path,
-            COLLECTION_NAME,
-            self._collection.count(),
-        )
+        log.debug("rag: ready (model on demand)")
 
     def shutdown(self) -> None:
         # Terminate the warm-cache subprocess first, so _load() unblocks from
