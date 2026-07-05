@@ -17,9 +17,12 @@
    via the task tool. **Include today's date** (from `<env>`) in the task
    description you pass. Do NOT answer research questions from training data.
 
-2. **SKILLS**: At the start of each context, load project skills:
-   `solidjs-patterns`, `tailwind-v4` using the `skill()` tool.
-   Additional specialized skills are available — load when a task matches:
+2. **SKILLS**: At the start of each context, load the `multi-agent-workflow`
+   skill using the `skill()` tool. It defines the delegation protocol and
+   agent roster — required for every session. Additional skills are
+   available — load on-demand when a task matches:
+   - `solidjs-patterns` — SolidJS components, signals, stores, JSX (frontend)
+   - `tailwind-v4` — Tailwind CSS v4 conventions, @theme, OKLCH (frontend)
    - `sqlite-fts5` — FTS5 full-text search, triggers, BM25, schema migration
    - `sse-streaming` — Server-Sent Events (backend + SolidJS frontend)
    - `deepseek-api` — DeepSeek streaming API, reasoning mode, prompt cache
@@ -31,14 +34,42 @@
 4. **CODE EXPLORATION**: For codebase structure or pattern search, invoke
    `@explore` via the task tool.
 
-5. **WORKFLOW**: Write specs first. One atomic task per message. After each
-   change: `uv run pytest -q`. Commit after each logical unit.
+5. **WORKFLOW**: Write specs first. Delegate code changes to builder
+   subagents (one atomic task each, non-overlapping files). After each
+   batch: `uv run pytest -q`. Commit after each logical unit. The primary
+   agent orchestrates — it does NOT edit files itself (see §7).
 
 6. **NO MICRO-DECISIONS**: When any implementation detail is ambiguous or not
    explicitly specified by the user, the model MUST ask the user before
    proceeding. This applies both during planning and building phases. Do NOT
    assume defaults, conventions, or "reasonable" choices — present the options
    and let the user decide.
+
+7. **DELEGATION (CRITICAL for context efficiency)**: The primary agent is an
+   **orchestrator**, not an implementor. It MUST delegate work to subagents
+   and MUST NOT do the work itself, with these rules:
+
+   - **Research / external knowledge** → `@SOTAbriefing` via the task tool.
+     NEVER answer research questions from training data. NEVER fetch URLs
+     yourself — SOTAbriefing does it.
+   - **Codebase exploration / pattern search** → `@explore` via the task tool.
+     NEVER read files one-by-one yourself when a search would suffice.
+   - **Code changes (edits, tests, refactors)** → `builder` (flash, default),
+     `builder-pro` (pro, complex), or `builder-max` (pro max, escalation)
+     via the task tool. Dispatch MULTIPLE builders in PARALLEL when tasks
+     touch non-overlapping files. NEVER use the Edit/Write tools yourself
+     for code changes — that's what builders are for. The primary agent
+     should only use Bash for verification commands (pytest, build, git).
+   - **Code review** → `reviewer` via the task tool, auto-triggered after
+     each builder or batch. The reviewer is read-only and returns PASS/FAIL.
+   - **Documentation drafts** → `scribe` via the task tool, at session wrap
+     or after significant features. Scribe drafts to `_drafts/` only.
+   - **Escalation**: if a builder fails twice, escalate to the next tier
+     (builder → builder-pro → builder-max). Do NOT retry the same tier
+     more than twice.
+   - **When the primary CAN act directly**: reading a single file to answer
+     a quick question, running a verification command, committing, or
+     asking the user a microdecision. If in doubt, delegate.
 
 ## Identity
 Cognits is NOT a coding agent. It NEVER writes, edits, or modifies the user's code.
@@ -52,9 +83,12 @@ and discover answers through guided inquiry.
 - LLM: DeepSeek V4 Pro via OpenAI-compatible API (httpx streaming)
 - Web Search: TinyFish (search + fetch API)
 - DB: SQLite stdlib (`sqlite3`, FTS5, WAL, sqlite-vec 0.1.9, single locked connection)
-- RAG: ChromaDB 1.5.9 (legacy) + sqlite-vec vec0 (migrating) + fastembed 0.8.0
-  (BGE-M3 ONNX) in a worker_proc (embed/query_embed via Pipe RPC).
+- RAG: sqlite-vec vec0 (active dense store, brute-force KNN; cosine via L2
+  on normalized BGE-M3 vectors) + fastembed 0.8.0 (BGE-M3 ONNX) in a
+  worker_proc (embed/query_embed via Pipe RPC).
   Hybrid search: FTS5 BM25 + vec0 dense → RRF → cross-encoder reranker.
+  ChromaDB was removed in 0.0.7 (silent HNSW corruption risk, ~23 MB deps,
+  single-DB philosophy).
 - Packaging: uv + hatchling, wheel `py3-none-any` with the frontend dist as
   package data; `uv tool install cognits`
 
@@ -127,7 +161,7 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `llm/base.py` | `LLMClient` Protocol: async streaming interface for any LLM provider. Implementations: `DeepSeekClient` (future: OpenAI, Anthropic). | — |
 | `tools.py` | Tool registry, name-sorted `definitions()` (prefix cache) | `internal/tools/tools.go` |
 | `tinyfish.py` | TinyFish search/fetch (X-API-Key, configurable timeout) | `internal/tinyfish/client.go` |
-| `rag/engine.py` | RagEngine: ChromaDB (current) + sqlite-vec (migrating). BGE-M3 ONNX via fastembed in worker_proc. `search_hybrid()` with RRF fusion (FTS5 BM25 + dense + cross-encoder reranker) — activated in `rag_search` tool. `collection.upsert` for idempotent re-index. Worker respawns on `EOFError` (OOM recovery). `ready`/`error` gating. | `internal/rag/` + `sidecar.py` |
+| `rag/engine.py` | RagEngine: sqlite-vec vec0 (active dense store). BGE-M3 ONNX via fastembed in worker_proc. `search_hybrid()` with RRF fusion (FTS5 BM25 + dense + cross-encoder reranker) — activated in `rag_search` tool. `db.vector_index` for idempotent re-index (ON CONFLICT DO UPDATE on report_chunks). Worker respawns on `EOFError` (OOM recovery). `ready`/`error` gating. `set_db()` wires the Database. | `internal/rag/` + `sidecar.py` |
 | `rag/chunker.py` | Markdown chunker: `split_markdown()` (1600/160 chars, fences atomic) + `split_markdown_v2()` (paragraph-aware, respects headers, `parent_section` metadata). IDs `{report_id}_c{idx}`. | `internal/rag/chunker.go` |
 | `rag/embedding_worker.py` | BGE-M3 ONNX inference worker process (embed/query_embed via Pipe RPC, 3 GB RLIMIT) | — |
 | `storage/nn` | SQLite files |
@@ -176,7 +210,7 @@ All API calls are same-origin relative `/api/*`. AGENT_LABELS loaded from `/api/
   `subscribe_with_snapshot()` are synchronous → atomic in asyncio. An event is
   either in the snapshot or in the queue, never both (the token-duplication
   race). Never call them from threads (use `loop.call_soon_threadsafe`).
-- Blocking I/O (sqlite3, chromadb, fastembed) goes through `asyncio.to_thread`
+- Blocking I/O (sqlite3, fastembed) goes through `asyncio.to_thread`
   or the RAG 1-thread executor. Handlers are `async def`.
 - The agent run is an `asyncio.Task`; its `finally` block is 100% synchronous
   (incl. direct sqlite append of the partial response) so a second
@@ -271,7 +305,8 @@ All API calls are same-origin relative `/api/*`. AGENT_LABELS loaded from `/api/
   cross-encoder reranker), not dense-only `search()`.
 - `reports_repo` is wired into `RagSearch` at all call sites.
 - `search_fts` is wrapped in `asyncio.to_thread` (off the event loop).
-- `collection.upsert` (not `add`) — idempotent re-indexing.
+- `db.vector_index` (not `collection.upsert`) — idempotent re-indexing via
+  ON CONFLICT DO UPDATE on report_chunks.
 - Worker respawns on `EOFError`/`BrokenPipeError` (OOM recovery).
 
 ## Design Patterns (frontend)
@@ -286,19 +321,14 @@ All API calls are same-origin relative `/api/*`. AGENT_LABELS loaded from `/api/
 
 ## Known deferred items (0.0.7 → 0.0.8)
 
-- **P3 (Chat UX enhancements):** favicon/title updates during tool execution,
-  active agent indicator (pulse animation), collapsible tool panels.
-  Auto-scroll via IntersectionObserver is already implemented.
-- **Tool files GrepCode/GlobFiles os.walk:** remaining sync I/O in async
-  execute methods — low impact, directory operations are typically fast.
-- **vec0 dual-write / ChromaDB→sqlite-vec cutover:** `chunks_vec`/`report_chunks`
-  tables are created in schema but never populated; ChromaDB is the sole active
-  dense store. Migration cutover deferred.
-- **chat-store AGENT_LABELS from /api/agents:** F1 fix intentionally hardcoded
-  the labels (runtime crash fix); revisit when agent set changes.
-- **CI test workflow:** `publish.yml` publishes on tag without running tests.
-- **Phases 4-8 specs:** documentation specs deferred; implementation
-  notes in AGENTS.md and commit history.
+- **P3 (Chat UX enhancements):** active agent indicator (pulse animation) and
+  collapsible tool panels implemented in 0.0.7. Browser-tab favicon/title
+  updates during tool execution remain out of scope (user decision).
+  Auto-scroll via IntersectionObserver was already implemented.
+
+(Items previously listed here — GrepCode/GlobFiles async, vec0/ChromaDB
+cutover, AGENT_LABELS from /api/agents, CI test workflow, Phases 4-8 specs —
+were implemented in 0.0.7 per `docs/specs/0.0.7-0.0.8-bringforward.md`.)
 
 ## DB Schema Versioning Rule
 
@@ -317,8 +347,8 @@ format stabilizes. Until then, any agent touching `database.py` must:
 
 ## Memory / OOM prevention (WSL)
 
-The process may use ~7 GB RSS under load (BGE-M3 ONNX model, ChromaDB
-HNSW index, multi-web_researcher). On machines with ≤8 GB RAM, **add a
+The process may use ~7 GB RSS under load (BGE-M3 ONNX model,
+multi-web_researcher). On machines with ≤8 GB RAM, **add a
 4 GB swap file** to give the kernel headroom instead of OOM-killing:
 ```bash
 sudo fallocate -l 4G /swapfile
