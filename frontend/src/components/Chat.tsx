@@ -32,11 +32,20 @@ export default function Chat(props: { viewportId?: string }) {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) setAutoScroll(true)
+        else setAutoScroll(false)
       },
       { threshold: 0.1, root: scrollRef },
     )
     observer.observe(anchorRef)
     onCleanup(() => observer.disconnect())
+  })
+
+  createEffect(() => {
+    messages()
+    streamingContent()
+    if (autoScroll()) {
+      scrollRef.scrollTop = scrollRef.scrollHeight
+    }
   })
 
   createEffect(() => {
@@ -155,13 +164,17 @@ export default function Chat(props: { viewportId?: string }) {
               <For each={Object.entries(currentToolStatus())}>
                 {([agent, status]) => {
                   const isAnimated = status.endsWith("...")
+                  const isError = /error|fail/i.test(status)
+                  const squareClass = isError
+                    ? "inline-block w-2 h-2 border border-[#e74c3c] bg-[#0d0d0d] transition-colors duration-200"
+                    : isAnimated
+                      ? "inline-block w-2 h-2 border border-[#555] bg-[#0d0d0d] transition-colors duration-200"
+                      : "inline-block w-2 h-2 border border-[#555] bg-[#cccccc] transition-colors duration-200"
                   const cleanStatus = isAnimated ? status.replace(/\.\.\.$/, "") : status
                   const favicons = currentFavicons()[agent] ?? []
                   return (
                     <div class="flex items-center gap-1.5">
-                      <Show when={isAnimated}>
-                        <span class="inline-block w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                      </Show>
+                      <span class={squareClass} />
                       <span class="inline-block min-w-[220px]" classList={{ "animate-dots": isAnimated }}>{agent}: {cleanStatus}</span>
                       <For each={favicons}>
                         {src => <img src={src} class="w-3.5 h-3.5 animate-fade-in" alt="" />}
