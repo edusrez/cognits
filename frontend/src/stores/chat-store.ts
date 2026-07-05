@@ -43,12 +43,14 @@ let pendingBuffer = ""
 let rafId: number | null = null
 let lastDrainTime = 0
 let inactiveDrainActive = false
+let doneDeferred = false
 
 function drainFrame() {
   rafId = null
   if (!pendingBuffer) {
-    if (inactiveDrainActive) {
+    if (inactiveDrainActive || doneDeferred) {
       inactiveDrainActive = false
+      doneDeferred = false
       const content = streamingContent()
       batch(() => {
         if (content) {
@@ -84,6 +86,7 @@ function startDrain() {
 function stopDrain() {
   lastDrainTime = 0
   inactiveDrainActive = false
+  doneDeferred = false
   if (rafId !== null) {
     cancelAnimationFrame(rafId)
     rafId = null
@@ -316,6 +319,10 @@ function createCallbacks(): StreamCallbacks {
 
     onDone() {
       if (inactiveDrainActive) return
+      if (pendingBuffer) {
+        doneDeferred = true
+        return
+      }
       flushAll()
       const content = streamingContent()
       if (content) {
