@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from cognits.constants import MAX_NAME_LENGTH
-from cognits.server.exceptions import CognitsError, StorageError
+from cognits.server.exceptions import CognitsError, NotFoundError, StorageError
 
 
 
@@ -63,7 +63,7 @@ def register(app: FastAPI, st) -> None:
         except Exception as e:
             raise StorageError(str(e))
         if note is None:
-            raise CognitsError("note not found", "ERROR", 404)
+            raise NotFoundError("note not found")
         return JSONResponse(note.to_json())
 
     @app.put("/api/notes/{note_id}")

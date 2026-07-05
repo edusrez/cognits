@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import json
 import logging
+import secrets
 from collections.abc import Callable
 
 from cognits.agent.agent import Agent, AgentConfig, Emit
@@ -244,7 +246,7 @@ class DeploySubagent(Tool):
             saved = subagent.last_messages
             if saved and saved[0].role == "system":
                 saved = saved[1:]
-            new_resume_token = "resume_" + __import__("secrets").token_hex(8)
+            new_resume_token = "resume_" + secrets.token_hex(8)
             self.suspended_subagents[new_resume_token] = saved
 
         report = Report(
@@ -288,7 +290,7 @@ class DeploySubagent(Tool):
                         n = await self.rag_engine.index(chunks)
                         log.info("deploy: indexed %d chunks for report %s", n, report_id)
                         del chunks
-                        import gc; gc.collect()
+                        gc.collect()
                     except asyncio.CancelledError:
                         raise
                     except Exception as e:

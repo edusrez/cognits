@@ -1,6 +1,7 @@
 /** Skills tree component — renders the DAG with mastery badges. */
 
 import { For, Show, createMemo } from "solid-js";
+import type { SkillNode } from "../stores/skills-store";
 import {
   tree,
   selectedSkillId,
@@ -15,7 +16,7 @@ export default function SkillsTree() {
 
   // Group skills by domain
   const domains = createMemo(() => {
-    const map: Record<string, typeof skills> = {};
+    const map: Record<string, SkillNode[]> = {};
     for (const s of skills()) {
       const d = s.domain || "general";
       if (!map[d]) map[d] = [];

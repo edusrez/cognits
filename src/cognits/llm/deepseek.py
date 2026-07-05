@@ -45,9 +45,6 @@ class DeepSeekClient:
                 max_keepalive_connections=HTTPX_MAX_KEEPALIVE,
             ),
         )
-        self._retries = 0
-        self._backoff = 1.0  # seconds, doubles per retry
-
     async def aclose(self) -> None:
         await self._client.aclose()
 
@@ -69,7 +66,7 @@ class DeepSeekClient:
         self, messages, tools, model, reasoning, on_chunk,
         max_tokens, temperature, top_p,
     ) -> None:
-        # The thinking API is binary: "high"/"max" → enabled. With tools, omit
+        # The thinking API: 'disabled' → off; 'enabled'/'max' → on. With tools, omit
         # the parameter (the API rejects that combination).
         body: dict = {
             "model": model,

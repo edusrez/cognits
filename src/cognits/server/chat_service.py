@@ -22,15 +22,13 @@ from cognits.agent.subagents import (
     evaluator_config,
     researcher_config,
     session_analyzer_config,
+    session_namer_config,
     skill_planner_config,
     study_planner_config,
     teacher_config,
 )
 from cognits.agent.tool_deploy import DeploySubagent
 from cognits.agent.tool_ui import ApplyProfile, CreateLearningSession, FinishSetup
-from cognits.agent.agent import Agent, AgentConfig
-from cognits.agent.subagents import session_namer_config
-from cognits.constants import DEFAULT_FLASH_MODEL, MAX_SESSION_NAME_LENGTH, SESSION_NAMER_MAX_TOKENS, SESSION_NAMER_TEMPERATURE
 from cognits.llm.types import ROLE_SYSTEM, ROLE_USER
 from cognits.constants import (
     COMPACTION_PRESERVE_TURNS,
@@ -38,11 +36,14 @@ from cognits.constants import (
     DEFAULT_FLASH_MODEL,
     DEFAULT_MODEL,
     EVALUATOR_MAX_STEPS,
+    MAX_SESSION_NAME_LENGTH,
     MODEL_CONTEXT_WINDOW,
     ORCHESTRATOR_MAX_STEPS,
     REFLECTION_MAX_ITERATIONS,
     REFLECTION_REVISION_MAX_STEPS,
     RESEARCHER_MAX_STEPS,
+    SESSION_NAMER_MAX_TOKENS,
+    SESSION_NAMER_TEMPERATURE,
     STUDY_PLANNER_DEFAULT_STEPS,
 )
 from cognits.llm.deepseek import DeepSeekClient

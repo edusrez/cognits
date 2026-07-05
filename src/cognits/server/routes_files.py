@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from cognits.paths import data_dir
-from cognits.server.util import text_error
+from cognits.server.exceptions import CognitsError, ConfigError, NotFoundError, StorageError
 
 # (category, language_hint) keyed by lowercase extension
 EXT_MAP: dict[str, tuple[str, str | None]] = {
@@ -169,17 +169,17 @@ def register(app: FastAPI, st) -> None:
     @app.get("/api/files/content")
     async def file_content(path: str = "", mode: str = "raw", force: str = ""):
         if not path:
-            return text_error("path is required", 400)
+            raise ConfigError("path is required")
         path = unquote(path)
 
         try:
             file_path = _resolve_file(path)
         except PermissionError:
-            return text_error("forbidden", 403)
+            raise CognitsError("forbidden", "FORBIDDEN", 403)
         except FileNotFoundError:
-            return text_error("file not found", 404)
+            raise NotFoundError("file not found")
         except IsADirectoryError:
-            return text_error("not a file", 400)
+            raise ConfigError("not a file")
 
         category, language = _classify(file_path)
         mime, _ = mimetypes.guess_type(str(file_path))
@@ -188,11 +188,11 @@ def register(app: FastAPI, st) -> None:
 
         if mode == "ai":
             if category == "image":
-                return text_error("AI mode not available for images", 400)
+                raise ConfigError("AI mode not available for images")
             if category == "pdf":
                 engine = st.docling_engine
                 if engine is None or engine.error:
-                    return text_error("PDF AI mode not available (Docling not loaded)", 503)
+                    raise CognitsError("PDF AI mode not available (Docling not loaded)", "SERVICE_UNAVAILABLE", 503)
                 try:
                     cfg = st.cached_config.docling_config
                     content = await asyncio.to_thread(
@@ -200,7 +200,7 @@ def register(app: FastAPI, st) -> None:
                         force=force == "true"
                     )
                 except Exception as e:
-                    return text_error(f"conversion failed: {e}", 500)
+                    raise StorageError(f"conversion failed: {e}")
                 return JSONResponse({
                     "path": str(file_path),
                     "category": "text",
@@ -220,7 +220,7 @@ def register(app: FastAPI, st) -> None:
             try:
                 raw = await asyncio.to_thread(file_path.read_bytes)
             except OSError as e:
-                return text_error(str(e), 500)
+                raise StorageError(str(e))
 
             truncated = len(raw) > MAX_TEXT_BYTES
             if truncated:
@@ -264,17 +264,17 @@ def register(app: FastAPI, st) -> None:
     @app.get("/api/files/raw")
     async def file_raw(path: str = ""):
         if not path:
-            return text_error("path is required", 400)
+            raise ConfigError("path is required")
         path = unquote(path)
 
         try:
             file_path = _resolve_file(path)
         except PermissionError:
-            return text_error("forbidden", 403)
+            raise CognitsError("forbidden", "FORBIDDEN", 403)
         except FileNotFoundError:
-            return text_error("file not found", 404)
+            raise NotFoundError("file not found")
         except IsADirectoryError:
-            return text_error("not a file", 400)
+            raise ConfigError("not a file")
 
         mime, _ = mimetypes.guess_type(str(file_path))
         content_type = mime or "application/octet-stream"

@@ -151,10 +151,10 @@ async def _run_409_test():
             pass
         assert sa.task.cancelled()
 
-        # Without API key → 401; without sessionId → 400.
+        # Without API key → 400 (ConfigError); without sessionId → 400.
         state.cached_config = Config()
         resp = await client.post("/api/chat?sessionId=s2", json={"messages": []})
-        assert resp.status_code == 401
+        assert resp.status_code == 400
         state.cached_config = Config(llm_api_key="k")
         resp = await client.post("/api/chat", json={"messages": []})
         assert resp.status_code == 400

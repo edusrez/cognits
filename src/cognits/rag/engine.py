@@ -1,11 +1,13 @@
-"""RAG in-process: fusion of the Flask sidecar (sidecar.py) and its Go client.
+"""RAG engine: dense vector search and hybrid retrieval.
 
-ChromaDB and fastembed are synchronous and heavy: they live in a
-ThreadPoolExecutor with ONE thread that serializes all access (like the
-Flask single-threaded sidecar) without blocking the event loop.
-Initialization (ONNX model load, ~5-15s; first time downloads ~2.3 GB)
-runs in that thread in the background: the server starts instantly and
-tools degrade with a clear error until ready is set.
+Architecture:
+- BGE-M3 ONNX inference via fastembed in a worker process (embed/query_embed
+  via Pipe RPC), keeping the event loop free.
+- ChromaDB PersistentClient with HNSW index for dense vector storage.
+- Hybrid search: dense (cosine) + FTS5 BM25 sparse → RRF fusion → optional
+  cross-encoder reranker (ms-marco-MiniLM-L-6-v2).
+- First-time model download (~2.3 GB) runs in a child process during startup;
+  the server starts instantly and tools degrade with a clear error until ready.
 """
 
 from __future__ import annotations
@@ -45,7 +47,6 @@ class RagEngine:
         self._warm_proc: multiprocessing.Process | None = None
         self._worker_proc: multiprocessing.Process | None = None
         self._worker_pipe: object | None = None
-        self._model = None
 
     @classmethod
     def start_background(cls) -> "RagEngine":
@@ -72,8 +73,6 @@ class RagEngine:
         graph optimisation (which holds the GIL for seconds) never blocks
         the parent's event loop.  The child has its own GIL."""
         try:
-            import chromadb
-            from chromadb.config import Settings
             from fastembed import TextEmbedding
             from fastembed.common.model_description import ModelSource, PoolingType
             from huggingface_hub import snapshot_download

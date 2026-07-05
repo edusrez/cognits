@@ -17,7 +17,7 @@ from cognits.constants import (
     TREE_MAX_ENTRIES,
     TREE_SKIP_DIRS,
 )
-from cognits.server.util import text_error
+from cognits.server.exceptions import ConfigError, StorageError
 from cognits.storage.models import SessionConfigRow
 from cognits.storage.files import write_file_atomic
 
@@ -93,21 +93,21 @@ def register(app: FastAPI, st) -> None:
     @app.get("/api/sessions/{session_id}/messages")
     async def get_messages(session_id: str):
         if st.db is None:
-            return text_error("db not available", 500)
+            raise StorageError("db not available")
         try:
             msgs = await asyncio.to_thread(st.messages.load, session_id)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
         return JSONResponse([m.to_json() for m in msgs])
 
     @app.get("/api/sessions/{session_id}/config")
     async def get_session_config(session_id: str):
         if st.db is None:
-            return text_error("db not available", 500)
+            raise StorageError("db not available")
         try:
             cfg = await asyncio.to_thread(st.session_config.load, session_id)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
         if cfg is None:
             cfg = SessionConfigRow(
                 session_id=session_id,
@@ -121,20 +121,20 @@ def register(app: FastAPI, st) -> None:
     @app.put("/api/sessions/{session_id}/config")
     async def put_session_config(session_id: str, request: Request):
         if st.db is None:
-            return text_error("db not available", 500)
+            raise StorageError("db not available")
         try:
             body = await request.json()
             if not isinstance(body, dict):
                 raise ValueError("body")
             cfg = SessionConfigRow.from_json(body)
         except (json.JSONDecodeError, ValueError, TypeError, UnicodeDecodeError):
-            return text_error("invalid body", 400)
+            raise ConfigError("invalid body")
         cfg.session_id = session_id
 
         try:
             await asyncio.to_thread(st.session_config.save, cfg)
         except Exception as e:
-            return text_error(str(e), 500)
+            raise StorageError(str(e))
         return Response(status_code=204)
 
     def desktop_path():
@@ -160,8 +160,7 @@ def register(app: FastAPI, st) -> None:
             if not isinstance(desktops, list) or not isinstance(active_index, int):
                 raise ValueError("shape")
         except (json.JSONDecodeError, ValueError, TypeError, UnicodeDecodeError):
-            return text_error("invalid body", 400)
-
+            raise ConfigError("invalid body")
         data = json.dumps(
             {"desktops": desktops, "activeIndex": active_index},
             indent=2,
@@ -176,6 +175,6 @@ def register(app: FastAPI, st) -> None:
             try:
                 await asyncio.to_thread(write_file_atomic, path, data)
             except OSError as e:
-                return text_error(str(e), 500)
+                raise StorageError(str(e))
 
         return Response(status_code=204)

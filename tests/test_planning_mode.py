@@ -156,5 +156,5 @@ def test_planning_mode_injects_skill_tree_context(tmp_path, monkeypatch):
             )
             # The chat should either return 202 (agent started) or, if
             # something blocks it, at least not 500.
-            assert res.status_code in (200, 202, 404, 503, 401), f"unexpected {res.status_code}"
+            assert res.status_code in (200, 202, 400, 404, 503, 401), f"unexpected {res.status_code}"
     asyncio.run(run())

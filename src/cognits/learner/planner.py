@@ -139,19 +139,6 @@ def compute_goal_distances(
     if goal_id is None:
         return {}
 
-    # Build reverse adjacency: prereq_id → [skill_id_that_depends_on_it]
-    reverse: dict[str, list[str]] = {}
-    for e in edges:
-        if e.edge_type == "prereq":
-            reverse.setdefault(e.skill_id, []).append(e.prereq_id)
-        # Invert: going backward means following skill_id → prereq_id.
-        # So we need prereq_id → [skill_ids that have it as prereq].
-        # Wait — BFS backward from goal: start at goal_id, follow
-        # incoming edges (skills whose skill_id IS the current node
-        # and the prereq_id IS the edge target). The prereq edge
-        # connects skill_id -> prereq_id.  Reversing means: from
-        # prereq_id, you can reach skill_id.
-    # Rebuild: from node X, what's reachable backwards?
     # Build adjacency from skill_id -> its direct prerequisites.
     adj: dict[str, list[str]] = {}
     for e in edges:

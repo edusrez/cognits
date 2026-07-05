@@ -51,11 +51,9 @@ ADVANCE_THRESHOLD = {
 
 
 class PedagogyEngine:
-    def __init__(self, skill_id: str):
-        self.skill_id = skill_id
+    def __init__(self):
         self.stage = Stage.ACTIVATE
         self.interactions = 0
-        self.initial_mastery: float | None = None
 
     def should_advance(self, p_mastery: float) -> bool:
         threshold = ADVANCE_THRESHOLD.get(self.stage)

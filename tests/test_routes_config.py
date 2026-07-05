@@ -27,7 +27,7 @@ def test_put_config_validation(real_state):
             resp = await client.put("/api/config", json={"maxSteps": -1})
             assert resp.status_code == 400
             data = resp.json()
-            assert data["error"] == "ERROR"
+            assert data["error"] == "CONFIG_ERROR"
     asyncio.run(go())
 
 

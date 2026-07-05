@@ -71,8 +71,8 @@ export interface SetupCompleteEvent {
 }
 
 export interface CreateLearningSessionEvent {
-  skillName: string;
-  skillId: string;
+  skill_name: string;
+  skill_id: string;
 }
 
 export interface DoneEvent {

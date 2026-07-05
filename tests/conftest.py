@@ -13,6 +13,11 @@ from cognits.storage.skills import SkillRepository
 from cognits.storage.study_plans import StudyPlanRepository
 
 
+@pytest.fixture(autouse=True)
+def _disable_rag_for_tests(monkeypatch):
+    monkeypatch.setenv("COGNITS_DISABLE_RAG", "1")
+
+
 @pytest.fixture
 def db(tmp_path):
     d = Database(tmp_path / "test.db")
@@ -70,6 +75,7 @@ def real_state(tmp_path, monkeypatch):
     from cognits.storage.database import Database
 
     state = AppState()
+    state.db.shutdown()
     db = Database(tmp_path / "test.db")
     state.db = db
     state.reports = ReportRepository(db)
@@ -80,7 +86,8 @@ def real_state(tmp_path, monkeypatch):
     state.study_plans = StudyPlanRepository(db)
     state.pedagogy = PedagogicalPlanRepository(db)
     state.session_config = SessionConfigRepository(db)
-    return state, create_app(state)
+    yield state, create_app(state)
+    db.shutdown()
 
 
 @pytest.fixture

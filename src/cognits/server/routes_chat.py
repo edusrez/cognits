@@ -16,22 +16,13 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 
-from cognits.agent.agent import Agent, AgentConfig
 from cognits.agent.prompts import DEFAULT_AGENT_ID, TEACHER_SYSTEM_PROMPT, default_agent_prompt
-from cognits.agent.subagents import session_namer_config
-from cognits.constants import (
-    DEFAULT_FLASH_MODEL,
-    DEFAULT_MODEL,
-    MAX_SESSION_NAME_LENGTH,
-    SESSION_NAMER_MAX_TOKENS,
-    SESSION_NAMER_TEMPERATURE,
-    ORCHESTRATOR_MAX_STEPS,
-    RESEARCHER_MAX_STEPS,
-)
+from cognits.constants import DEFAULT_MODEL
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import ROLE_SYSTEM, ROLE_USER, Message
+from cognits.server.exceptions import AgentBusy, ConfigError
 from cognits.server.session_agent import SessionAgent
-from cognits.server.util import MONTHS, WEEKDAYS, text_error
+from cognits.server.util import MONTHS, WEEKDAYS
 from cognits.storage.models import MessageRow
 from cognits.storage.files import Config, StudentProfile
 
@@ -276,9 +267,9 @@ def register(app: FastAPI, st) -> None:
     async def chat(request: Request):
         cfg = st.cached_config
         if cfg is None:
-            return text_error("config not available", 500)
+            raise ConfigError("config not available")
         if not cfg.llm_api_key:
-            return text_error("API key not configured", 401)
+            raise ConfigError("API key not configured")
 
         try:
             body = await request.json()
@@ -288,16 +279,17 @@ def register(app: FastAPI, st) -> None:
             if not isinstance(incoming, list):
                 raise ValueError("messages")
         except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
-            return text_error("invalid body", 400)
+            raise ConfigError("invalid body")
 
         sid = request.query_params.get("sessionId") or ""
         if not sid:
-            return text_error("sessionId required", 400)
+            raise ConfigError("sessionId required")
 
         # Config resolution: session → global → default.
         model = cfg.llm_model
         reasoning = cfg.llm_reasoning
         agent_id = cfg.llm_agent_id
+        sess_cfg = None
         if st.db is not None:
             try:
                 sess_cfg = await asyncio.to_thread(
@@ -364,7 +356,7 @@ def register(app: FastAPI, st) -> None:
 
         # 409 check + registration with no await in between: atomic on the loop.
         if sid in st.active_agents:
-            return text_error("agent already running", 409)
+            raise AgentBusy(sid)
         sa = SessionAgent(sid, storage_messages)
         st.active_agents[sid] = sa
         sa.task = asyncio.create_task(

@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from fastapi.responses import Response, StreamingResponse
 
 from cognits.server.session_agent import SessionAgent
-from cognits.server.util import text_error
+from cognits.server.exceptions import StorageError
 from cognits.constants import KEEPALIVE_SECONDS
 from cognits.storage.models import MessageRow
 
@@ -122,12 +122,12 @@ def register(app: FastAPI, st) -> None:
 
 async def _messages_snapshot(st, session_id: str) -> Response:
     if st.db is None:
-        return text_error("db not available", 500)
+        raise StorageError("db not available")
 
     try:
         rows = await asyncio.to_thread(st.messages.load, session_id)
     except Exception as e:
-        return text_error(str(e), 500)
+        raise StorageError(str(e))
 
     history = {"messages": [_message_dict(m) for m in rows]}
     body = f"event: history\ndata: {_dumps(history)}\n\nevent: done\ndata: {{}}\n\n"

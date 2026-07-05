@@ -110,7 +110,7 @@ class Agent:
                     emit({"type": "reasoning", "data": reasoning})
 
                 for tc in delta.get("tool_calls") or []:
-                    idx = tc.get("index") or 0
+                    idx = tc.get("index", 0)
                     acc = tool_accs.setdefault(
                         idx, {"id": "", "type": "", "name": "", "args": []}
                     )
