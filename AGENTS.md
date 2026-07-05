@@ -309,11 +309,32 @@ All API calls are same-origin relative `/api/*`. AGENT_LABELS loaded from `/api/
   ON CONFLICT DO UPDATE on report_chunks.
 - Worker respawns on `EOFError`/`BrokenPipeError` (OOM recovery).
 
+## Design System
+
+For ALL visual decisions — colors, typography, spacing, component styling,
+animation, and UI patterns — consult `DESIGN.md` at the repository root.
+DESIGN.md is the single source of truth for how Cognits looks and feels
+(Google Labs DESIGN.md spec; validate with `npx @google/design.md lint`).
+
+Key rules (full detail in DESIGN.md):
+- **Dark-first, monochrome.** No light mode. No chromatic accent (no blue,
+  no green-as-accent). Grays + functional red (error) / amber (warning) only.
+- **Tool status = bordered square + fill.** Running = empty square (gray
+  frame `#555`, black interior `#0d0d0d`); done = filled square (`#cccccc`);
+  error = red frame (`#e74c3c`). NO pulse, NO spinner — the fill transition
+  (200ms) IS the indicator. Pattern from the textual TUI (`tui.py` SPINNER).
+- **No shadows for elevation** (except context menus/dropdowns). Use the
+  surface ladder (background color contrast) + hairline borders.
+
 ## Design Patterns (frontend)
 - Store-driven reactivity via `createMemo` (never destructure store props).
 - Unified global context-menu signal (discriminated union).
 - `structuredClone(unwrap(store))` to clone SolidJS stores.
-- Token batching in chat-store (RAF-driven incremental draining, flushAll on tool boundaries).
+- Token batching in chat-store (deltaTime-based RAF draining at ~1200
+  chars/sec, flushAll on tool boundaries).
+- Autoscroll via `createEffect` (scroll-to-bottom when `autoScroll()` is
+  true) + bidirectional IntersectionObserver; CSS `overflow-anchor` as
+  supplementary.
 - Centralized `apiFetch()` wrapper in `lib/api.ts` (error normalization, JSON parsing).
 - SSE event types in `lib/sse-types.ts` (TypeScript contract mirroring backend wire format).
 - AGENT_LABELS loaded from `/api/agents` (single source of truth, no hardcoded labels).
