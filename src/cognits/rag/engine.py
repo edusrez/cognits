@@ -47,6 +47,10 @@ class RagEngine:
         self._warm_proc: multiprocessing.Process | None = None
         self._worker_proc: multiprocessing.Process | None = None
         self._worker_pipe: object | None = None
+        self._db = None
+
+    def set_db(self, db) -> None:
+        self._db = db
 
     @classmethod
     def start_background(cls) -> "RagEngine":
@@ -230,6 +234,8 @@ class RagEngine:
             if self.error:
                 raise RagNotReady(f"RAG engine not available: {self.error}")
             raise RagNotReady("RAG engine still loading, retry in a few seconds")
+        if self._db is None:
+            raise RagNotReady("vec0 database not wired")
 
     def _ensure_worker(self) -> object:
         if self._worker_pipe is not None:
@@ -261,7 +267,7 @@ class RagEngine:
 
     async def count(self) -> int:
         self._require_ready()
-        return await self._run(self._collection.count)
+        return await self._run(self._db.vector_count)
 
     async def search_hybrid(
         self, query: str, reports_repo=None, db=None,
@@ -319,45 +325,15 @@ class RagEngine:
 
     def _search_sync(self, query: str, max_results: int) -> list[dict]:
         query_embedding = self._worker_query_embed(query)
-        results = self._collection.query(
-            query_embeddings=[query_embedding],
-            n_results=max_results,
-            include=["documents", "metadatas", "distances"],
-        )
-
-        chunks = []
-        if results["ids"] and results["ids"][0]:
-            for i, doc_id in enumerate(results["ids"][0]):
-                meta = results["metadatas"][0][i] if results["metadatas"] else {}
-                chunks.append(
-                    {
-                        "id": doc_id,
-                        "text": results["documents"][0][i] if results["documents"] else "",
-                        "distance": results["distances"][0][i] if results["distances"] else 0.0,
-                        "report_id": meta.get("report_id", ""),
-                        "source_type": meta.get("source_type", ""),
-                        "topic": meta.get("topic", ""),
-                        "chunk_index": meta.get("chunk_index", 0),
-                    }
-                )
-        return chunks
+        return self._db.vector_search(query_embedding, max_results)
 
     def _index_sync(self, chunks: list[dict]) -> int:
         texts = [c["text"] for c in chunks]
-        ids = [c["id"] for c in chunks]
-        metadatas = [
-            {k: v for k, v in c.items() if k not in ("id", "text")} for c in chunks
-        ]
 
         embeddings = self._worker_embed(texts)
-        self._collection.upsert(
-            ids=ids,
-            embeddings=embeddings,
-            documents=texts,
-            metadatas=metadatas,
-        )
-        log.info("rag: indexed %d chunks (total: %d)", len(chunks), self._collection.count())
-        del embeddings, texts, ids, metadatas
+        self._db.vector_index(chunks, embeddings)
+        log.info("rag: indexed %d chunks (total: %d)", len(chunks), self._db.vector_count())
+        del embeddings, texts
         import gc; gc.collect()
         return len(chunks)
 

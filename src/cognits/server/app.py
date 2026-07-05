@@ -120,6 +120,8 @@ def create_app(state: AppState | None = None) -> FastAPI:
             from cognits.rag.engine import RagEngine
 
             state.rag = RagEngine.start_background()
+            if state.db is not None:
+                state.rag.set_db(state.db)
         if state.docling_engine is None and os.environ.get("COGNITS_DISABLE_RAG") != "1":
             from cognits.docling_engine import DoclingEngine
 
