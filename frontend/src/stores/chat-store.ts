@@ -16,19 +16,14 @@ export const [isStreaming, setIsStreaming] = createSignal(false)
 export const [isThinking, setIsThinking] = createSignal(false)
 export const [pendingLearningSession, setPendingLearningSession] = createSignal<{skill_name: string, skill_id: string} | null>(null)
 
-const AGENT_LABELS: Record<string, string> = {
-  web_researcher: "Web Researcher",
-  documentalist: "Documentalist",
-  session_namer: "Session Namer",
-  session_analyzer: "Session Analyzer",
-  directory_reader: "Directory Reader",
-  skill_planner: "Skill Planner",
-  study_planner: "Study Planner",
-  evaluator: "Evaluator",
-  maestro: "Teacher",
-  system_support: "System Support",
-  "": "Agent",
-}
+const [agentLabels, setAgentLabels] = createSignal<Record<string, string>>({"": "Agent"})
+
+fetch("/api/agents")
+  .then((r) => (r.ok ? r.json() : {}))
+  .then((labels: Record<string, string>) => {
+    if (labels && typeof labels === "object") setAgentLabels({ ...labels, "": "Agent" })
+  })
+  .catch(() => {})
 
 export const [toolStatus, setToolStatus] = createSignal<Record<string, string>>({})
 export const [toolFaviconsByAgent, setToolFaviconsByAgent] = createSignal<Record<string, string[]>>({})
@@ -208,7 +203,7 @@ function createCallbacks(): StreamCallbacks {
     },
 
     onToolProgress(data: any) {
-      const agent = AGENT_LABELS[data?.agent] ?? data?.agent ?? "Agent"
+      const agent = agentLabels()[data?.agent] ?? data?.agent ?? "Agent"
       const msg = data?.message || ""
       const favicons = data?.favicons
       if (msg) {

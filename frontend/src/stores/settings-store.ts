@@ -134,9 +134,14 @@ export const [defaultAgents, setDefaultAgents] = createSignal<AgentDef[]>([
 ])
 
 fetch("/api/agents")
-  .then((r) => (r.ok ? r.json() : []))
-  .then((list: AgentDef[]) => {
-    if (Array.isArray(list) && list.length > 0) setDefaultAgents(list)
+  .then((r) => (r.ok ? r.json() : {}))
+  .then((list) => {
+    if (list && typeof list === "object" && !Array.isArray(list)) {
+      const agents = Object.entries(list).map(([id, name]) => ({
+        id, name: String(name), systemPrompt: "",
+      }))
+      if (agents.length > 0) setDefaultAgents(agents)
+    }
   })
   .catch(() => {})
 
