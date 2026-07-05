@@ -119,3 +119,38 @@ async def test_max_tokens_temperature_sent(client):
         assert req_body["max_tokens"] == 100
         assert req_body["temperature"] == 0.7
         assert req_body["top_p"] == 0.9
+
+
+# --- multi-provider architecture tests ---
+
+from cognits.constants import (
+    MODEL_CONTEXT_WINDOW,
+    parse_model,
+    get_context_window,
+)
+
+
+def test_parse_model_with_provider():
+    assert parse_model("deepseek/deepseek-v4-pro") == ("deepseek", "deepseek-v4-pro")
+
+
+def test_parse_model_bare_id():
+    assert parse_model("deepseek-v4-pro") == ("deepseek", "deepseek-v4-pro")
+
+
+def test_deepseek_client_accepts_base_url():
+    client = DeepSeekClient("key", base_url="https://custom.url")
+    assert client.base_url == "https://custom.url"
+
+
+def test_deepseek_client_default_base_url():
+    client = DeepSeekClient("key")
+    assert client.base_url == LLM_BASE_URL
+
+
+def test_get_context_window_known_model():
+    assert get_context_window("deepseek-v4-pro") == 1_048_576
+
+
+def test_get_context_window_unknown_model_fallback():
+    assert get_context_window("unknown-model") == MODEL_CONTEXT_WINDOW

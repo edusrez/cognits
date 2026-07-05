@@ -33,8 +33,9 @@ class DeepSeekError(Exception):
 
 
 class DeepSeekClient:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, base_url: str = ""):
         self.api_key = api_key
+        self.base_url = base_url or LLM_BASE_URL
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(
                 connect=LLM_CONNECT_TIMEOUT, read=LLM_READ_TIMEOUT,
@@ -89,7 +90,7 @@ class DeepSeekClient:
         try:
             async with self._client.stream(
                 "POST",
-                LLM_BASE_URL,
+                self.base_url,
                 json=body,
                 headers={"Authorization": f"Bearer {self.api_key}"},
             ) as resp:

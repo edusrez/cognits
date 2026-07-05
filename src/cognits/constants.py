@@ -8,11 +8,39 @@ DEFAULT_MODEL = "deepseek-v4-pro"
 DEFAULT_FLASH_MODEL = "deepseek-v4-flash"
 DEFAULT_PROVIDER = "deepseek"
 
-# model_id -> (provider, context_window)
-MODEL_REGISTRY: dict[str, tuple[str, int]] = {
-    "deepseek-v4-pro": ("deepseek", 1_048_576),
-    "deepseek-v4-flash": ("deepseek", 1_048_576),
+# model_id -> provider capabilities
+MODEL_REGISTRY: dict[str, dict] = {
+    "deepseek-v4-pro": {
+        "provider": "deepseek",
+        "context_window": 1_048_576,
+        "supports_thinking": True,
+    },
+    "deepseek-v4-flash": {
+        "provider": "deepseek",
+        "context_window": 1_048_576,
+        "supports_thinking": True,
+    },
 }
+
+
+def parse_model(model_str: str) -> tuple[str, str]:
+    """Parse 'provider/model-id' or bare 'model-id' → (provider, model_id).
+
+    Bare IDs default to DEFAULT_PROVIDER.
+    """
+    if "/" in model_str:
+        provider, model_id = model_str.split("/", 1)
+        return provider, model_id
+    return DEFAULT_PROVIDER, model_str
+
+
+def get_context_window(model_str: str) -> int:
+    """Look up context window from MODEL_REGISTRY. Falls back to MODEL_CONTEXT_WINDOW."""
+    _, model_id = parse_model(model_str)
+    entry = MODEL_REGISTRY.get(model_id)
+    if entry and "context_window" in entry:
+        return entry["context_window"]
+    return MODEL_CONTEXT_WINDOW
 
 # --- Agent limits ---
 ORCHESTRATOR_MAX_STEPS = 999

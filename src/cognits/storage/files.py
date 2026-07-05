@@ -160,6 +160,7 @@ class Config:
     llm_api_key: str = ""
     llm_model: str = ""
     llm_reasoning: str = ""
+    providers: dict = field(default_factory=dict)
     agent_overrides: dict[str, str] = field(default_factory=dict)
     chat_font_size: int = 0
     note_font_size: int = 0
@@ -189,6 +190,7 @@ class Config:
             "llmApiKey": self.llm_api_key,
             "llmModel": self.llm_model,
             "llmReasoning": self.llm_reasoning,
+            "providers": self.providers,
             "agentOverrides": self.agent_overrides,
             "chatFontSize": self.chat_font_size,
             "noteFontSize": self.note_font_size,
@@ -220,6 +222,7 @@ class Config:
             llm_api_key=d.get("llmApiKey") or "",
             llm_model=d.get("llmModel") or "",
             llm_reasoning=d.get("llmReasoning") or "",
+            providers=d.get("providers") or {},
             agent_overrides=d.get("agentOverrides") or {},
             chat_font_size=int(d.get("chatFontSize", 0) or 0),
             note_font_size=int(d.get("noteFontSize", 0) or 0),

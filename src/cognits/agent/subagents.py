@@ -196,12 +196,12 @@ class FetchTool(Tool):
         return json.dumps(resp, ensure_ascii=False)
 
 
-def new_researcher_tools(tf_client: TinyfishClient, rag_engine=None, emit=None) -> Registry:
+def new_researcher_tools(tf_client: TinyfishClient, rag_engine=None, emit=None, reports=None) -> Registry:
     reg = Registry()
     reg.register(SearchTool(tf_client, emit=emit))
     reg.register(FetchTool(tf_client, emit=emit))
     if rag_engine is not None:
-        reg.register(RagSearch(rag_engine))
+        reg.register(RagSearch(rag_engine, reports_repo=reports))
     return reg
 
 
@@ -244,8 +244,8 @@ def documentalist_config(
 ) -> AgentConfig:
     from cognits.agent.tool_deploy import DeploySubagent
 
-    registry = new_researcher_tools(tf_client)
-    registry.register(RagSearch(rag_engine))
+    registry = new_researcher_tools(tf_client, reports=reports)
+    registry.register(RagSearch(rag_engine, reports_repo=reports))
 
     subagents = {
         "web_researcher": AgentConfig(
@@ -254,7 +254,7 @@ def documentalist_config(
             reasoning=reasoning,
             max_steps=max_steps,
             system_prompt=load_agent_prompt("web_researcher"),
-            tools=new_researcher_tools(tf_client, rag_engine),
+            tools=new_researcher_tools(tf_client, rag_engine, reports=reports),
         )
     }
 
@@ -317,7 +317,7 @@ def skill_planner_config(
 
     registry = Registry()
     if rag_engine is not None:
-        registry.register(RagSearch(rag_engine))
+        registry.register(RagSearch(rag_engine, reports_repo=reports))
     registry.register(
         SkillTreeSave(skills=skills, session_id=session_id, emit=tool_emit)
     )
@@ -330,7 +330,7 @@ def skill_planner_config(
             reasoning=reasoning,
             max_steps=researcher_max_steps,
             system_prompt=load_agent_prompt("web_researcher"),
-            tools=new_researcher_tools(tf_client, rag_engine),
+            tools=new_researcher_tools(tf_client, rag_engine, reports=reports),
         )
     }
 
@@ -402,7 +402,7 @@ def study_planner_config(
     )
     registry.register(SavePedagogicalPlan(skills=skills, pedagogy=pedagogy))
     if rag_engine is not None:
-        registry.register(RagSearch(rag_engine))
+        registry.register(RagSearch(rag_engine, reports_repo=reports))
 
     subagents: dict[str, AgentConfig] = {}
     if llm_client is not None and tf_client is not None:
@@ -413,7 +413,7 @@ def study_planner_config(
             reasoning=reasoning,
             max_steps=researcher_max_steps,
             system_prompt=load_agent_prompt("web_researcher"),
-            tools=new_researcher_tools(tf_client, rag_engine),
+            tools=new_researcher_tools(tf_client, rag_engine, reports=reports),
         )
 
     registry.register(
@@ -477,7 +477,7 @@ def evaluator_config(
 
     registry = Registry()
     if rag_engine is not None:
-        registry.register(RagSearch(rag_engine))
+        registry.register(RagSearch(rag_engine, reports_repo=reports))
     registry.register(UpdateMastery(learner_state=learner_state))
 
     researcher_max_steps = RESEARCHER_MAX_STEPS
@@ -488,7 +488,7 @@ def evaluator_config(
             reasoning=reasoning,
             max_steps=researcher_max_steps,
             system_prompt=load_agent_prompt("web_researcher"),
-            tools=new_researcher_tools(tf_client, rag_engine),
+            tools=new_researcher_tools(tf_client, rag_engine, reports=reports),
         )
     }
 

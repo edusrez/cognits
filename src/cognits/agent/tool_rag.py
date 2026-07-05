@@ -8,8 +8,9 @@ from cognits.tools import Tool, tool_error
 
 
 class RagSearch(Tool):
-    def __init__(self, rag_engine):
+    def __init__(self, rag_engine, reports_repo=None):
         self.rag = rag_engine
+        self.reports_repo = reports_repo
 
     name = "rag_search"
     description = (
@@ -38,7 +39,7 @@ class RagSearch(Tool):
             return tool_error(f"invalid args: {e}")
 
         try:
-            results = await self.rag.search(query, max_results)
+            results = await self.rag.search_hybrid(query, reports_repo=self.reports_repo, max_results=max_results)
         except Exception as e:
             return tool_error(f"rag search error: {e}")
 

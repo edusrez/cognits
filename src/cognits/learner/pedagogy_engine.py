@@ -72,5 +72,13 @@ class PedagogyEngine:
     def record_interaction(self):
         self.interactions += 1
 
+    def load_from_scaffolding_level(self, level: int) -> None:
+        idx = max(0, min(level - 1, len(STAGE_ORDER) - 1))
+        self.stage = STAGE_ORDER[idx]
+        self.interactions = 0
+
+    def to_scaffolding_level(self) -> int:
+        return STAGE_ORDER.index(self.stage) + 1
+
     def prompt_context(self) -> str:
         return f"You are currently in stage: {self.stage.value}. "

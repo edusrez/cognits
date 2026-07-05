@@ -11,20 +11,23 @@ from fastapi.responses import JSONResponse
 from cognits.constants import (
     DEFAULT_FLASH_MODEL,
     DEFAULT_MODEL,
+    DEFAULT_PROVIDER,
     LLM_BASE_URL,
     LLM_CONNECT_TIMEOUT,
     LLM_POOL_TIMEOUT,
     LLM_READ_TIMEOUT,
     LLM_WRITE_TIMEOUT,
     MAX_TOKENS_LIMIT,
+    MODEL_REGISTRY,
     ORCHESTRATOR_MAX_STEPS,
     VALID_REASONING,
+    parse_model,
 )
 from cognits.server.exceptions import ConfigError, StorageError
 from cognits.server.util import mask_key
 from cognits.storage.files import Config, StudentProfile
 
-VALID_MODELS = (DEFAULT_MODEL, DEFAULT_FLASH_MODEL)
+VALID_MODELS = tuple(MODEL_REGISTRY.keys())
 
 
 def _config_response(cfg: Config) -> dict:
@@ -60,10 +63,15 @@ def register(app: FastAPI, st) -> None:
         except (json.JSONDecodeError, ValueError, TypeError, UnicodeDecodeError):
             raise ConfigError("invalid body")
 
-        if cfg.llm_provider and cfg.llm_provider != "deepseek":
-            raise ConfigError("invalid provider")
-        if cfg.llm_model and cfg.llm_model not in VALID_MODELS:
-            raise ConfigError("invalid model")
+        if cfg.llm_provider:
+            _, model_id = parse_model(cfg.llm_model or DEFAULT_MODEL)
+            provider_from_model = MODEL_REGISTRY.get(model_id, {}).get("provider", "")
+            if cfg.llm_provider != provider_from_model and cfg.llm_provider != DEFAULT_PROVIDER:
+                raise ConfigError("invalid provider")
+        if cfg.llm_model:
+            _, model_id = parse_model(cfg.llm_model)
+            if model_id not in VALID_MODELS:
+                raise ConfigError("invalid model")
         if cfg.llm_reasoning and cfg.llm_reasoning not in VALID_REASONING:
             raise ConfigError("invalid reasoning value")
         if cfg.max_tokens and not (0 < cfg.max_tokens <= MAX_TOKENS_LIMIT):

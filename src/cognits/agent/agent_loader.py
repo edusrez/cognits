@@ -15,6 +15,7 @@ from pathlib import Path
 import yaml
 
 from cognits.agent.agent import AgentConfig
+from cognits.constants import parse_model
 
 AGENTS_DIR = Path(__file__).parent / "agents"
 
@@ -40,9 +41,12 @@ def load_agent_config(name: str) -> AgentConfig:
 
     fm, prompt = _parse_frontmatter(path)
 
+    raw_model = fm.get("model", "")
+    _, model_id = parse_model(raw_model) if raw_model else ("", "")
+
     return AgentConfig(
         name=fm.get("name", name),
-        model=fm.get("model", ""),
+        model=model_id,
         reasoning=fm.get("reasoning", "") or "",
         max_steps=fm.get("max_steps", 0),
         system_prompt=prompt,

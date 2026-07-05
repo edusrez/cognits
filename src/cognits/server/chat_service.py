@@ -37,7 +37,7 @@ from cognits.constants import (
     DEFAULT_MODEL,
     EVALUATOR_MAX_STEPS,
     MAX_SESSION_NAME_LENGTH,
-    MODEL_CONTEXT_WINDOW,
+    get_context_window,
     ORCHESTRATOR_MAX_STEPS,
     REFLECTION_MAX_ITERATIONS,
     REFLECTION_REVISION_MAX_STEPS,
@@ -61,6 +61,7 @@ async def _run_session_namer(
     cfg: Config,
     sid: str,
     incoming: list[dict],
+    tracer=None,
 ) -> None:
     """Fire-and-forget: generates a session name from the first user message."""
     logger = logging.getLogger("cognits.session_namer")
@@ -92,7 +93,7 @@ async def _run_session_namer(
             temperature=SESSION_NAMER_TEMPERATURE,
         )
         llm_client = DeepSeekClient(cfg.llm_api_key)
-        ag = Agent(ag_cfg, llm_client)
+        ag = Agent(ag_cfg, llm_client, tracer=tracer)
 
         messages = [
             Message(role=ROLE_SYSTEM, content=context),
@@ -143,6 +144,7 @@ class ChatService:
         llm_messages: list[Message],
         incoming: list[dict],
         agent_id: str,
+        skill_id: str = "",
     ):
         self.st = st
         self.sa = sa
@@ -154,6 +156,7 @@ class ChatService:
         self.llm_messages = llm_messages
         self.incoming = incoming
         self.agent_id = agent_id
+        self.skill_id = skill_id
 
     async def run_agent(self) -> None:
         st = self.st
@@ -171,7 +174,7 @@ class ChatService:
         try:
             if sum(1 for m in self.incoming if m.get("role") == "user") == 1:
                 asyncio.create_task(
-                    _run_session_namer(st, sa, cfg, sid, self.incoming)
+                    _run_session_namer(st, sa, cfg, sid, self.incoming, tracer=tracer)
                 )
 
             if st.db is not None:
@@ -187,8 +190,22 @@ class ChatService:
             )
 
             registry = self._build_tool_registry(
-                process_event, subagent_map, cfg, sid, llm_client, tf_client
+                process_event, subagent_map, cfg, sid, llm_client, tf_client, tracer=tracer
             )
+
+            # --- pedagogy engine (maestro only, external stage management) ---
+            pedagogy_engine = None
+            if self.agent_id == "maestro" and self.skill_id:
+                from cognits.learner.pedagogy_engine import PedagogyEngine
+                try:
+                    ls = await asyncio.to_thread(st.learner_state.get, self.skill_id)
+                except Exception:
+                    ls = None
+                engine = PedagogyEngine()
+                if ls is not None and ls.scaffolding_level > 0:
+                    engine.load_from_scaffolding_level(ls.scaffolding_level)
+                self.system_prompt += "\n\n" + engine.prompt_context()
+                pedagogy_engine = engine
 
             max_steps = cfg.max_steps or ORCHESTRATOR_MAX_STEPS
             ag = Agent(
@@ -213,7 +230,7 @@ class ChatService:
                 from cognits.agent.token_counter import TokenCounter
                 counter = TokenCounter()
                 token_count = counter.count_messages(self.llm_messages)
-                if token_count > MODEL_CONTEXT_WINDOW * COMPACTION_TRIGGER:
+                if token_count > get_context_window(self.model) * COMPACTION_TRIGGER:
                     self.llm_messages = self._compact(self.llm_messages, counter, llm_client)
 
             try:
@@ -227,13 +244,39 @@ class ChatService:
                 # --- reflection loop (maestro only, pre-send quality gate) ---
                 if self.agent_id == "maestro" and acc["content"]:
                     await self._reflect(acc, process_event, subagent_map,
-                                        registry, llm_client, tf_client, sid)
+                                        registry, llm_client, tf_client, sid, tracer=tracer)
 
             except asyncio.CancelledError:
                 log.info("chat: agent run cancelled (session %s)", sid)
             except Exception as e:
                 log.error("chat: agent run (session %s): %s", sid, e)
                 sa.publish({"type": "error", "data": str(e)})
+
+            # --- post-run pedagogy transition ---
+            if pedagogy_engine is not None:
+                pedagogy_engine.record_interaction()
+                try:
+                    ls = await asyncio.to_thread(st.learner_state.get, self.skill_id)
+                except Exception:
+                    ls = None
+                p_mastery = ls.p_mastery if ls is not None else 0.0
+                if pedagogy_engine.should_advance(p_mastery):
+                    new_stage = pedagogy_engine.advance()
+                    if new_stage is not None:
+                        if ls is not None:
+                            ls.scaffolding_level = pedagogy_engine.to_scaffolding_level()
+                            try:
+                                await asyncio.to_thread(st.learner_state.upsert, ls)
+                            except Exception as e2:
+                                log.error("chat: pedagogy upsert (session %s): %s", sid, e2)
+                        sa.publish({
+                            "type": "ui_action",
+                            "data": {
+                                "action": "stage_advanced",
+                                "stage": new_stage.value,
+                            },
+                        })
+
         finally:
             asyncio.get_running_loop().create_task(tracer.flush())
             self._persist_partial(acc, sa, st, sid, llm_client, tf_client)
@@ -477,7 +520,7 @@ class ChatService:
         return subagent_map
 
     def _build_tool_registry(
-        self, process_event, subagent_map, cfg, sid, llm_client, tf_client
+        self, process_event, subagent_map, cfg, sid, llm_client, tf_client, tracer=None
     ) -> Registry:
         st = self.st
         registry = Registry()
@@ -490,6 +533,7 @@ class ChatService:
             rag_engine=st.rag_or_none,
             tinyfish_api_key=cfg.tinyfish_api_key,
             suspended_subagents=st.suspended_subagents,
+            tracer=tracer,
         )
         registry.register(deploy_subagent_tool)
         registry.register(CreateLearningSession(emit=process_event, skills=st.skills))
@@ -622,7 +666,7 @@ class ChatService:
         return result
 
     async def _reflect(self, acc, process_event, subagent_map, registry,
-                       llm_client, tf_client, sid):
+                       llm_client, tf_client, sid, tracer=None):
         """Pre-send reflection: deploy evaluator in critique_mode to review
         the teacher's draft against Socratic principles. If violations are
         found, feed the critique back to the teacher for revision. Cap 2
@@ -642,6 +686,7 @@ class ChatService:
                     rag_engine=None,
                     tinyfish_api_key=None,
                     suspended_subagents=self.st.suspended_subagents,
+                    tracer=tracer,
                 )
                 result = await deploy.execute(json.dumps({
                     "type": "evaluator",
@@ -695,7 +740,7 @@ class ChatService:
                 tools=registry,
                 subagents=subagent_map,
             )
-            ag = Agent(ag_cfg, llm_client)
+            ag = Agent(ag_cfg, llm_client, tracer=tracer)
 
             def _revise_emit(ev):
                 if ev.get("type") == "usage" and isinstance(ev.get("data"), dict):

@@ -233,7 +233,10 @@ class RagEngine:
 
     def _ensure_worker(self) -> object:
         if self._worker_pipe is not None:
-            return self._worker_pipe
+            if self._worker_proc is not None and self._worker_proc.is_alive():
+                return self._worker_pipe
+            # Worker died (OOM or crash) — respawn
+            self._worker_pipe = None
         from cognits.rag.embedding_worker import start_worker
         self._worker_proc, self._worker_pipe = start_worker()
         return self._worker_pipe
@@ -271,7 +274,9 @@ class RagEngine:
         sparse = []
         if reports_repo is not None:
             try:
-                fts_result = reports_repo.search_fts(1, max_results * 2, "score", query)
+                fts_result = await asyncio.to_thread(
+                    reports_repo.search_fts, 1, max_results * 2, "score", query
+                )
                 for r in fts_result.get("reports", []):
                     sparse.append({
                         "id": r.get("id", ""), "report_id": r.get("id", ""),
@@ -289,17 +294,25 @@ class RagEngine:
     # --- synchronous implementation (only on the executor thread) ---
 
     def _worker_embed(self, texts: list[str]) -> list[list[float]]:
-        pipe = self._ensure_worker()
-        pipe.send(("embed", texts))
-        status, result = pipe.recv()
+        try:
+            pipe = self._ensure_worker()
+            pipe.send(("embed", texts))
+            status, result = pipe.recv()
+        except (EOFError, BrokenPipeError, OSError):
+            self._worker_pipe = None  # force respawn on next call
+            raise RagNotReady("embedding worker died, respawning — retry in a moment")
         if status != "ok":
             raise RagNotReady(f"embedding worker error: {result}")
         return result
 
     def _worker_query_embed(self, query: str) -> list[float]:
-        pipe = self._ensure_worker()
-        pipe.send(("query_embed", query))
-        status, result = pipe.recv()
+        try:
+            pipe = self._ensure_worker()
+            pipe.send(("query_embed", query))
+            status, result = pipe.recv()
+        except (EOFError, BrokenPipeError, OSError):
+            self._worker_pipe = None  # force respawn on next call
+            raise RagNotReady("embedding worker died, respawning — retry in a moment")
         if status != "ok":
             raise RagNotReady(f"embedding worker error: {result}")
         return result
@@ -337,7 +350,7 @@ class RagEngine:
         ]
 
         embeddings = self._worker_embed(texts)
-        self._collection.add(
+        self._collection.upsert(
             ids=ids,
             embeddings=embeddings,
             documents=texts,

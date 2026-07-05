@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -98,6 +99,18 @@ class Agent:
                 if not choices:
                     if chunk.get("usage"):
                         emit({"type": "usage", "data": chunk["usage"]})
+                        usage = chunk["usage"]
+                        if isinstance(usage, dict):
+                            cache_hit = usage.get("prompt_cache_hit_tokens", 0)
+                            prompt_tokens = usage.get("prompt_tokens", 0)
+                            cache_miss = max(prompt_tokens - cache_hit, 0)
+                            self.tracer.emit(
+                                span_id=f"i{iteration}", parent_id="root",
+                                agent_type=cfg.name, event="usage",
+                                tokens_in=prompt_tokens,
+                                tokens_out=usage.get("completion_tokens", 0),
+                                cache_hit=cache_hit, cache_miss=cache_miss,
+                            )
                     return
                 delta = choices[0].get("delta") or {}
 
@@ -127,6 +140,23 @@ class Agent:
                     finish_reason = choices[0]["finish_reason"]
                 if chunk.get("usage"):
                     emit({"type": "usage", "data": chunk["usage"]})
+                    usage = chunk["usage"]
+                    if isinstance(usage, dict):
+                        cache_hit = usage.get("prompt_cache_hit_tokens", 0)
+                        prompt_tokens = usage.get("prompt_tokens", 0)
+                        cache_miss = max(prompt_tokens - cache_hit, 0)
+                        self.tracer.emit(
+                            span_id=f"i{iteration}", parent_id="root",
+                            agent_type=cfg.name, event="usage",
+                            tokens_in=prompt_tokens,
+                            tokens_out=usage.get("completion_tokens", 0),
+                            cache_hit=cache_hit, cache_miss=cache_miss,
+                        )
+
+            self.tracer.emit(
+                span_id=f"i{iteration}", parent_id="root",
+                agent_type=cfg.name, event="llm_start", model=cfg.model,
+            )
 
             try:
                 await self.llm.chat_completion_stream(
@@ -146,6 +176,11 @@ class Agent:
                 if content:
                     messages.append(Message(role=ROLE_ASSISTANT, content=content))
                 self.last_messages = messages
+                self.tracer.emit(
+                    span_id=f"i{iteration}", parent_id="root",
+                    agent_type=cfg.name, event="finish",
+                    tokens_out=len(content),
+                )
                 return content
 
             tool_calls = [
@@ -163,6 +198,7 @@ class Agent:
                 )
 
             async def _exec_tool(tc: ToolCall) -> str:
+                t0 = time.time()
                 tool = cfg.tools.get(tc.name) if cfg.tools is not None else None
                 if tool is None:
                     raise AgentError(f"agent: unknown tool: {tc.name}")
@@ -172,6 +208,10 @@ class Agent:
                         "type": "tool_start",
                         "data": {"tool": tc.name, "args": tc.arguments, "id": tc.id, "agent": cfg.name},
                     }
+                )
+                self.tracer.emit(
+                    span_id=f"i{iteration}", parent_id="root",
+                    agent_type=cfg.name, event="tool_start", tool_name=tc.name,
                 )
 
                 sem = _deploy_sem if tc.name == "deploy_subagent" else _tool_sem
@@ -186,6 +226,12 @@ class Agent:
                         result = json.dumps({"error": str(e)}, ensure_ascii=False)
 
                 emit({"type": "tool_end", "data": {"tool": tc.name, "id": tc.id}})
+                duration = (time.time() - t0) * 1000
+                self.tracer.emit(
+                    span_id=f"i{iteration}", parent_id="root",
+                    agent_type=cfg.name, event="tool_end", tool_name=tc.name,
+                    duration_ms=round(duration, 1),
+                )
                 return result
 
             results = await asyncio.gather(*(_exec_tool(tc) for tc in tool_calls))
@@ -197,4 +243,8 @@ class Agent:
 
             iteration += 1
 
+        self.tracer.emit(
+            span_id=f"i{iteration}", parent_id="root",
+            agent_type=cfg.name, event="error", error="max_steps_reached",
+        )
         raise AgentError(f"agent: max steps reached ({cfg.max_steps})")

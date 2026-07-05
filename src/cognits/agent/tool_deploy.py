@@ -65,6 +65,7 @@ class DeploySubagent(Tool):
         rag_engine=None,
         tinyfish_api_key: str = "",
         suspended_subagents: dict[str, list] | None = None,
+        tracer=None,
     ):
         self.llm_client = llm_client
         self.reports = reports
@@ -74,6 +75,7 @@ class DeploySubagent(Tool):
         self.rag_engine = rag_engine
         self.tinyfish_api_key = tinyfish_api_key
         self.suspended_subagents = suspended_subagents if suspended_subagents is not None else {}
+        self.tracer = tracer
 
     name = "deploy_subagent"
     description = (
@@ -154,7 +156,7 @@ class DeploySubagent(Tool):
         else:
             messages = [Message(role=ROLE_USER, content=query)]
 
-        subagent = Agent(cfg, self.llm_client)
+        subagent = Agent(cfg, self.llm_client, tracer=self.tracer)
 
         emitted_first = False
         deploy_count = 0

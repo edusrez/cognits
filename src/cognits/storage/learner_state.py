@@ -16,26 +16,27 @@ class LearnerStateRepository:
                 """INSERT INTO learner_state
                        (skill_id, alpha, beta, p_mastery, status_enum,
                         retrievability, stability, difficulty, reps, lapses,
-                        last_review, next_review)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        last_review, next_review, scaffolding_level)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(skill_id) DO UPDATE SET
-                       alpha         = excluded.alpha,
-                       beta          = excluded.beta,
-                       p_mastery     = excluded.p_mastery,
-                       status_enum   = excluded.status_enum,
-                       retrievability= excluded.retrievability,
-                       stability     = excluded.stability,
-                       difficulty    = excluded.difficulty,
-                       reps          = excluded.reps,
-                       lapses        = excluded.lapses,
-                       last_review   = excluded.last_review,
-                       next_review   = excluded.next_review,
-                       updated_at    = datetime('now')""",
+                       alpha             = excluded.alpha,
+                       beta              = excluded.beta,
+                       p_mastery         = excluded.p_mastery,
+                       status_enum       = excluded.status_enum,
+                       retrievability    = excluded.retrievability,
+                       stability         = excluded.stability,
+                       difficulty        = excluded.difficulty,
+                       reps              = excluded.reps,
+                       lapses            = excluded.lapses,
+                       last_review       = excluded.last_review,
+                       next_review       = excluded.next_review,
+                       scaffolding_level = excluded.scaffolding_level,
+                       updated_at        = datetime('now')""",
                 (
                     st.skill_id, st.alpha, st.beta, st.p_mastery, st.status_enum,
                     st.retrievability, st.stability, st.difficulty,
                     st.reps, st.lapses,
-                    st.last_review, st.next_review,
+                    st.last_review, st.next_review, st.scaffolding_level,
                 ),
             )
 
@@ -44,7 +45,7 @@ class LearnerStateRepository:
             row = self.db.conn.execute(
                 """SELECT skill_id, alpha, beta, p_mastery, status_enum,
                           retrievability, stability, difficulty, reps, lapses,
-                          last_review, next_review, updated_at
+                          last_review, next_review, scaffolding_level, updated_at
                    FROM learner_state WHERE skill_id = ?""",
                 (skill_id,),
             ).fetchone()
@@ -55,7 +56,8 @@ class LearnerStateRepository:
             status_enum=row[4],
             retrievability=row[5], stability=row[6], difficulty=row[7],
             reps=row[8], lapses=row[9],
-            last_review=row[10], next_review=row[11], updated_at=row[12],
+            last_review=row[10], next_review=row[11],
+            scaffolding_level=row[12], updated_at=row[13],
         )
 
     def get_all(self) -> dict[str, LearnerState]:
@@ -63,7 +65,7 @@ class LearnerStateRepository:
             rows = self.db.conn.execute(
                 "SELECT skill_id, alpha, beta, p_mastery, status_enum, "
                 "retrievability, stability, difficulty, reps, lapses, "
-                "last_review, next_review, updated_at FROM learner_state"
+                "last_review, next_review, scaffolding_level, updated_at FROM learner_state"
             ).fetchall()
         result: dict[str, LearnerState] = {}
         for row in rows:
@@ -73,6 +75,6 @@ class LearnerStateRepository:
                 retrievability=row[5], stability=row[6],
                 difficulty=row[7], reps=row[8], lapses=row[9],
                 last_review=row[10], next_review=row[11],
-                updated_at=row[12],
+                scaffolding_level=row[12], updated_at=row[13],
             )
         return result

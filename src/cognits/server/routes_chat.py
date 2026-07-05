@@ -17,7 +17,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request, Response
 
 from cognits.agent.prompts import DEFAULT_AGENT_ID, TEACHER_SYSTEM_PROMPT, default_agent_prompt
-from cognits.constants import DEFAULT_MODEL
+from cognits.constants import DEFAULT_MODEL, parse_model
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import ROLE_SYSTEM, ROLE_USER, Message
 from cognits.server.exceptions import AgentBusy, ConfigError
@@ -303,6 +303,8 @@ def register(app: FastAPI, st) -> None:
                 reasoning = sess_cfg.reasoning or reasoning
                 agent_id = sess_cfg.agent_id or agent_id
         model = model or DEFAULT_MODEL
+        # Parse provider/model-id format → bare model_id for the API.
+        _, model = parse_model(model)
         agent_id = agent_id or DEFAULT_AGENT_ID
         system_prompt = cfg.agent_overrides.get(agent_id) or default_agent_prompt(agent_id)
 
@@ -359,8 +361,9 @@ def register(app: FastAPI, st) -> None:
             raise AgentBusy(sid)
         sa = SessionAgent(sid, storage_messages)
         st.active_agents[sid] = sa
+        skill_id = sess_cfg.skill_id if sess_cfg else ""
         sa.task = asyncio.create_task(
-            _run_agent(st, sa, cfg, sid, model, reasoning, system_prompt, llm_messages, incoming, agent_id)
+            _run_agent(st, sa, cfg, sid, model, reasoning, system_prompt, llm_messages, incoming, agent_id, skill_id=skill_id)
         )
 
         return Response(status_code=202)
@@ -386,11 +389,12 @@ async def _run_agent(
     llm_messages: list[Message],
     incoming: list[dict],
     agent_id: str,
+    skill_id: str = "",
 ) -> None:
     from cognits.server.chat_service import ChatService
 
     svc = ChatService(
         st, sa, cfg, sid, model, reasoning, system_prompt,
-        llm_messages, incoming, agent_id,
+        llm_messages, incoming, agent_id, skill_id=skill_id,
     )
     await svc.run_agent()
