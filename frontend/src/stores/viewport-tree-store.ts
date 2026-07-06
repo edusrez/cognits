@@ -140,6 +140,7 @@ export function createDefaultTree(n: string) {
       tabs: [
         { id: "files", label: "Files", hidden: false },
         { id: "sessions", label: "Sessions", hidden: false },
+        { id: "skills", label: "Skills", hidden: false },
       ],
       activeTabId: "files",
     },

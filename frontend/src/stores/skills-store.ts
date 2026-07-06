@@ -40,12 +40,15 @@ export interface LearnerState {
 
 export const [selectedSkillId, setSelectedSkillId] = createSignal<string>("");
 
+export interface TreeData {
+  skills: SkillNode[]
+  edges: SkillEdge[]
+  treeVersion: number
+  states: Record<string, LearnerState>
+}
+
 export const [tree] = createResource(async () => {
-  const data = await apiFetch<{
-    skills: SkillNode[]
-    edges: SkillEdge[]
-    treeVersion: number
-  }>("/api/skills/tree");
+  const data = await apiFetch<TreeData>("/api/skills/tree");
   return data;
 });
 
@@ -57,6 +60,10 @@ export const [learnerState, { refetch: refetchState }] = createResource(
   },
 );
 
+export function masteryFor(skillId: string): number {
+  return tree()?.states?.[skillId]?.pMastery ?? 0;
+}
+
 export function getMasteryLabel(p: number): string {
   if (p >= 0.95) return "mastered";
   if (p >= 0.80) return "proficient";
@@ -66,9 +73,9 @@ export function getMasteryLabel(p: number): string {
 }
 
 export function getStatusColor(p: number): string {
-  if (p >= 0.95) return "#4ade80";  // green
-  if (p >= 0.80) return "#a3e635";  // lime
-  if (p >= 0.60) return "#facc15";  // yellow
-  if (p > 0) return "#fb923c";      // orange
-  return "#9ca3af";                 // gray
+  if (p >= 0.95) return "#cccccc";  // mastered — brightest
+  if (p >= 0.80) return "#a8a8a8";  // proficient
+  if (p >= 0.60) return "#7a7a7a";  // developing
+  if (p > 0) return "#555555";      // emerging
+  return "#2b2b2b";                 // not_seen — near-background
 }

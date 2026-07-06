@@ -1,4 +1,4 @@
-/** Skills tree component — renders the DAG with mastery badges. */
+/** Skills tree component — renders the DAG as a parent-tree with mastery indicators. */
 
 import { For, Show, createMemo } from "solid-js";
 import type { SkillNode } from "../stores/skills-store";
@@ -8,59 +8,85 @@ import {
   setSelectedSkillId,
   learnerState,
   getStatusColor,
+  masteryFor,
 } from "../stores/skills-store";
+
+interface FlatNode {
+  skill: SkillNode
+  depth: number
+}
 
 export default function SkillsTree() {
   const skills = createMemo(() => tree()?.skills || []);
-  const edges = createMemo(() => tree()?.edges || []);
 
-  // Group skills by domain
-  const domains = createMemo(() => {
-    const map: Record<string, SkillNode[]> = {};
-    for (const s of skills()) {
-      const d = s.domain || "general";
-      if (!map[d]) map[d] = [];
-      map[d].push(s);
+  // Build a parent-tree: roots have no parentSkillId; children matched by
+  // parentSkillId. Orphans (parentSkillId not in skill set) are rendered at
+  // root level. The result is flattened for <For> rendering with depth info.
+  const flatNodes = createMemo(() => {
+    const all = skills();
+    const skillMap = new Map<string, SkillNode>();
+    for (const s of all) skillMap.set(s.id, s);
+
+    // Group children by parent
+    const childrenMap = new Map<string, SkillNode[]>();
+    const roots: SkillNode[] = [];
+
+    for (const s of all) {
+      const pid = s.parentSkillId;
+      if (!pid || !skillMap.has(pid)) {
+        roots.push(s);
+      } else {
+        if (!childrenMap.has(pid)) childrenMap.set(pid, []);
+        childrenMap.get(pid)!.push(s);
+      }
     }
-    return map;
+
+    // Sort children by name for stability
+    for (const [, kids] of childrenMap) {
+      kids.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    roots.sort((a, b) => a.name.localeCompare(b.name));
+
+    // Flatten via BFS preserving parent-child order
+    const result: FlatNode[] = [];
+    function walk(list: SkillNode[], depth: number) {
+      for (const s of list) {
+        result.push({ skill: s, depth });
+        walk(childrenMap.get(s.id) || [], depth + 1);
+      }
+    }
+    walk(roots, 0);
+    return result;
   });
 
   return (
     <div class="p-4 text-sm overflow-auto h-full">
       <h2 class="text-lg font-bold mb-4">Skills Tree</h2>
-      <For each={Object.entries(domains())}>
-        {([domain, domainSkills]) => (
-          <div class="mb-4">
-            <h3 class="text-base font-semibold text-gray-300 mb-2 capitalize">
-              {domain}
-            </h3>
-            <div class="space-y-1">
-              <For each={domainSkills}>
-                {(skill) => (
-                  <button
-                    class="block w-full text-left px-3 py-2 rounded border border-gray-700 hover:border-gray-500 transition-colors text-xs"
-                    classList={{
-                      "border-[#888] bg-[#333]": selectedSkillId() === skill.id,
-                    }}
-                    onClick={() => setSelectedSkillId(skill.id)}
-                  >
-                    <div class="flex items-center justify-between">
-                      <span>{skill.name}</span>
-                      <span
-                        class="inline-block w-2.5 h-2.5 rounded-full"
-                        style={{ "background-color": getStatusColor(0) }}
-                      />
-                    </div>
-                    <Show when={skill.description}>
-                      <p class="text-gray-500 mt-0.5 truncate">{skill.description}</p>
-                    </Show>
-                  </button>
-                )}
-              </For>
-            </div>
-          </div>
-        )}
-      </For>
+      <div class="space-y-0.5">
+        <For each={flatNodes()}>
+          {(node) => (
+            <button
+              class="block w-full text-left px-3 py-1.5 rounded border border-gray-800 hover:border-gray-600 transition-colors text-xs"
+              style={{ "padding-left": `${8 + node.depth * 16}px` }}
+              classList={{
+                "border-[#888] bg-[#2a2a2a]": selectedSkillId() === node.skill.id,
+              }}
+              onClick={() => setSelectedSkillId(node.skill.id)}
+            >
+              <div class="flex items-center justify-between">
+                <span class="truncate">{node.skill.name}</span>
+                <span
+                  class="inline-block w-2.5 h-2.5 shrink-0 border border-gray-600"
+                  style={{ "background-color": getStatusColor(masteryFor(node.skill.id)) }}
+                />
+              </div>
+              <Show when={node.skill.description}>
+                <p class="text-gray-500 mt-0.5 truncate">{node.skill.description}</p>
+              </Show>
+            </button>
+          )}
+        </For>
+      </div>
 
       <Show when={selectedSkillId()}>
         <div class="mt-6 p-4 border border-gray-700 rounded bg-gray-900/50">

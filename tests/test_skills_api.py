@@ -202,3 +202,28 @@ def test_skills_list_returns_json_fields(tmp_path, monkeypatch):
             for k in ("id", "domain", "name", "status", "treeVersion", "bloomLevel", "difficulty"):
                 assert k in s, f"missing key {k}"
     asyncio.run(run())
+
+
+def test_skill_tree_includes_states_map(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    async def run():
+        dbase = Database(tmp_path / "db.db")
+        store = SkillRepository(dbase)
+        _seed(store, _skill("A"))
+        state = _state()
+        state.skills = store
+        state.learner_state = LearnerStateRepository(dbase)
+        app = create_app(state)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+            data = await _get(c, "/api/skills/tree")
+            assert "states" in data, "tree response missing 'states' map"
+            assert isinstance(data["states"], dict)
+            assert len(data["skills"]) == 1
+            skill_id = data["skills"][0]["id"]
+            assert skill_id in data["states"], "expected learner state for seeded skill"
+            ls = data["states"][skill_id]
+            assert ls["skillId"] == skill_id
+            assert ls["pMastery"] == 0.5
+            assert ls["statusEnum"] == "not_seen"
+    asyncio.run(run())

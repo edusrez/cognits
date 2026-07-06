@@ -41,6 +41,11 @@ def register(app: FastAPI, st) -> None:
         except Exception as e:
             raise StorageError(str(e))
 
+        try:
+            states = await asyncio.to_thread(st.learner_state.get_all)
+        except Exception:
+            states = {}
+        tree["states"] = {sid: ls.to_json() for sid, ls in states.items()}
         tree["treeVersion"] = tv
         return JSONResponse(tree)
 
