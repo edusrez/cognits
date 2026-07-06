@@ -14,6 +14,7 @@ import os
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from starlette.middleware import Middleware
 
 from cognits import paths
 from cognits.storage.database import Database
@@ -33,6 +34,25 @@ from cognits.constants import DEFAULT_PORT
 
 
 _DRAIN_TIMEOUT = float(os.environ.get("COGNITS_DRAIN_TIMEOUT", "5.0"))
+
+
+class _CancelSuppressMiddleware:
+    """Pure ASGI middleware: swallow asyncio.CancelledError so uvicorn doesn't
+    print a traceback when in-flight requests (e.g. SSE streams) are cancelled
+    during shutdown.  CancelledError is a BaseException (not Exception), so
+    Starlette/FastAPI exception handlers don't catch it — this does."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await self.app(scope, receive, send)
+        except asyncio.CancelledError:
+            # Shutdown in progress — the request was cancelled, not an error.
+            # Swallow it so uvicorn doesn't log a traceback.  Data persistence
+            # happens in the agent's finally block + db.shutdown(), not here.
+            pass
 
 
 class AppState:
@@ -139,7 +159,8 @@ def create_app(state: AppState | None = None) -> FastAPI:
         if state.docling_engine is not None:
             state.docling_engine.shutdown()
 
-    app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifespan)
+    app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifespan,
+                  middleware=[Middleware(_CancelSuppressMiddleware)])
     app.state.ctx = state
 
     from cognits.server.exceptions import CognitsError
