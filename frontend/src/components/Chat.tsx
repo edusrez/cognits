@@ -48,7 +48,7 @@ function ToolEntryRow(props: { entry: ToolEntry; depth: number; childrenMap: Map
             <Show when={props.entry.done && props.entry.title} fallback={
               <span class="text-[#6a6a6a]">: {props.entry.message!}</span>
             }>
-              <span class="text-[#9a9a9a]">: {props.entry.title}</span>
+              <span class="text-[#6a6a6a]">: {props.entry.title}</span>
             </Show>
           </Show>
         </span>

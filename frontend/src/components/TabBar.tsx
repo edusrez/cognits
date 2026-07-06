@@ -78,9 +78,9 @@ export default function TabBar(props: {
               {tab.id === "chat" ? (
                 <div class="grid grid-cols-[1fr_auto_1fr] items-center w-full gap-1 min-w-0">
                   <span class="truncate text-[10px] text-[#5a5a5a]">
-                    {currentToolEntries().map((entry: ToolEntry) => {
+                    {currentToolEntries().filter(e => !e.done).map((entry: ToolEntry) => {
                       const label = agentLabelFor(entry.agent)
-                      return `${label}: ${entry.message || (entry.done ? "done" : "running")}`
+                      return `${label}: ${entry.message || "running"}`
                     }).join(" | ") || (isThinking() ? "Thinking..." : isStreaming() ? "Writing..." : "Ready")}
                   </span>
                   <span class="text-[11px] whitespace-nowrap">{tab.label}</span>

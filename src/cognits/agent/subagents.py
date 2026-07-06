@@ -129,6 +129,7 @@ class SearchTool(Tool):
     }
 
     async def execute(self, raw_args: str) -> str:
+        emit = self.emit  # capture locally — race-safe against parallel rebinds
         try:
             args = json.loads(raw_args)
             query = args["query"]
@@ -146,8 +147,8 @@ class SearchTool(Tool):
             domain = _extract_domain(url)
             if domain:
                 favicons.append(_favicon_url(domain))
-        if favicons and self.emit is not None:
-            self.emit({"type": "tool_progress", "data": {"favicons": favicons}})
+        if favicons and emit is not None:
+            emit({"type": "tool_progress", "data": {"favicons": favicons}})
 
         return json.dumps(resp, ensure_ascii=False)
 
@@ -172,6 +173,7 @@ class FetchTool(Tool):
     }
 
     async def execute(self, raw_args: str) -> str:
+        emit = self.emit  # capture locally — race-safe against parallel rebinds
         try:
             args = json.loads(raw_args)
             urls = args["urls"][:3]
@@ -183,8 +185,8 @@ class FetchTool(Tool):
             domain = _extract_domain(u)
             if domain:
                 favicons.append(_favicon_url(domain))
-        if favicons and self.emit is not None:
-            self.emit({"type": "tool_progress", "data": {"favicons": favicons}})
+        if favicons and emit is not None:
+            emit({"type": "tool_progress", "data": {"favicons": favicons}})
 
         try:
             resp = await self.client.fetch_content(urls)

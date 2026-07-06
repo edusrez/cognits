@@ -81,6 +81,9 @@ class Agent:
 
     async def run(self, messages: list[Message], emit: Emit) -> str:
         cfg = self.cfg
+        self.emit = emit
+        if cfg.tools is not None:
+            cfg.tools.set_emit(emit)
         if cfg.system_prompt:
             messages = [Message(role=ROLE_SYSTEM, content=cfg.system_prompt)] + messages
 
@@ -203,6 +206,8 @@ class Agent:
                 tool = cfg.tools.get(tc.name) if cfg.tools is not None else None
                 if tool is None:
                     raise AgentError(f"agent: unknown tool: {tc.name}")
+                if hasattr(tool, 'emit'):
+                    tool.emit = emit
 
                 emit(
                     {
