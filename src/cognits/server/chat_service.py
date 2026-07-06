@@ -39,8 +39,6 @@ from cognits.constants import (
     MAX_SESSION_NAME_LENGTH,
     get_context_window,
     ORCHESTRATOR_MAX_STEPS,
-    REFLECTION_MAX_ITERATIONS,
-    REFLECTION_REVISION_MAX_STEPS,
     RESEARCHER_MAX_STEPS,
     SESSION_NAMER_MAX_TOKENS,
     SESSION_NAMER_TEMPERATURE,
@@ -236,6 +234,12 @@ class ChatService:
                 if token_count > get_context_window(self.model) * COMPACTION_TRIGGER:
                     self.llm_messages = self._compact(self.llm_messages, counter, llm_client)
 
+            # --- inject pending critique from prior turn (maestro only) ---
+            if self.agent_id == "maestro":
+                pending = st.pending_critiques.pop(sid, None)
+                if pending:
+                    self.llm_messages.append(Message(role="system", content=pending))
+
             try:
                 def _orchestrator_emit(ev: dict) -> None:
                     if ev.get("type") == "usage" and isinstance(ev.get("data"), dict):
@@ -244,10 +248,16 @@ class ChatService:
 
                 await ag.run(self.llm_messages, _orchestrator_emit)
 
-                # --- reflection loop (maestro only, pre-send quality gate) ---
-                if self.agent_id == "maestro" and acc["content"]:
-                    await self._reflect(acc, process_event, subagent_map,
-                                        registry, llm_client, tf_client, sid, tracer=tracer)
+                # --- background reflection (maestro only, post-send) ---
+                if self.agent_id == "maestro" and acc["content"] and getattr(cfg, "reflection_enabled", True):
+                    _draft = acc["content"]
+                    _subagent_map = subagent_map
+                    _llm_client = llm_client
+                    _sid = sid
+                    _tracer = tracer
+                    asyncio.create_task(self._reflect_async(
+                        _draft, _subagent_map, _llm_client, _sid, tracer=_tracer
+                    ))
 
             except asyncio.CancelledError:
                 log.info("chat: agent run cancelled (session %s)", sid)
@@ -688,91 +698,65 @@ class ChatService:
             result.insert(0, system_msg)
         return result
 
-    async def _reflect(self, acc, process_event, subagent_map, registry,
-                       llm_client, tf_client, sid, tracer=None):
-        """Pre-send reflection: deploy evaluator in critique_mode to review
-        the teacher's draft against Socratic principles. If violations are
-        found, feed the critique back to the teacher for revision. Cap 2
-        iterations with early exit on clean pass."""
+    async def _reflect_async(self, draft, subagent_map, llm_client, sid, tracer=None):
+        """Background post-send review: deploy evaluator once in critique mode.
+
+        Non-blocking — runs after the turn is delivered. If violations are
+        found, store the critique for the next maestro turn. No in-place
+        revision."""
         from cognits.agent.tool_deploy import DeploySubagent
 
-        for iteration in range(REFLECTION_MAX_ITERATIONS):
-            draft = acc["content"]
-            critique = None
-            try:
-                deploy = DeploySubagent(
-                    llm_client=llm_client,
-                    reports=self.st.reports,
-                    subagents={"evaluator": subagent_map.get("evaluator")},
-                    session_id=lambda: sid,
-                    emit=process_event,
-                    rag_engine=None,
-                    tinyfish_api_key=None,
-                    suspended_subagents=self.st.suspended_subagents,
-                    tracer=tracer,
-                )
-                result = await deploy.execute(json.dumps({
-                    "type": "evaluator",
-                    "query": json.dumps({
-                        "mode": "critique",
-                        "teacher_draft": draft,
-                    }),
-                }))
-                critique = json.loads(result)
-            except json.JSONDecodeError:
-                break
+        try:
+            evaluator_cfg = subagent_map.get("evaluator")
+            if evaluator_cfg is None:
+                return
 
-            if not critique or not isinstance(critique, dict):
-                break
+            def _noop_emit(ev: dict) -> None:
+                return  # turn is over; evaluator is invisible to the user
 
-            violations = critique.get("socratic_violations", [])
-            verdict = critique.get("verdict", "pass")
-
-            # Quality gate: pass with zero violations → deliver as-is
-            if verdict == "pass" and not violations:
-                break
-
-            # If this is the last iteration, deliver whatever we have
-            if iteration == REFLECTION_MAX_ITERATIONS - 1:
-                break
-
-            # Feed critique back to teacher as a system message
-            critique_text = json.dumps(critique, ensure_ascii=False, indent=2)
-            self.llm_messages.append(Message(
-                role="system",
-                content=(
-                    "CRITIQUE OF YOUR DRAFT (by independent evaluator):\n\n"
-                    f"{critique_text}\n\n"
-                    "Revise your response to address ALL flagged violations. "
-                    "Do NOT argue with the critique — it comes from an "
-                    "independent evaluator. Maintain your Socratic approach "
-                    "while fixing the issues listed above."
-                ),
-            ))
-
-            # Re-run the agent with the critique in context
-            ag_cfg = AgentConfig(
-                name=self.agent_id,
-                model=self.model,
-                reasoning=self.reasoning,
-                max_steps=REFLECTION_REVISION_MAX_STEPS,  # short run for revision
-                max_tokens=self.cfg.max_tokens or None,
-                temperature=self.cfg.temperature or None,
-                top_p=self.cfg.top_p or None,
-                system_prompt=self.system_prompt,
-                tools=registry,
-                subagents=subagent_map,
+            deploy = DeploySubagent(
+                llm_client=llm_client,
+                reports=self.st.reports,
+                subagents={"evaluator": evaluator_cfg},
+                session_id=lambda: sid,
+                emit=_noop_emit,
+                rag_engine=None,
+                tinyfish_api_key=None,
+                suspended_subagents=self.st.suspended_subagents,
+                tracer=tracer,
             )
-            ag = Agent(ag_cfg, llm_client, tracer=tracer)
+            result = await deploy.execute(json.dumps({
+                "type": "evaluator",
+                "query": json.dumps({
+                    "mode": "critique",
+                    "teacher_draft": draft,
+                }),
+            }))
+            critique = json.loads(result)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log.warning("reflect_async (session %s): evaluator failed: %s", sid, e)
+            return
 
-            def _revise_emit(ev):
-                if ev.get("type") == "usage" and isinstance(ev.get("data"), dict):
-                    ev["data"]["source"] = "orchestrator-reflection"
-                process_event(ev)
+        if not isinstance(critique, dict):
+            return
 
-            try:
-                await ag.run(self.llm_messages, _revise_emit)
-            except Exception:
-                break
+        violations = critique.get("socratic_violations", []) or []
+        verdict = critique.get("verdict", "pass")
+        if verdict == "pass" and not violations:
+            return  # clean — nothing to flag
+
+        critique_text = json.dumps(critique, ensure_ascii=False, indent=2)
+        feedback = (
+            "FEEDBACK FROM AN INDEPENDENT REVIEWER OF YOUR PRIOR RESPONSE:\n\n"
+            f"{critique_text}\n\n"
+            "The reviewer flagged the issues above in your LAST response. "
+            "In your NEXT response, address them while maintaining your "
+            "Socratic approach. Do NOT mention this feedback to the learner."
+        )
+        self.st.pending_critiques[sid] = feedback
+        log.info("reflect_async (session %s): flagged %d violation(s) for next turn",
+                 sid, len(violations) if isinstance(violations, list) else 0)
 
 

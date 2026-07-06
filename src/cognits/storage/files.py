@@ -182,6 +182,7 @@ class Config:
     top_p: float = 0.0
     max_steps: int = 0
     display_thinking: bool = True
+    reflection_enabled: bool = True
 
     def to_json(self) -> dict:
         return {
@@ -212,6 +213,7 @@ class Config:
             "topP": self.top_p,
             "maxSteps": self.max_steps,
             "displayThinking": self.display_thinking,
+            "reflectionEnabled": self.reflection_enabled,
         }
 
     @classmethod
@@ -247,6 +249,7 @@ class Config:
             top_p=float(d.get("topP", 0.0) or 0.0),
             max_steps=int(d.get("maxSteps", 0) or 0),
             display_thinking=bool(d.get("displayThinking", True)),
+            reflection_enabled=bool(d.get("reflectionEnabled", True)),
         )
 
 

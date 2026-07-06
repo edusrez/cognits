@@ -50,6 +50,7 @@ class AppState:
         self.cached_config: Config = Config()
         self.active_agents: dict[str, object] = {}
         self.suspended_subagents: dict[str, object] = {}
+        self.pending_critiques: dict[str, str] = {}
         self.desktop_lock = asyncio.Lock()
         self.rag = None
         self.docling_engine = None

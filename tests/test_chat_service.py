@@ -383,3 +383,241 @@ def test_stamp_tool_progress_helper():
     assert d3["parentId"] == "child"
     assert d3["parentAgent"] == "nested"
     assert "agent" not in d3  # wasn't present, wasn't added
+
+
+# --- async reflection tests -------------------------------------------
+
+
+class _MockDeploy:
+    """Mock DeploySubagent whose execute() returns a controlled JSON string."""
+    def __init__(self, result: str):
+        self._result = result
+        self.execute_called = False
+
+    async def execute(self, raw_args: str) -> str:
+        self.execute_called = True
+        self.last_args = raw_args
+        return self._result
+
+
+def _make_maestro_svc(state, session_agent, config):
+    """Helper: returns a ChatService for maestro agent."""
+    from cognits.server.chat_service import ChatService
+    return ChatService(
+        st=state, sa=session_agent, cfg=config, sid="s_reflect",
+        model="deepseek-v4-pro", reasoning="max",
+        system_prompt="You are a tutor.",
+        llm_messages=[Message(role="system", content="ctx"),
+                      Message(role="user", content="hi")],
+        incoming=[{"role": "user", "content": "hi"}],
+        agent_id="maestro",
+    )
+
+
+def test_reflect_async_clean_pass_no_store(real_state, session_agent, config, monkeypatch):
+    """A clean pass (verdict=pass, no violations) does NOT store anything."""
+    state, app = real_state
+    svc = _make_maestro_svc(state, session_agent, config)
+
+    # Mock DeploySubagent to return a clean critique
+    async def _fake_execute(self, raw_args):
+        return json.dumps({"verdict": "pass", "socratic_violations": []})
+
+    mock_deploy = type("_FakeDeploy", (), {"execute": _fake_execute, "__init__": lambda s, **kw: None})
+
+    monkeypatch.setattr("cognits.agent.tool_deploy.DeploySubagent", mock_deploy)
+
+    # Need a non-None evaluator config to avoid early exit in _reflect_async
+    dummy_eval_cfg = object()
+    asyncio.run(svc._reflect_async(
+        draft="response text", subagent_map={"evaluator": dummy_eval_cfg},
+        llm_client=None, sid="s_reflect",
+    ))
+
+    assert svc.sid not in state.pending_critiques
+
+
+def test_reflect_async_violations_store_feedback(real_state, session_agent, config, monkeypatch):
+    """Violations in critique → store feedback for next turn."""
+    state, app = real_state
+    svc = _make_maestro_svc(state, session_agent, config)
+
+    critique = {
+        "verdict": "fail",
+        "socratic_violations": [
+            {"principle": "Leading questions", "severity": "high", "excerpt": "Don't you think..."},
+        ],
+        "scaffolding_assessment": "Too much information at once",
+        "suggested_revision": "Ask what they already know first",
+        "confidence": 0.9,
+    }
+
+    async def _fake_execute(self, raw_args):
+        return json.dumps(critique)
+
+    mock_deploy = type("_FakeDeploy", (), {"execute": _fake_execute, "__init__": lambda s, **kw: None})
+
+    monkeypatch.setattr("cognits.agent.tool_deploy.DeploySubagent", mock_deploy)
+
+    asyncio.run(svc._reflect_async(
+        draft="response text", subagent_map={"evaluator": object()},
+        llm_client=None, sid="s_reflect",
+    ))
+
+    assert "s_reflect" in state.pending_critiques
+    feedback = state.pending_critiques["s_reflect"]
+    assert "FEEDBACK FROM AN INDEPENDENT REVIEWER" in feedback
+    assert "socratic_violations" in feedback
+    assert "verdict" in feedback
+
+
+def test_reflect_async_verdict_not_pass_stores(real_state, session_agent, config, monkeypatch):
+    """verdict != 'pass' with empty violations still stores."""
+    state, app = real_state
+    svc = _make_maestro_svc(state, session_agent, config)
+
+    critique = {"verdict": "fail", "socratic_violations": [], "confidence": 0.8}
+
+    async def _fake_execute(self, raw_args):
+        return json.dumps(critique)
+
+    mock_deploy = type("_FakeDeploy", (), {"execute": _fake_execute, "__init__": lambda s, **kw: None})
+
+    monkeypatch.setattr("cognits.agent.tool_deploy.DeploySubagent", mock_deploy)
+
+    asyncio.run(svc._reflect_async(
+        draft="text", subagent_map={"evaluator": object()},
+        llm_client=None, sid="s_reflect",
+    ))
+
+    assert "s_reflect" in state.pending_critiques
+
+
+def test_reflect_async_violations_only_stores(real_state, session_agent, config, monkeypatch):
+    """verdict=pass but with violations → still stores (violations take priority)."""
+    state, app = real_state
+    svc = _make_maestro_svc(state, session_agent, config)
+
+    critique = {
+        "verdict": "pass",
+        "socratic_violations": [{"principle": "Direct answer", "severity": "medium"}],
+    }
+
+    async def _fake_execute(self, raw_args):
+        return json.dumps(critique)
+
+    mock_deploy = type("_FakeDeploy", (), {"execute": _fake_execute, "__init__": lambda s, **kw: None})
+
+    monkeypatch.setattr("cognits.agent.tool_deploy.DeploySubagent", mock_deploy)
+
+    asyncio.run(svc._reflect_async(
+        draft="text", subagent_map={"evaluator": object()},
+        llm_client=None, sid="s_reflect",
+    ))
+
+    assert "s_reflect" in state.pending_critiques
+
+
+def test_reflect_async_no_evaluator_config_noop(real_state, session_agent, config, monkeypatch):
+    """If evaluator config is missing, _reflect_async returns without error."""
+    state, app = real_state
+    svc = _make_maestro_svc(state, session_agent, config)
+
+    asyncio.run(svc._reflect_async(
+        draft="text", subagent_map={},
+        llm_client=None, sid="s_reflect",
+    ))
+
+    assert "s_reflect" not in state.pending_critiques
+
+
+def test_reflect_async_exception_graceful(real_state, session_agent, config, monkeypatch):
+    """Evaluator failure is caught and logged, not raised."""
+    state, app = real_state
+    svc = _make_maestro_svc(state, session_agent, config)
+
+    class _CrashingMock:
+        def __init__(self, **kw):
+            pass
+        async def execute(self, raw_args):
+            raise RuntimeError("simulated evaluator crash")
+
+    monkeypatch.setattr("cognits.agent.tool_deploy.DeploySubagent", _CrashingMock)
+
+    asyncio.run(svc._reflect_async(
+        draft="text", subagent_map={"evaluator": object()},
+        llm_client=None, sid="s_reflect",
+    ))
+
+    assert "s_reflect" not in state.pending_critiques
+
+
+def test_pending_critique_injected_next_turn(real_state, session_agent, config):
+    """A pending critique in st.pending_critiques is popped and injected as
+    a system message at the start of the next maestro turn."""
+    state, app = real_state
+    svc = _make_maestro_svc(state, session_agent, config)
+
+    # Simulate a pending critique
+    feedback = "Previous response was too direct. Be more Socratic."
+    state.pending_critiques[svc.sid] = feedback
+
+    # Manually run the injection logic (same as in run_agent):
+    sid = svc.sid
+    pending = state.pending_critiques.pop(sid, None)
+    assert pending == feedback
+    svc.llm_messages.append(Message(role="system", content=pending))
+
+    # Verify the feedback was injected and removed
+    assert sid not in state.pending_critiques
+    assert any(
+        m.role == "system" and feedback in m.content
+        for m in svc.llm_messages
+    )
+
+
+def test_reflection_enabled_false_skips(real_state, session_agent):
+    """When reflection_enabled=False, the background task is NOT scheduled.
+    
+    We verify that getattr(cfg, 'reflection_enabled', True) returns False
+    when the config has reflection_enabled=False, which gates the task.
+    """
+    state, app = real_state
+    cfg = Config()
+    cfg.llm_api_key = "test-key"
+    cfg.tinyfish_api_key = "test-tf"
+    cfg.reflection_enabled = False
+
+    # The gate condition in run_agent:
+    # if self.agent_id == "maestro" and acc["content"] and getattr(cfg, "reflection_enabled", True):
+    agent_id = "maestro"
+    acc_content = "some response"
+    enabled = getattr(cfg, "reflection_enabled", True)
+    should_launch = (agent_id == "maestro" and bool(acc_content) and enabled)
+    assert not should_launch
+
+    # With default True
+    cfg.reflection_enabled = True
+    enabled = getattr(cfg, "reflection_enabled", True)
+    should_launch = (agent_id == "maestro" and bool(acc_content) and enabled)
+    assert should_launch
+
+
+def test_config_serialization_reflection_enabled():
+    """reflection_enabled serializes and deserializes properly."""
+    cfg = Config()
+    assert cfg.reflection_enabled is True
+
+    js = cfg.to_json()
+    assert js.get("reflectionEnabled") is True
+
+    cfg2 = Config.from_json(js)
+    assert cfg2.reflection_enabled is True
+
+    # With False
+    cfg.reflection_enabled = False
+    js = cfg.to_json()
+    assert js.get("reflectionEnabled") is False
+
+    cfg2 = Config.from_json(js)
+    assert cfg2.reflection_enabled is False
