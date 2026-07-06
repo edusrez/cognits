@@ -25,6 +25,7 @@ class AgentSnapshot:
     messages: list[MessageRow] = field(default_factory=list)
     tool_status: str = ""
     tool_favicons: list[str] = field(default_factory=list)
+    tool_log: list[dict] = field(default_factory=list)
     live_content: str = ""
     live_reasoning: str = ""
     live_reports: list[dict] = field(default_factory=list)
@@ -40,6 +41,7 @@ class SessionAgent:
         self.messages = messages
         self.tool_status = ""
         self.tool_favicons: list[str] = []
+        self.tool_log: list[dict] = []
         self.live_content = ""
         self.live_reasoning = ""
         self.live_reports: list[dict] = []
@@ -64,6 +66,7 @@ class SessionAgent:
             messages=list(self.messages),
             tool_status=self.tool_status,
             tool_favicons=list(self.tool_favicons),
+            tool_log=list(self.tool_log),
             live_content=self.live_content,
             live_reasoning=self.live_reasoning,
             live_reports=list(self.live_reports),

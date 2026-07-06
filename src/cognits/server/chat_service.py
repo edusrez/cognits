@@ -66,7 +66,7 @@ async def _run_session_namer(
     """Fire-and-forget: generates a session name from the first user message."""
     logger = logging.getLogger("cognits.session_namer")
     try:
-        user_msgs = [m for m in incoming if m.get("role") == "user"]
+        user_msgs = [m for m in incoming if m.get("role") in ("user", "hidden_user")]
         if not user_msgs:
             return
         first_msg = user_msgs[0].get("content", "").strip()
@@ -172,7 +172,10 @@ class ChatService:
         tf_client = TinyfishClient(cfg.tinyfish_api_key)
 
         try:
-            if sum(1 for m in self.incoming if m.get("role") == "user") == 1:
+            # Reset tool_log each run (SessionAgent may be reused across turns)
+            sa.tool_log = []
+
+            if sum(1 for m in self.incoming if m.get("role") in ("user", "hidden_user")) == 1:
                 asyncio.create_task(
                     _run_session_namer(st, sa, cfg, sid, self.incoming, tracer=tracer)
                 )
@@ -301,44 +304,49 @@ class ChatService:
                     acc["reasoning"] += data
                     sa.live_reasoning = acc["reasoning"]
             elif t == "tool_progress" and isinstance(data, dict):
-                msg = data.get("message")
-                favicons = data.get("favicons", [])
-                is_clearing = False
-                is_action = False
-                if isinstance(msg, str):
-                    if msg:
-                        agent = data.get("agent", "") if isinstance(data, dict) else ""
-                        data["agent"] = agent
-                        status = msg
-                        if msg.endswith("Thinking...") or msg.endswith("Writing..."):
-                            is_clearing = True
-                            data["favicons"] = []
-                            if len(sa.tool_favicons) == 0:
-                                data["message"] = status
-                                is_action = True
-                            else:
-                                data["message"] = sa.tool_status
+                eid = data.get("id")
+                agent = data.get("agent", "")
+                parent_id = data.get("parentId")
+                parent_agent = data.get("parentAgent")
+                message = data.get("message", "")
+                favicons = data.get("favicons")
+                if eid is not None:
+                    has_favicons_key = "favicons" in data
+                    def update():
+                        for entry in sa.tool_log:
+                            if entry["id"] == eid:
+                                if message:
+                                    entry["message"] = message
+                                if agent:
+                                    entry["agent"] = agent
+                                if parent_id is not None:
+                                    entry["parentId"] = parent_id
+                                if parent_agent is not None:
+                                    entry["parentAgent"] = parent_agent
+                                if has_favicons_key:
+                                    entry["favicons"] = list(favicons) if isinstance(favicons, list) else []
+                                break
                         else:
-                            data["message"] = status
-                            is_clearing = False
-                            is_action = True
-                    else:
-                        status = ""
-                        is_clearing = True
-                        data["favicons"] = []
-                        is_action = True
-                    has_favicons = favicons and isinstance(favicons, list)
+                            sa.tool_log.append({
+                                "id": eid,
+                                "agent": agent,
+                                "parentId": parent_id,
+                                "parentAgent": parent_agent,
+                                "message": message,
+                                "favicons": list(favicons) if isinstance(favicons, list) else [],
+                                "done": False,
+                            })
+                        if message:
+                            sa.tool_status = message
+                        if has_favicons_key:
+                            sa.tool_favicons = list(favicons) if isinstance(favicons, list) else []
+                else:
+                    has_favicons_key = "favicons" in data
                     def update():
-                        if is_action:
-                            sa.tool_status = status
-                        if is_clearing:
-                            sa.tool_favicons = []
-                        if has_favicons:
-                            sa.tool_favicons = list(favicons)
-                elif favicons and isinstance(favicons, list):
-                    def update():
-                        sa.tool_favicons = list(favicons)
-                    data["message"] = sa.tool_status
+                        if message and isinstance(message, str):
+                            sa.tool_status = message
+                        if has_favicons_key:
+                            sa.tool_favicons = list(favicons) if isinstance(favicons, list) else []
             elif t == "tool_start":
                 if acc["content"] or acc["reasoning"]:
                     partial = MessageRow(
@@ -361,12 +369,27 @@ class ChatService:
                                     pass
             elif t == "subagent_end":
                 def update():
-                    sa.tool_status = ""
-                    sa.tool_favicons = []
                     if isinstance(data, dict):
+                        eid = data.get("id")
+                        internal = bool(data.get("internal"))
                         rid = data.get("reportId")
                         rt = data.get("title")
-                        if isinstance(rid, str) and isinstance(rt, str):
+                        if eid is not None:
+                            for entry in sa.tool_log:
+                                if entry["id"] == eid:
+                                    entry["done"] = True
+                                    break
+                            else:
+                                sa.tool_log.append({
+                                    "id": eid,
+                                    "agent": data.get("agent", ""),
+                                    "parentId": data.get("parentId"),
+                                    "parentAgent": data.get("parentAgent"),
+                                    "message": "",
+                                    "favicons": [],
+                                    "done": True,
+                                })
+                        if not internal and isinstance(rid, str) and isinstance(rt, str):
                             sa.live_reports.append({"reportId": rid, "reportTitle": rt})
             sa.publish(ev, update)
         return process_event

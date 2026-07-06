@@ -85,6 +85,7 @@ def session_namer_config(
         top_p=top_p,
         system_prompt=load_agent_prompt("session_namer"),
         tools=None,
+        internal=True,
     )
 
 
@@ -108,6 +109,7 @@ def session_analyzer_config(
         top_p=top_p,
         system_prompt=load_agent_prompt("session_analyzer"),
         tools=None,
+        internal=True,
     )
 
 
@@ -516,6 +518,7 @@ def evaluator_config(
         system_prompt=system_prompt_override or load_agent_prompt("evaluator"),
         tools=registry,
         subagents=subagents,
+        internal=True,
     )
 
 

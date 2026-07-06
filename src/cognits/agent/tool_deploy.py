@@ -10,7 +10,7 @@ import secrets
 from collections.abc import Callable
 
 from cognits.agent.agent import Agent, AgentConfig, Emit
-from cognits.constants import AGENT_LABELS, DEFAULT_MODEL, REPORT_SUMMARY_MAX_CHARS, REPORT_TITLE_MAX_CHARS
+from cognits.constants import AGENT_LABELS, DEFAULT_MODEL, REPORT_SUMMARY_MAX_CHARS, REPORT_TITLE_MAX_CHARS, TOOL_PHRASES
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import ROLE_USER, Message
 from cognits.storage.models import Report, new_report_id
@@ -52,6 +52,25 @@ def extract_summary(content: str) -> str:
         if total > REPORT_SUMMARY_MAX_CHARS:
             break
     return "".join(parts).strip()
+
+
+def _stamp_tool_progress(data: dict, instance_id: str, name: str) -> None:
+    """Stamp tool_progress data so events are associated with this subagent.
+
+    - If no ``id``: direct tool emit (e.g. favicons from SearchTool/FetchTool)
+      → stamp ``id`` + ``agent`` so process_event can key into ``tool_log``.
+    - If ``id`` present but no ``parentId``: nested subagent event →
+      stamp ``parentId`` + ``parentAgent``.
+    - If both ``id`` and ``parentId`` already present: deeper-nested event,
+      pass through unchanged.
+    """
+    if "id" not in data:
+        data["id"] = instance_id
+        data["agent"] = name
+    elif "parentId" not in data:
+        data["parentId"] = instance_id
+        data["parentAgent"] = name
+    # else: deeper nested, already has id+parentId → pass through
 
 
 class DeploySubagent(Tool):
@@ -138,6 +157,7 @@ class DeploySubagent(Tool):
 
         sid = self.session_id() if self.session_id is not None else ""
         report_id = new_report_id()
+        self.instance_id = secrets.token_hex(8)
 
         resume_token = parsed.get("resume_token") or ""
         if resume_token and self.suspended_subagents:
@@ -170,12 +190,12 @@ class DeploySubagent(Tool):
             if t == "reasoning":
                 emitted_first = False
                 deploy_count = 0
-                self.emit({"type": "tool_progress", "data": {"message": "Thinking...", "agent": cfg.name}})
+                self.emit({"type": "tool_progress", "data": {"id": self.instance_id, "agent": cfg.name, "message": "Thinking..."}})
                 return
             if t == "token":
                 if not emitted_first:
                     emitted_first = True
-                    self.emit({"type": "tool_progress", "data": {"message": "Writing...", "agent": cfg.name}})
+                    self.emit({"type": "tool_progress", "data": {"id": self.instance_id, "agent": cfg.name, "message": "Writing..."}})
                 return
             if t == "tool_start":
                 emitted_first = False
@@ -191,29 +211,25 @@ class DeploySubagent(Tool):
                     label = AGENT_LABELS.get(sub_type, sub_type or "subagent")
                     suffix = f" (x{deploy_count})" if deploy_count > 1 else ""
                     msg = f"Deploying {label}{suffix}..."
-                    agent = data.get("agent", cfg.name) if isinstance(data, dict) else cfg.name
-                    self.emit({"type": "tool_progress", "data": {"message": msg, "agent": agent}})
+                    self.emit({"type": "tool_progress", "data": {"id": self.instance_id, "agent": cfg.name, "message": msg}})
                     return
-
                 deploy_count = 0
-                msg = "Searching the Web..."
-                if tool == "tinyfish_fetch_content":
-                    msg = "Reading Results..."
-                elif tool == "read_file":
-                    msg = "Reading file..."
-                elif tool == "list_dir":
-                    msg = "Listing directory..."
-                elif tool == "grep_code":
-                    msg = "Searching code..."
-                elif tool == "glob_files":
-                    msg = "Finding files..."
-                agent = data.get("agent", cfg.name) if isinstance(data, dict) else cfg.name
-                self.emit({"type": "tool_progress", "data": {"message": msg, "agent": agent}})
+                msg = TOOL_PHRASES.get(tool, "Working...")
+                self.emit({"type": "tool_progress", "data": {"id": self.instance_id, "agent": cfg.name, "message": msg}})
                 return
             if t == "tool_progress":
                 data = ev.get("data")
-                if isinstance(data, dict) and "agent" not in data:
-                    data["agent"] = cfg.name
+                if isinstance(data, dict):
+                    _stamp_tool_progress(data, self.instance_id, cfg.name)
+                self.emit(ev)
+                return
+            if t == "subagent_end":
+                data = ev.get("data")
+                if isinstance(data, dict):
+                    eid = data.get("id")
+                    if eid and "parentId" not in data:
+                        data["parentId"] = self.instance_id
+                        data["parentAgent"] = cfg.name
                 self.emit(ev)
                 return
             if ev.get("type") == "usage" and isinstance(ev.get("data"), dict):
@@ -233,7 +249,7 @@ class DeploySubagent(Tool):
             # Real failure: clear the status banner and return the error to the
             # orchestrator as a tool result, without creating a junk report.
             if self.emit is not None:
-                self.emit({"type": "tool_progress", "data": {"message": "", "agent": ""}})
+                self.emit({"type": "tool_progress", "data": {"id": self.instance_id, "agent": cfg.name, "message": ""}})
             return tool_error(f"subagent failed: {e}")
 
         title = extract_title(content, query)
@@ -271,7 +287,14 @@ class DeploySubagent(Tool):
                 self.emit(
                     {
                         "type": "subagent_end",
-                        "data": {"reportId": report_id, "title": title, "summary": summary},
+                        "data": {
+                            "id": self.instance_id,
+                            "agent": cfg.name,
+                            "internal": cfg.internal,
+                            "reportId": report_id,
+                            "title": title,
+                            "summary": summary,
+                        },
                     }
                 )
 

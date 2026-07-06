@@ -158,6 +158,27 @@ COMPACTION_PRESERVE_TURNS = 3     # keep last N user/assistant turns
 # --- Reflection loop ---
 REFLECTION_MAX_ITERATIONS = 2
 
+# --- Internal subagents (reports not surfaced in chat) ---
+INTERNAL_SUBAGENTS: frozenset = frozenset({"evaluator", "session_analyzer", "session_namer"})
+
+# --- Tool progress phrases ---
+TOOL_PHRASES: dict[str, str] = {
+    "tinyfish_search": "Searching the Web...",
+    "tinyfish_fetch_content": "Reading Results...",
+    "read_file": "Reading file...",
+    "list_dir": "Listing directory...",
+    "grep_code": "Searching code...",
+    "glob_files": "Finding files...",
+    "rag_search": "Searching knowledge base...",
+    "plan_study": "Planning study...",
+    "save_pedagogical_plan": "Preparing teaching plan...",
+    "skill_tree_save": "Building skill tree...",
+    "finish_setup": "Setting up...",
+    "update_mastery": "Updating mastery...",
+    "apply_profile": "Updating learner profile...",
+    "create_learning_session": "Starting learning session...",
+}
+
 # --- Agent persona display labels ---
 # Canonical mapping: persona ID → user-visible name.
 # Serves both the backend (tool_progress banners) and the frontend

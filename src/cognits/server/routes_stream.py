@@ -78,6 +78,7 @@ def register(app: FastAPI, st) -> None:
             "messages": [_message_dict(m) for m in snap.messages],
             "toolStatus": snap.tool_status,
             "toolFavicons": snap.tool_favicons,
+            "toolLog": snap.tool_log,
             "liveContent": snap.live_content,
             "liveReasoning": snap.live_reasoning,
             "liveReports": snap.live_reports,

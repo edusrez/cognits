@@ -72,6 +72,13 @@ def test_normal_path_saves_indexes_emits(tmp_path):
     assert report is not None
     assert report.content == "hello DONE"
     assert any(e["type"] == "subagent_end" for e in emits)
+    # Verify new subagent_end shape
+    se = next(e for e in emits if e["type"] == "subagent_end")
+    assert "id" in se["data"]
+    assert "agent" in se["data"]
+    assert "internal" in se["data"]
+    assert se["data"]["internal"] is False  # test_sub is not internal
+    assert se["data"]["reportId"] == data["reportId"]
 
 
 def test_cancel_during_save_shields_and_emits(tmp_path):

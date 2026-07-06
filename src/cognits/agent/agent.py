@@ -65,6 +65,7 @@ class AgentConfig:
     top_p: float | None = None
     critique_mode: bool = False
     tool_registry: str = ""
+    internal: bool = False
 
 
 class Agent:

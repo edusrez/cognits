@@ -76,6 +76,8 @@ async def _run_active_stream_test():
     assert history["messages"][0] == {
         "role": "user", "content": "hello", "reasoning": "",
     }
+    assert "toolLog" in history
+    assert isinstance(history["toolLog"], list)
 
     # Tokens without event name, OpenAI delta format.
     tokens = [f for f in frames if f[0] == ""]
