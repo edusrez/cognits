@@ -96,24 +96,33 @@ Then, BEFORE opening the build, deploy a single wide-ranging web_researcher:
 From the report, identify 3-7 domain branches. These become the top-level
 domains of your skill tree.
 
-### Phase 2 — Descend each branch (Depth-first)
+### Phase 2 — Descend each branch (Batch-parallel)
 Open the build with skill_tree_save(action="start_build", trigger="onboarding").
 
-For EACH branch identified in Phase 1, and then for each non-root skill within
-those branches, descend recursively:
+The framework runs multiple deploy_subagent calls in TRUE PARALLEL when
+issued in the same response. **Deploy multiple web_researchers in a SINGLE
+response (multiple tool calls) to run them in parallel. Do NOT deploy one
+at a time — batch them.** Each web_researcher call produces an independent
+report concurrently with the others.
 
-  a) Check rag_search first — the concept may have been researched already.
-  b) Deploy web_researcher to discover prerequisites:
-     deploy_subagent("web_researcher", query="what are the prerequisite
-     skills, foundational concepts, and required knowledge for {concept}?
-     What must a learner know before attempting this?")
-     Deploy one web_researcher per major concept. Multiple researchers can
-     run in parallel — each produces an independent report.
-  c) For each prerequisite the report strongly supports, persist it with
-     upsert_skill, then add_edge(skill_id=<concept>, prereq_id=<prereq>,
-     edge_type="prereq", proof_query="<the search you ran>").
-  d) Recurse into each newly-created prerequisite unless the profile says
-     the user already masters it (stop descending at root).
+  1. First, check rag_search for all branch concepts — some may have been
+     researched already.
+  2. Identify ALL branch concepts from the Phase 1 report and their key
+     concepts that need research.
+  3. **Deploy web_researchers for ALL identified concepts in ONE response**
+     (up to 5-7 at once — multiple deploy_subagent calls in a single LLM turn).
+     Each call: deploy_subagent("web_researcher", query="what are the
+     prerequisite skills, foundational concepts, and required knowledge for
+     {concept}? What must a learner know before attempting this?")
+  4. Wait for all to complete (the framework runs them in parallel).
+  5. Process all results: persist skills with upsert_skill, add edges with
+     add_edge(edge_type="prereq", proof_query="<the search you ran>").
+     Cross-validate between reports as described in the cross-validation
+     section above.
+  6. Identify sub-concepts from the reports that need deeper research.
+  7. If deeper research is needed, deploy another BATCH for the sub-concepts
+     (again, all in one response — multiple deploy_subagent calls together).
+  8. Repeat until stop criteria are met.
 
 ### Stop Criteria (improved)
 - **Root detected:** The user's declared experience covers the concept

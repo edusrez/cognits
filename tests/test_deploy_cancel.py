@@ -200,3 +200,43 @@ def test_subagent_run_cancelled_no_report(tmp_path):
     assert not any(e["type"] == "subagent_end" for e in emits)
     result = reports.search(1, 10, "created_at DESC", "")
     assert len(result["reports"]) == 0
+
+
+def test_concurrent_executes_produce_distinct_instance_ids(tmp_path):
+    """Two concurrent execute() calls on the SAME DeploySubagent must
+    emit events with DIFFERENT instance_id values (no shared-state race)."""
+    db = Database(tmp_path / "test.db")
+    reports = ReportRepository(db)
+
+    # Collect all emitted events with a thread-safe list.
+    all_emits: list[dict] = []
+    lock = threading.Lock()
+
+    deploy = _make_deploy(reports)
+    deploy.emit = lambda ev: (lock.acquire(), all_emits.append(ev), lock.release())
+
+    async def run(query: str):
+        return await deploy.execute(
+            json.dumps({"type": "test_sub", "query": query})
+        )
+
+    # Fire two concurrent calls.
+    async def concurrent():
+        return await asyncio.gather(run("hello-a"), run("hello-b"))
+
+    results = asyncio.run(concurrent())
+
+    assert len(results) == 2
+    # Both should produce reports.
+    assert json.loads(results[0])["content"] == "hello-a DONE"
+    assert json.loads(results[1])["content"] == "hello-b DONE"
+
+    # Extract the instance_id from each subagent_end event.
+    end_events = [e for e in all_emits if e["type"] == "subagent_end"]
+    assert len(end_events) == 2, "expected 2 subagent_end events"
+    id_a = end_events[0]["data"]["id"]
+    id_b = end_events[1]["data"]["id"]
+    assert id_a != id_b, (
+        f"concurrent deploys reused the same instance_id ({id_a}). "
+        f"instance_id must be a local variable, not self.instance_id."
+    )

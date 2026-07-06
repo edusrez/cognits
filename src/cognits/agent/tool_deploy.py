@@ -159,7 +159,8 @@ class DeploySubagent(Tool):
 
         sid = self.session_id() if self.session_id is not None else ""
         report_id = new_report_id()
-        self.instance_id = secrets.token_hex(8)
+        instance_id = secrets.token_hex(8)
+        self.instance_id = instance_id  # backward compat (closures MUST read local)
 
         resume_token = parsed.get("resume_token") or ""
         if resume_token and self.suspended_subagents:
@@ -211,16 +212,16 @@ class DeploySubagent(Tool):
                     label = AGENT_LABELS.get(sub_type, sub_type or "subagent")
                     suffix = f" #{deploy_count}" if deploy_count > 1 else ""
                     msg = f"Deploying {label}{suffix}..."
-                    self.emit({"type": "tool_progress", "data": {"id": self.instance_id, "agent": cfg.name, "message": msg}})
+                    self.emit({"type": "tool_progress", "data": {"id": instance_id, "agent": cfg.name, "message": msg}})
                     return
                 deploy_count = 0
                 msg = TOOL_PHRASES.get(tool, "Working...")
-                self.emit({"type": "tool_progress", "data": {"id": self.instance_id, "agent": cfg.name, "message": msg}})
+                self.emit({"type": "tool_progress", "data": {"id": instance_id, "agent": cfg.name, "message": msg}})
                 return
             if t == "tool_progress":
                 data = ev.get("data")
                 if isinstance(data, dict):
-                    _stamp_tool_progress(data, self.instance_id, cfg.name)
+                    _stamp_tool_progress(data, instance_id, cfg.name)
                 self.emit(ev)
                 return
             if t == "subagent_end":
@@ -228,7 +229,7 @@ class DeploySubagent(Tool):
                 if isinstance(data, dict):
                     eid = data.get("id")
                     if eid and "parentId" not in data:
-                        data["parentId"] = self.instance_id
+                        data["parentId"] = instance_id
                         data["parentAgent"] = cfg.name
                 self.emit(ev)
                 return
@@ -249,7 +250,7 @@ class DeploySubagent(Tool):
             # Real failure: clear the status banner and return the error to the
             # orchestrator as a tool result, without creating a junk report.
             if self.emit is not None:
-                self.emit({"type": "tool_progress", "data": {"id": self.instance_id, "agent": cfg.name, "message": ""}})
+                self.emit({"type": "tool_progress", "data": {"id": instance_id, "agent": cfg.name, "message": ""}})
             return tool_error(f"subagent failed: {e}")
 
         title = extract_title(content, query)
@@ -285,7 +286,7 @@ class DeploySubagent(Tool):
             if not emitted and self.emit is not None:
                 emitted = True
                 data: dict = {
-                    "id": self.instance_id,
+                    "id": instance_id,
                     "agent": cfg.name,
                     "internal": cfg.internal,
                 }
