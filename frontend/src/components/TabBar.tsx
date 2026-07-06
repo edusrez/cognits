@@ -2,7 +2,8 @@ import { For, createMemo } from "solid-js"
 import type { Tab } from "../stores/viewport-tree-store"
 import { setCtxMenu, baseSettingsTabLabel } from "../stores/viewport-tree-store"
 import { isDynamicTab } from "../tabs"
-import { currentToolStatus, isThinking, isStreaming, mainSessionPromptTokens } from "../stores/chat-store"
+import { currentToolEntries, isThinking, isStreaming, mainSessionPromptTokens, agentLabelFor } from "../stores/chat-store"
+import type { ToolEntry } from "../lib/sse-types"
 
 export default function TabBar(props: {
   tabs: Tab[]
@@ -77,10 +78,9 @@ export default function TabBar(props: {
               {tab.id === "chat" ? (
                 <div class="grid grid-cols-[1fr_auto_1fr] items-center w-full gap-1 min-w-0">
                   <span class="truncate text-[10px] text-[#5a5a5a]">
-                    {Object.entries(currentToolStatus()).map(([agent, status]) => {
-                      const cleanStatus = status.endsWith("...") ? status.replace(/\.\.\.$/, "") : status
-                      const animated = status.endsWith("...")
-                      return `${agent}: ${cleanStatus}${animated ? "" : ""}`
+                    {currentToolEntries().map((entry: ToolEntry) => {
+                      const label = agentLabelFor(entry.agent)
+                      return `${label}: ${entry.message || (entry.done ? "done" : "running")}`
                     }).join(" | ") || (isThinking() ? "Thinking..." : isStreaming() ? "Writing..." : "Ready")}
                   </span>
                   <span class="text-[11px] whitespace-nowrap">{tab.label}</span>

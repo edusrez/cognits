@@ -10,7 +10,6 @@ export class ChatConnection {
   get isActive(): boolean { return this.active }
 
   connect(sid: string, callbacks: StreamCallbacks, attempt = 0): void {
-    if (this.sid === sid && this.active) return
     this.disconnect()
     this.sid = sid
     this.active = true

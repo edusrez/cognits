@@ -1,9 +1,6 @@
 import { createEffect, onCleanup, onMount } from "solid-js"
 import { parser, default_renderer, parser_write, parser_end } from "streaming-markdown"
-import DOMPurify from "dompurify"
-import { marked } from "marked"
 import hljs from "highlight.js/lib/core"
-import { renderMarkdown } from "../lib/markdown"
 
 export default function StreamingMessage(props: { content: string; streaming?: boolean }) {
   let containerEl!: HTMLDivElement
@@ -11,19 +8,22 @@ export default function StreamingMessage(props: { content: string; streaming?: b
   let lastLength = 0
 
   onMount(() => {
-    if (!props.streaming) {
-      containerEl.innerHTML = renderMarkdown(props.content)
+    const renderer = default_renderer(containerEl)
+    inst = parser(renderer)
+
+    if (props.streaming) {
+      if (props.content) {
+        lastLength = props.content.length
+        parser_write(inst, props.content)
+      }
+    } else {
+      if (props.content) {
+        parser_write(inst, props.content)
+      }
+      parser_end(inst)
       containerEl.querySelectorAll("pre code").forEach(b => {
         try { hljs.highlightElement(b as HTMLElement) } catch {}
       })
-      return
-    }
-
-    const renderer = default_renderer(containerEl)
-    inst = parser(renderer)
-    if (props.content) {
-      lastLength = props.content.length
-      parser_write(inst, props.content)
     }
   })
 

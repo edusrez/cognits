@@ -16,6 +16,8 @@ export interface HistoryEvent {
   liveReasoning: string;
   liveReports: { reportId: string; reportTitle: string }[];
   agentActive: boolean;
+  toolLog?: { id: string; agent: string; parentId: string | null; parentAgent: string | null; message: string; favicons: string[]; done: boolean }[];
+  toolFavicons?: string[];
 }
 
 export interface ReasoningEvent {
@@ -37,15 +39,23 @@ export interface ToolEndEvent {
 }
 
 export interface ToolProgressEvent {
-  message: string;
+  id: string;
   agent: string;
+  parentId: string | null;
+  parentAgent: string | null;
+  message: string;
   favicons?: string[];
 }
 
 export interface SubagentEndEvent {
-  reportId: string;
-  title: string;
-  summary: string;
+  id: string;
+  agent: string;
+  parentId: string | null;
+  parentAgent: string | null;
+  internal: boolean;
+  reportId?: string;
+  title?: string;
+  summary?: string;
 }
 
 export interface UsageEvent {
@@ -94,6 +104,16 @@ export interface TokenFrame {
   usage?: UsageEvent;
 }
 
+export interface ToolEntry {
+  id: string;
+  agent: string;
+  parentId: string | null;
+  parentAgent: string | null;
+  message: string;
+  favicons: string[];
+  done: boolean;
+}
+
 // --- Union type ---
 
 export type SSEEvent =
@@ -122,4 +142,5 @@ export interface MessageRow {
   reasoning?: string;
   reports?: { reportId: string; reportTitle: string }[];
   createdAt: string;
+  toolHistory?: ToolEntry[];
 }

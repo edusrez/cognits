@@ -1,6 +1,7 @@
-import { For, Show, createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
+import { For, Show, createSignal, createEffect, createMemo, onCleanup, on } from "solid-js"
 import "../highlight-theme.css"
-import { currentMessages as messages, isStreaming, streamingContent, streamingReasoning, currentToolStatus, currentFavicons, currentChatError, type ChatMessage } from "../stores/chat-store"
+import { currentMessages as messages, isStreaming, streamingContent, streamingReasoning, toolEntries, turnId, currentChatError, scrollTick, agentLabelFor, type ChatMessage } from "../stores/chat-store"
+import type { ToolEntry } from "../lib/sse-types"
 import { activeSessionId, createNewSession } from "../stores/session-store"
 import { chatFontSize, setChatFontSize, saveConfig, displayThinking, llmApiKey } from "../stores/settings-store"
 import { ctxMenu, setCtxMenu } from "../stores/viewport-tree-store"
@@ -9,43 +10,194 @@ import ContextMenu from "./ContextMenu"
 import StreamingMessage from "./StreamingMessage"
 import { copyToClipboard } from "../lib/clipboard"
 
+function squareClass(entry: ToolEntry): string {
+  if (entry.done) return "inline-block w-2 h-2 border border-[#555] bg-[#cccccc] transition-colors duration-200"
+  const msg = entry.message
+  if (/error|fail/i.test(msg)) return "inline-block w-2 h-2 border border-[#e74c3c] bg-[#0d0d0d] transition-colors duration-200"
+  return "inline-block w-2 h-2 border border-[#555] bg-[#0d0d0d] transition-colors duration-200"
+}
+
+function ToolEntryRow(props: { entry: ToolEntry; depth: number; childrenMap: Map<string, ToolEntry[]> }) {
+  const label = () => agentLabelFor(props.entry.agent)
+  const indent = () => `${props.depth * 20}px`
+
+  const uniqueFavicons = createMemo(() => {
+    const seen = new Set<string>()
+    return props.entry.favicons.filter(src => {
+      if (!src || seen.has(src)) return false
+      seen.add(src)
+      return true
+    })
+  })
+
+  return (
+    <>
+      <div class="flex items-center gap-1.5 py-0.5" style={{ "padding-left": indent() }}>
+        <span class={squareClass(props.entry)} />
+        <span class="text-[#9a9a9a] truncate">
+          {label()}
+          <Show when={props.entry.message}>
+            <span class="text-[#6a6a6a]">: {props.entry.message}</span>
+          </Show>
+        </span>
+        <For each={uniqueFavicons()}>
+          {(src) => (
+            <img src={src} class="w-3.5 h-3.5 animate-fade-in" alt="" />
+          )}
+        </For>
+      </div>
+      <For each={props.childrenMap.get(props.entry.id) ?? []}>
+        {child => (
+          <ToolEntryRow
+            entry={child}
+            depth={props.depth + 1}
+            childrenMap={props.childrenMap}
+          />
+        )}
+      </For>
+    </>
+  )
+}
+
+function ToolHistoryInline(props: { entries: ToolEntry[] }) {
+  const [expanded, setExpanded] = createSignal(false)
+
+  const topLevel = createMemo(() => props.entries.filter(e => e.parentId == null))
+  const childrenMap = createMemo(() => {
+    const map = new Map<string, ToolEntry[]>()
+    for (const e of props.entries) {
+      if (!e.parentId) continue
+      const siblings = map.get(e.parentId) || []
+      siblings.push(e)
+      map.set(e.parentId, siblings)
+    }
+    return map
+  })
+
+  return (
+    <div class="mt-1.5 text-[#5a5a5a]" style={{ "font-size": `${Math.max(10, chatFontSize() * 0.8)}px` }}>
+      <div
+        class="flex items-center gap-1.5 cursor-pointer select-none hover:text-[#e0e0e0]"
+        onClick={() => setExpanded(!expanded())}
+      >
+        <span class="inline-block w-4">{expanded() ? "▾" : "▸"}</span>
+        <span>{props.entries.length} tools used</span>
+      </div>
+      <Show when={expanded()}>
+        <div class="flex flex-col gap-0.5 mt-0.5">
+          <For each={topLevel()}>
+            {entry => (
+              <ToolEntryRow
+                entry={entry}
+                depth={0}
+                childrenMap={childrenMap()}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  )
+}
+
 export default function Chat(props: { viewportId?: string }) {
   let scrollRef!: HTMLDivElement
-  let anchorRef!: HTMLDivElement
   const [autoScroll, setAutoScroll] = createSignal(true)
   const [interviewStarted, setInterviewStarted] = createSignal(false)
   const [toolsCollapsed, setToolsCollapsed] = createSignal(false)
+  const [autoCollapsed, setAutoCollapsed] = createSignal(false)
+  const [userToggled, setUserToggled] = createSignal(false)
+
+  let scrollVelocity = 0
+  let scrollRafId: number | null = null
+  const SCROLL_DAMPING = 0.7
+  const SCROLL_STIFFNESS = 0.05
+  const SCROLL_MASS = 1.25
+  const BOTTOM_THRESHOLD = 70
+
+  function springTick() {
+    scrollRafId = null
+    if (!autoScroll()) {
+      scrollVelocity = 0
+      return
+    }
+    const target = scrollRef.scrollHeight - scrollRef.clientHeight
+    const current = scrollRef.scrollTop
+    const diff = target - current
+    if (diff > 0.5) {
+      scrollVelocity = (SCROLL_DAMPING * scrollVelocity + SCROLL_STIFFNESS * diff) / SCROLL_MASS
+      scrollRef.scrollTop = current + scrollVelocity
+      scrollRafId = requestAnimationFrame(springTick)
+    } else {
+      if (diff > 0) scrollRef.scrollTop = target
+      scrollVelocity = 0
+    }
+  }
+
+  function kickSpring() {
+    if (scrollRafId !== null) return
+    scrollRafId = requestAnimationFrame(springTick)
+  }
+
+  onCleanup(() => {
+    if (scrollRafId !== null) cancelAnimationFrame(scrollRafId)
+  })
 
   const chatMsgMenu = createMemo(() => {
     const m = ctxMenu()
     return m?.kind === "chat-message" ? m : null
   })
 
-  const toolSummary = createMemo(() => {
-    const entries = Object.entries(currentToolStatus())
-    if (entries.length === 0) return ""
-    const activeAgent = entries.find(([, s]) => s.endsWith("..."))?.[0] ?? entries[0]?.[0] ?? ""
-    return `${entries.length} herramientas · ${activeAgent}`
+  const topLevelEntries = createMemo(() => toolEntries().filter(e => e.parentId == null))
+
+  const childrenByParentId = createMemo(() => {
+    const map = new Map<string, ToolEntry[]>()
+    for (const e of toolEntries()) {
+      if (!e.parentId) continue
+      const siblings = map.get(e.parentId) || []
+      siblings.push(e)
+      map.set(e.parentId, siblings)
+    }
+    return map
   })
 
-  onMount(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) setAutoScroll(true)
-        else setAutoScroll(false)
-      },
-      { threshold: 0.1, root: scrollRef },
-    )
-    observer.observe(anchorRef)
-    onCleanup(() => observer.disconnect())
+  const toolSummary = createMemo(() => {
+    const entries = toolEntries()
+    if (entries.length === 0) return ""
+    const running = entries.filter(e => !e.done)
+    const runningAgents = [...new Set(running.map(e => agentLabelFor(e.agent)))]
+    const firstAgent = runningAgents[0] ?? agentLabelFor(entries[0].agent)
+    return `${entries.length} tools${running.length > 0 ? ` · ${firstAgent}...` : " · done"}`
   })
+
+
+  createEffect(on(scrollTick, () => {
+    setAutoScroll(true)
+    kickSpring()
+  }))
+
+  createEffect(() => {
+    const entries = toolEntries()
+    if (entries.length > 0 && entries.every(e => e.done) && isStreaming() && streamingContent().length > 0) {
+      setAutoCollapsed(true)
+      if (!userToggled()) {
+        setToolsCollapsed(true)
+      }
+    } else {
+      setAutoCollapsed(false)
+    }
+  })
+
+  createEffect(on(turnId, () => {
+    setAutoCollapsed(false)
+    setUserToggled(false)
+    setToolsCollapsed(false)
+  }))
 
   createEffect(() => {
     messages()
     streamingContent()
-    if (autoScroll()) {
-      scrollRef.scrollTop = scrollRef.scrollHeight
-    }
+    if (autoScroll()) kickSpring()
   })
 
   createEffect(() => {
@@ -80,9 +232,18 @@ export default function Chat(props: { viewportId?: string }) {
             saveConfig()
             return
           }
-          if (e.deltaY < 0) setAutoScroll(false)
+          if (e.deltaY < 0) {
+            setAutoScroll(false)
+          } else {
+            const remaining = scrollRef.scrollHeight - scrollRef.scrollTop - scrollRef.clientHeight
+            if (remaining < BOTTOM_THRESHOLD) setAutoScroll(true)
+          }
         }}
-        onTouchMove={() => setAutoScroll(false)}
+        onTouchMove={() => {
+          const remaining = scrollRef.scrollHeight - scrollRef.scrollTop - scrollRef.clientHeight
+          if (remaining < BOTTOM_THRESHOLD) setAutoScroll(true)
+          else setAutoScroll(false)
+        }}
       >
         <For each={messages()}>
           {(msg, idx) => (
@@ -132,6 +293,10 @@ export default function Chat(props: { viewportId?: string }) {
                     )}
                   </For>
                 </Show>
+
+                <Show when={msg.role === "assistant" && msg.toolHistory && msg.toolHistory.length > 0}>
+                  <ToolHistoryInline entries={msg.toolHistory!} />
+                </Show>
               </div>
             </div>
           )}
@@ -148,40 +313,30 @@ export default function Chat(props: { viewportId?: string }) {
           </div>
         </Show>
 
-        <Show when={Object.keys(currentToolStatus()).length > 0}>
+        <Show when={toolEntries().length > 0}>
           <div
             style={{ "font-size": `${Math.max(10, chatFontSize() * 0.8)}px` }}
-            class="text-[#5a5a5a] italic mt-1 flex flex-col gap-0.5"
+            class="text-[#5a5a5a] mt-1 flex flex-col gap-0.5"
           >
             <div
               class="flex items-center gap-1.5 cursor-pointer select-none hover:text-[#e0e0e0]"
-              onClick={() => setToolsCollapsed(!toolsCollapsed())}
+              onClick={() => {
+                setUserToggled(true)
+                setToolsCollapsed(!toolsCollapsed())
+              }}
             >
               <span class="inline-block w-4">{toolsCollapsed() ? "▸" : "▾"}</span>
               <span>{toolsCollapsed() ? toolSummary() : "Tools"}</span>
             </div>
             <Show when={!toolsCollapsed()}>
-              <For each={Object.entries(currentToolStatus())}>
-                {([agent, status]) => {
-                  const isAnimated = status.endsWith("...")
-                  const isError = /error|fail/i.test(status)
-                  const squareClass = isError
-                    ? "inline-block w-2 h-2 border border-[#e74c3c] bg-[#0d0d0d] transition-colors duration-200"
-                    : isAnimated
-                      ? "inline-block w-2 h-2 border border-[#555] bg-[#0d0d0d] transition-colors duration-200"
-                      : "inline-block w-2 h-2 border border-[#555] bg-[#cccccc] transition-colors duration-200"
-                  const cleanStatus = isAnimated ? status.replace(/\.\.\.$/, "") : status
-                  const favicons = currentFavicons()[agent] ?? []
-                  return (
-                    <div class="flex items-center gap-1.5">
-                      <span class={squareClass} />
-                      <span class="inline-block min-w-[220px]" classList={{ "animate-dots": isAnimated }}>{agent}: {cleanStatus}</span>
-                      <For each={favicons}>
-                        {src => <img src={src} class="w-3.5 h-3.5 animate-fade-in" alt="" />}
-                      </For>
-                    </div>
-                  )
-                }}
+              <For each={topLevelEntries()}>
+                {entry => (
+                  <ToolEntryRow
+                    entry={entry}
+                    depth={0}
+                    childrenMap={childrenByParentId()}
+                  />
+                )}
               </For>
             </Show>
           </div>
@@ -201,13 +356,12 @@ export default function Chat(props: { viewportId?: string }) {
           </div>
         </Show>
 
-        <Show when={messages().length === 0 && llmApiKey()}>
+        <Show when={messages().length === 0 && llmApiKey() && !isStreaming()}>
           <div class="text-[#8b949e] flex items-center justify-center h-full">
             Type a message and press Enter to send
           </div>
         </Show>
 
-        <div ref={anchorRef!} class="chat-scroll-anchor" />
 
         <Show when={chatMsgMenu()}>
           {m => (
@@ -240,7 +394,7 @@ export default function Chat(props: { viewportId?: string }) {
       <Show when={!autoScroll() && messages().length > 0}>
         <button
           class="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black border border-white/20 px-3 py-1.5 text-[13px] hover:bg-white/10 transition-colors cursor-pointer"
-          onClick={() => { scrollRef.scrollTop = scrollRef.scrollHeight; setAutoScroll(true) }}
+          onClick={() => { setAutoScroll(true); kickSpring() }}
         >
           &darr; Scroll to bottom
         </button>

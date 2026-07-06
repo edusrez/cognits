@@ -1,8 +1,11 @@
+import type { ToolEntry } from "./sse-types"
+
 export interface ChatMessage {
   role: "user" | "assistant" | "system" | "hidden_user"
   content: string
   reasoning?: string
   reports?: { reportId: string; reportTitle: string }[]
+  toolHistory?: ToolEntry[]
 }
 
 export interface ChatUsage {
@@ -14,15 +17,21 @@ export interface ChatUsage {
 }
 
 export interface SubagentEndData {
-  reportId: string
-  title: string
-  summary: string
+  id: string
+  agent: string
+  parentId: string | null
+  parentAgent: string | null
+  internal: boolean
+  reportId?: string
+  title?: string
+  summary?: string
 }
 
 export interface HistorySnapshot {
   messages: ChatMessage[]
   toolStatus: string | null
   toolFavicons?: string[]
+  toolLog?: ToolEntry[]
   liveContent: string
   liveReasoning: string
   liveReports?: { reportId: string; reportTitle: string }[]
@@ -110,6 +119,8 @@ export async function streamSession(
             callbacks.onHistory({
               messages: json.messages || [],
               toolStatus: json.toolStatus || null,
+              toolFavicons: json.toolFavicons || [],
+              toolLog: json.toolLog ?? undefined,
               liveContent: json.liveContent || "",
               liveReasoning: json.liveReasoning || "",
               liveReports: json.liveReports || [],

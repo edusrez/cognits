@@ -250,15 +250,6 @@ mark { background: transparent; color: inherit; }
   animation: fade-in 0.2s ease-out both;
 }
 
-/* --- Chat auto-scroll via CSS overflow-anchor --- */
-.chat-scroller > * {
-  overflow-anchor: none;
-}
-.chat-scroll-anchor {
-  overflow-anchor: auto;
-  height: 1px;
-}
-
 /* --- Typewriter: block fade-in during streaming --- */
 .chat-markdown.streaming > * {
   animation: flow-fade-in 0.3s ease-out;
