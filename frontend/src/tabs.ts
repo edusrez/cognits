@@ -11,8 +11,6 @@ import CodeView from "./components/CodeView"
 import TextView from "./components/TextView"
 import ImageView from "./components/ImageView"
 import PdfView from "./components/PdfView"
-import SkillsTree from "./components/SkillsTree"
-import MasteryDashboard from "./components/MasteryDashboard"
 import {
   TAB_LABELS,
   isDynamicTab,
@@ -45,8 +43,7 @@ export const tabs: TabDef[] = [
   { id: "text",     label: TAB_LABELS.text,     component: TextView },
   { id: "image",    label: TAB_LABELS.image,    component: ImageView },
   { id: "pdf",      label: TAB_LABELS.pdf,      component: PdfView },
-  { id: "skills",   label: TAB_LABELS.skills,   component: SkillsTree },
-  { id: "mastery",  label: TAB_LABELS.mastery,  component: MasteryDashboard },
+
 ]
 
 // Re-export identity helpers for a convenient single import surface.
