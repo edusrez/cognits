@@ -244,7 +244,41 @@ class Database:
             self.conn.execute(f"PRAGMA journal_mode = {mode}")
             actual_mode = self.conn.execute("PRAGMA journal_mode").fetchone()[0]
             self.journal_mode = str(actual_mode).lower()
+
+            # WAL cleanup: if we requested DELETE but got WAL (e.g. 9p
+            # can't checkpoint the existing WAL), force-clean and retry.
+            if mode == "delete" and self.journal_mode == "wal":
+                _logger.warning("database: requested delete but got wal — attempting WAL cleanup")
+                try:
+                    self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    self.conn.execute("PRAGMA journal_mode = delete")
+                    actual_mode = self.conn.execute("PRAGMA journal_mode").fetchone()[0]
+                    self.journal_mode = str(actual_mode).lower()
+                except Exception as e:
+                    _logger.warning("database: wal_checkpoint failed: %s", e)
+
+                if self.journal_mode == "wal":
+                    _logger.warning("database: deleting stale WAL/SHM files and reopening")
+                    self.conn.close()
+                    for suffix in ("-wal", "-shm"):
+                        p = Path(self.db_path + suffix)
+                        if p.exists():
+                            try:
+                                p.unlink()
+                            except OSError:
+                                pass
+                    self.conn = sqlite3.connect(
+                        self.db_path, check_same_thread=False, isolation_level=None
+                    )
+                    self.conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+                    self.conn.execute("PRAGMA journal_mode = delete")
+                    actual_mode = self.conn.execute("PRAGMA journal_mode").fetchone()[0]
+                    self.journal_mode = str(actual_mode).lower()
+
             sync = synchronous_for(self.journal_mode)
+            # If we ended up in WAL despite requesting DELETE, use EXTRA for safety
+            if mode == "delete" and self.journal_mode == "wal":
+                sync = "EXTRA"
             self.conn.execute(f"PRAGMA synchronous = {sync}")
             _logger.info("database journal_mode=%s synchronous=%s (requested=%s, path=%s)",
                           self.journal_mode, sync, mode, self.db_path)

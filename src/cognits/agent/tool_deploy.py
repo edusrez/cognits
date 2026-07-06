@@ -209,7 +209,7 @@ class DeploySubagent(Tool):
                     except Exception:
                         sub_type = ""
                     label = AGENT_LABELS.get(sub_type, sub_type or "subagent")
-                    suffix = f" (x{deploy_count})" if deploy_count > 1 else ""
+                    suffix = f" #{deploy_count}" if deploy_count > 1 else ""
                     msg = f"Deploying {label}{suffix}..."
                     self.emit({"type": "tool_progress", "data": {"id": self.instance_id, "agent": cfg.name, "message": msg}})
                     return
@@ -284,27 +284,24 @@ class DeploySubagent(Tool):
             nonlocal emitted
             if not emitted and self.emit is not None:
                 emitted = True
-                self.emit(
-                    {
-                        "type": "subagent_end",
-                        "data": {
-                            "id": self.instance_id,
-                            "agent": cfg.name,
-                            "internal": cfg.internal,
-                            "reportId": report_id,
-                            "title": title,
-                            "summary": summary,
-                        },
-                    }
-                )
+                data: dict = {
+                    "id": self.instance_id,
+                    "agent": cfg.name,
+                    "internal": cfg.internal,
+                }
+                if save_done:
+                    data["reportId"] = report_id
+                    data["title"] = title
+                    data["summary"] = summary
+                self.emit({"type": "subagent_end", "data": data})
 
         try:
             if self.reports is not None:
                 try:
                     await asyncio.to_thread(self.reports.save, report)
+                    save_done = True
                 except Exception as e:
                     log.error("deploy: save report %s: %s", report_id, e)
-                save_done = True
 
             if self.rag_engine is not None and content:
                 from cognits.rag.chunker import split_markdown
