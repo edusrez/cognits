@@ -28,3 +28,9 @@ legacy/
 # Local
 nohup.out
 *.log
+
+# Scribe drafts (temporary; human reviews and merges approved content)
+_drafts/
+
+# Research reports (temporary; indexed for inter-agent sharing)
+_research/

@@ -13,7 +13,7 @@
 ## Standing Orders (CRITICAL — override all other behavior)
 
 1. **RESEARCH**: Before answering questions that require external knowledge,
-   documentation, web search, or technology evaluation, invoke `@SOTAbriefing`
+   documentation, web search, or technology evaluation, invoke `@researcher`
    via the task tool. **Include today's date** (from `<env>`) in the task
    description you pass. Do NOT answer research questions from training data.
 
@@ -49,11 +49,15 @@
    **orchestrator**, not an implementor. It MUST delegate work to subagents
    and MUST NOT do the work itself, with these rules:
 
-   - **Research / external knowledge** → `@SOTAbriefing` via the task tool.
+   - **Research / external knowledge** → `@researcher` via the task tool.
      NEVER answer research questions from training data. NEVER fetch URLs
-     yourself — SOTAbriefing does it.
-   - **Codebase exploration / pattern search** → `@explore` via the task tool.
-     NEVER read files one-by-one yourself when a search would suffice.
+     yourself — researcher does it. Researcher writes reports to
+     `_research/` that other agents can read.
+   - **Codebase exploration / pattern search** → `@explore` (V4 Pro max,
+     fast pattern finding: "where is X", "find all uses of Y") or
+     `@explore-deep` (GLM 5.2, in-depth analysis: "trace the flow from A
+     to B", "how does X interact with Y") via the task tool. NEVER read
+     files one-by-one yourself when a search would suffice.
    - **Code changes (edits, tests, refactors)** → `builder` (flash, default),
      `builder-pro` (pro, complex), or `builder-max` (pro max, escalation)
      via the task tool. Dispatch MULTIPLE builders in PARALLEL when tasks
@@ -118,7 +122,9 @@ uv run pytest tests/test_X.py::test_name -x --tb=short  # single test
 
 Env vars: `PORT` (default 5173), `COGNITS_HOST`/`LEARNIT_HOST` (default
 127.0.0.1), `ENV=dev` (proxy to Vite), `COGNITS_DISABLE_RAG=1` (skip model
-load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
+load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3),
+`COGNITS_JOURNAL_MODE` (override SQLite journal mode:
+wal/delete/truncate/persist).
 
 ## Project Structure
 
@@ -139,14 +145,14 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `server/frontend.py` | Serves `frontend_dist` package data; index no-store + cache-buster regex | `internal/server/frontend.go` |
 | `server/devproxy.py` | ENV=dev: HTTP+WebSocket passthrough to Vite (replaces rebuild.go/air) | `frontend.go:22-27` |
 | `server/browser.py` | Browser opener (WSL-aware) | `internal/server/browser.go` |
-| `server/chat_service.py` | `ChatService`: extracted from `routes_chat.py` — agent lifecycle, subagent map builder, tool registry, SSE event bridging, sync persist (`_persist_partial`), session naming (`_run_session_namer`), context compaction (`_compact`), reflection loop (`_reflect`) | — |
+| `server/chat_service.py` | `ChatService`: extracted from `routes_chat.py` — agent lifecycle, subagent map builder, tool registry, SSE event bridging, sync persist (`_persist_partial`), session naming (`_run_session_namer`), context compaction (`_compact`), async reflection (`_reflect_async`) | — |
 | `server/exceptions.py` | `CognitsError` hierarchy (base + NotFoundError, SessionNotFound, AgentBusy, ConfigError, StorageError). Registered in `app.py` via `@app.exception_handler` → `{"error", "message", "details"}` JSON shape | — |
 | `server/routes_notes.py` | Notebook CRUD routes — notes stored in SQLite | — |
 | `server/routes_skills.py` | Skill tree read endpoints (list, tree, learner state) | — |
 | `server/routes_files.py` | File content/raw endpoints (text mode + Docling PDF→Markdown) | — |
 | `server/dependencies.py` | FastAPI dependency injection: `get_app_state(request)` | — |
 | `server/util.py` | Helpers: `text_error` (deprecated), `atoi`, `mask_key`, `MONTHS`/`WEEKDAYS` | — |
-| `constants.py` | Centralized literals: model names, max_steps, memory thresholds, concurrency limits, httpx limits, LLM timeouts, mastery threshold, chunk sizes, SSE buffer, name caps, subagent labels, context compaction, reflection loop | — |
+| `constants.py` | Centralized literals: model names, max_steps, memory thresholds, concurrency limits, httpx limits, LLM timeouts, mastery threshold, chunk sizes, SSE buffer, name caps, subagent labels, context compaction, reflection loop, TOOL_PHRASES, INTERNAL_SUBAGENTS | — |
 | `agent/agent_loader.py` | Parses `agent/agents/*.md` (YAML frontmatter + Markdown body) into `AgentConfig` | — |
 | `agent/agents/` | 11 persona `.md` files: web_researcher, documentalist, directory_reader, session_namer, session_analyzer, skill_planner, study_planner, evaluator, maestro, orchestrator, system_support | — |
 | `agent/tracer.py` | `Tracer`: structured JSONL trace logging to `.cognits/traces/{session_id}.jsonl`. Wired into `ChatService.run_agent()` and `Agent.__init__` (constructor injection). `emit()` called in agent loop with 6 event types (llm_start, usage, tool_start, tool_end, finish, error). Passed to subagents via `DeploySubagent(tracer=)`. `NoopTracer` for tests. | — |
@@ -154,8 +160,9 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `agent/agent.py` | Agentic loop: stream → sparse-index tool call accumulation → execute → repeat; tool errors fed back as `{"error": ...}`. `AgentConfig` has `critique_mode` and `tool_registry` fields. Tracer injected via constructor. | `internal/agent/agent.go` |
 | `agent/prompts.py` | Agent personas (orchestrator, maestro, system_support, web_researcher, etc.). Prompt text loaded from `agent/agents/*.md` via `agent_loader` | `internal/agent/prompts.go` |
 | `agent/subagents.py` | 9 subagent configs (researcher, directory_reader, documentalist, skill_planner, study_planner, evaluator, teacher, session_analyzer, session_namer) + TinyFish tools, deployment wrapping | `internal/agent/subagents/` |
-| `agent/tool_deploy.py` | `deploy_subagent`: run subagent → save report → index chunks in RAG → `subagent_end`. Cancel ⇒ no report; failure ⇒ error tool result + clears banner | `internal/agent/tools/deploy.go` |
+| `agent/tool_deploy.py` | `DeploySubagent`: run subagent → save report → index chunks in RAG → `subagent_end`. Emit wrapper stamps `id`/`parentId`/`parentAgent` on events. Cancel ⇒ no report; failure ⇒ error tool result + clears banner | `internal/agent/tools/deploy.go` |
 | `agent/tool_rag.py` | `rag_search` tool | `internal/agent/tools/rag_search.go` |
+| `agent/tool_ui.py` | UI action tools: `CreateLearningSession` emits `create_learning_session` SSE event + hides orchestrator session; `FinishSetup` | — |
 | `llm/types.py` | `Message`/`ToolCall` with omitempty payload semantics | `internal/llm/llm.go` |
 | `llm/deepseek.py` | httpx streaming; idle watchdog = `read=120` timeout; thinking omitted when tools present; retryable error classification (HTTP 429/5xx, ReadTimeout) | `internal/llm/deepseek.go` |
 | `llm/base.py` | `LLMClient` Protocol: async streaming interface for any LLM provider. Implementations: `DeepSeekClient` (future: OpenAI, Anthropic). | — |
@@ -166,6 +173,7 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 | `rag/embedding_worker.py` | BGE-M3 ONNX inference worker process (embed/query_embed via Pipe RPC, 3 GB RLIMIT) | — |
 | `storage/nn` | SQLite files |
 | `storage/database.py` | `Database` (single connection, RLock, WAL pragmas, `_migrate`, `transaction()` context manager, `shutdown`) | `internal/storage/db.go` |
+| `storage/fsdetect.py` | Filesystem detection for SQLite journal-mode selection: `/proc/mounts` longest-prefix match, `WAL_UNSAFE_FSTYPES` denylist, `choose_journal_mode()`, `COGNITS_JOURNAL_MODE` env var | — |
 | `storage/models.py` | Data models: 10 dataclasses (Report, MessageRow, Skill, etc.) + ID generators + FTS helpers | — |
 | `storage/reports.py` | `ReportRepository`: CRUD + FTS5/LIKE search + BM25 | — |
 | `storage/messages.py` | `MessageRepository`: save/append/load/delete_by_session | — |
@@ -183,19 +191,19 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3).
 
 ### Frontend (`frontend/src/`) — 65 files, 8615 lines
 
-**Stores (12):** `chat-store.ts` (messages, streaming, tool status), `chat-connection.ts`
+**Stores (11):** `chat-store.ts` (messages, streaming, tool status), `chat-connection.ts`
 (SSE reconnect wrapper), `session-store.ts`, `settings-store.ts` (config, agents, pricing),
 `desktop-store.ts` (multi-desktop), `learnit-store.ts` (report search), `notebook-store.ts`,
-`report-store.ts`, `setup-store.ts`, `viewport-tree-store.ts` (split-pane viewport tree, 667 lines),
-`skills-store.ts` (skill tree + learner state), `study-plan-store.ts` (study plans).
+`report-store.ts`, `setup-store.ts`, `viewport-tree-store.ts` (split-pane viewport tree),
+`skills-store.ts` (skill tree + learner state).
 
-**Components (25):** `Chat.tsx` (message list + streaming + tool status), `StreamingMessage.tsx`
+**Components (24):** `Chat.tsx` (message list + streaming + tool status), `StreamingMessage.tsx`
 (streaming-markdown), `SkillsTree.tsx` (DAG with mastery badges), `MasteryDashboard.tsx`
-(learner state overview), `StudyPlanView.tsx` (active plan), `Viewport.tsx` (tab bar + content
-dispatcher), `Sessions.tsx`, `Settings.tsx`, `SetupWizard.tsx`, `LearnitView.tsx`
-(report search/browse), `ReportView.tsx`, `NoteView.tsx`, `CodeView.tsx`, `TextView.tsx`,
-`ImageView.tsx`, `PdfView.tsx`, `TabBar.tsx`, `ContextMenu.tsx`, `DragOverlay.tsx`,
-`Dropdown.tsx`, `SliderField.tsx`, `Write.tsx`, `MarkdownView.tsx`, `CollapsibleSection.tsx`.
+(learner state overview), `Viewport.tsx` (tab bar + content dispatcher), `Sessions.tsx`,
+`Settings.tsx`, `SetupWizard.tsx`, `LearnitView.tsx` (report search/browse), `ReportView.tsx`,
+`NoteView.tsx`, `CodeView.tsx`, `TextView.tsx`, `ImageView.tsx`, `PdfView.tsx`, `TabBar.tsx`,
+`ContextMenu.tsx`, `DragOverlay.tsx`, `Dropdown.tsx`, `SliderField.tsx`, `Write.tsx`,
+`MarkdownView.tsx`, `CollapsibleSection.tsx`.
 
 **Lib (8):** `chat-stream.ts` (SSE client via fetch+ReadableStream), `markdown.ts`
 (marked+hljs+DOMPurify), `api.ts` (centralized fetch wrapper), `sse-types.ts` (SSE event
@@ -224,6 +232,18 @@ All API calls are same-origin relative `/api/*`. AGENT_LABELS loaded from `/api/
 - Token frames have NO `event:` line; payload `{"choices":[{"delta":{"content":...}}]}`.
 - Named events: `reasoning`, `error`, `tool_start`, `tool_end`,
   `tool_progress`, `subagent_end`, `usage` (usage is snake_case; all else camelCase).
+- `tool_progress` data: `id` (per-deploy hex), `agent` (config name),
+  `parentId`/`parentAgent` (null for top-level, stamped by parent wrapper for
+  nested), `message`, `favicons?`. Favicons are NEVER cleared on Thinking/Writing
+  transitions — only updated when the `favicons` key is present in the event data.
+- `subagent_end` data: `id`, `agent`, `parentId`/`parentAgent`, `internal` (bool),
+  `reportId?`, `title?`, `summary?`.
+- `SessionAgent.tool_log` (in-memory, NOT persisted) is the source of truth for
+  the frontend tool panel: a list of `{id, agent, parentId, parentAgent, message,
+  favicons, done}` entries, upserted by `id` on `tool_progress`, marked `done`
+  on `subagent_end`. Reset each turn. Snapshot includes `toolLog`.
+- `TOOL_PHRASES` dict in `constants.py` maps tool name → status phrase; default
+  "Working..." (NEVER "Searching the Web..." for unknown tools).
 - Extra UI events: `session_renamed`, `ui_action`, `setup_complete`,
   `create_learning_session` (sent by backend, consumed by frontend).
 - `: keepalive` comment every 15s. Queue (1024) drops on overflow — DB reload
@@ -238,6 +258,26 @@ All API calls are same-origin relative `/api/*`. AGENT_LABELS loaded from `/api/
   PUT preserves them when the mask is echoed back.
 - Data dir: `cwd/.cognits` (a pre-existing `cwd/.learnit` is used in place).
   DB file: `cognits.db` (or pre-existing `learnit.db`).
+- Journal mode auto-detection: `Database` inspects the filesystem type via
+  `/proc/mounts` longest-prefix match. WAL-unsafe fstypes (DrvFs/9p, CIFS,
+  NFS, FUSE) fall back to `journal_mode=DELETE` + `synchronous=EXTRA`; safe
+  filesystems keep `WAL` + `NORMAL`. Override with `COGNITS_JOURNAL_MODE`
+  env var (one of `wal`/`delete`/`truncate`/`persist`).
+- `Database.journal_mode` is read back from SQLite after connect (it may
+  silently downgrade) and logged at startup. `shutdown()` only runs
+  `wal_checkpoint(TRUNCATE)` when the current mode is `"wal"`.
+- Detection logic in `src/cognits/storage/fsdetect.py`: `choose_journal_mode()`
+  + `WAL_UNSAFE_FSTYPES` denylist (includes `fuse.*` catch-all via
+  `startswith("fuse.")`).
+- `Session` dataclass (JSON files, not SQLite) has a `hidden: bool = False` field.
+- `CreateLearningSession` tool hides the orchestrator's planning session
+  after emitting `create_learning_session`.
+- `GET /api/sessions` excludes hidden sessions by default;
+  `?include_hidden=true` includes them.
+- `PUT /api/sessions/{id}` accepts `{"hidden": bool}` to hide/unhide
+  (optionally combined with `{"name": ...}`).
+- `Store.list_sessions(include_hidden=False)` filters AFTER ordering
+  (preserves manual reorder).
 
 ### Error responses
 - Routes raise `CognitsError` subclasses (`NotFoundError`, `StorageError`,
@@ -252,19 +292,53 @@ All API calls are same-origin relative `/api/*`. AGENT_LABELS loaded from `/api/
   history persisted unstamped. Breaking either invalidates DeepSeek's prefix cache.
 - Thinking param omitted when tools are present (API rejects the combination).
 
+### Session naming
+- First-turn naming: `_run_session_namer` filters `role in ("user", "hidden_user")`
+  (not just `"user"`). Learning sessions (which start with a `hidden_user`
+  instruction to the maestro) get a real name instead of keeping the timestamp.
+- The session_namer prompt handles both real user messages and internal tutor
+  instructions (infers the skill/topic, does not name after the literal
+  "Start teaching..." text).
+
 ### Reflection loop (Teacher/Evaluator)
-- Pre-send quality gate: critique runs before response reaches the learner.
-- Evaluator uses V4-Pro (same model family, most capable) with Critique Mode
-  (structured JSON: `{verdict, socratic_violations[], scaffolding_assessment, suggested_revision, confidence}`).
-- Cap 2 iterations; early exit on `verdict: pass` + zero violations.
+- Post-send async review: the maestro's response reaches the learner
+  IMMEDIATELY; a fire-and-forget background task (`_reflect_async`) runs the
+  evaluator ONCE after the turn (no-op emit, invisible to the user). No
+  in-place revision.
+- If verdict != `"pass"` OR `socratic_violations` non-empty, the critique is
+  stored in `AppState.pending_critiques[sid]` and injected as a system message
+  at the START of the next maestro turn (after compaction, before `ag.run`).
 - Coherence trap mitigation: evaluator prompt says "evaluating a DIFFERENT
   agent's response. Be skeptical."
-- Gated on `agent_id == "maestro"` (Teacher only).
+- Gated on `agent_id == "maestro"` + `acc["content"]` +
+  `Config.reflection_enabled` (default `True`).
+- `_reflect_async` never touches `SessionAgent` (uses `_noop_emit`, writes only
+  `pending_critiques`) — `sa` may be torn down by the time it runs.
+- The `finally` block remains 100% synchronous; the background task is scheduled
+  in the `try` block, not `finally`.
+- `REFLECTION_MAX_ITERATIONS` constant remains in `constants.py` but is unused
+  (the revision loop was removed in 0.0.7).
 
 ### Subagent relay contract
 - All research subagents (web_researcher, documentalist) MUST include a
   `key_findings_for_orchestrator` field (1-3 sentences) in their output.
   Prevents the "information withholding" anti-pattern.
+
+### Internal subagents
+- `AgentConfig.internal: bool = False` (set True on evaluator,
+  session_analyzer, session_namer via `subagents.py`).
+- Internal subagents' reports are saved to DB + RAG-indexed but do NOT
+  surface as chat cards (`sa.live_reports` gated on `internal=False`;
+  frontend `onSubagentEnd` skips the report card when `data.internal`).
+
+### DeploySubagent event stamping
+- `DeploySubagent.execute()` generates a per-run `instance_id` (hex).
+- Its `emit` wrapper stamps events with three patterns:
+  - No `id` → stamp `id` + `agent` (for pass-through events like favicons
+    from SearchTool/FetchTool that have no id).
+  - `id` present but no `parentId` → stamp `parentId` + `parentAgent` (nested
+    subagent event).
+  - Both `id` and `parentId` present → pass through unchanged (deeper nested).
 
 ### LLM client architecture
 - `LLMClient` Protocol defines the async streaming interface. `DeepSeekClient`
@@ -339,6 +413,18 @@ Key rules (full detail in DESIGN.md):
 - SSE event types in `lib/sse-types.ts` (TypeScript contract mirroring backend wire format).
 - AGENT_LABELS loaded from `/api/agents` (single source of truth, no hardcoded labels).
 - Don't dump docs into LLM context — use curated reports (context rot).
+- Skill tree mastery colors match the grayscale-only palette (per DESIGN.md):
+  `#cccccc` (mastered) → `#a8a8a8` (proficient) → `#7a7a7a` (developing) →
+  `#555555` (emerging) → `#2b2b2b` (not_seen). No chromatic accent —
+  replaces the earlier green/lime/yellow/orange scheme.
+- SkillsTree renders a parent-tree view (by `parentSkillId`, no domain
+  grouping); roots = no parent, orphans → root, depth-indented. READ-ONLY:
+  no edit UI in 0.0.7.
+- `GET /api/skills/tree` response includes a `states` map
+  (`skillId → LearnerState`) so the frontend renders real mastery without
+  per-skill calls.
+- The `skills` tab is included in the default desktop
+  (`createDefaultTree` in `viewport-tree-store.ts`).
 
 ## Known deferred items (0.0.7 → 0.0.8)
 
