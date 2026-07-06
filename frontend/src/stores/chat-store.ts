@@ -374,7 +374,7 @@ function createCallbacks(): StreamCallbacks {
           const idx = prev.findIndex(e => e.id === eId)
           if (idx >= 0) {
             const next = [...prev]
-            next[idx] = { ...next[idx], done: true, title: data.title ?? undefined }
+            next[idx] = { ...next[idx], done: true, title: data.title ?? undefined, favicons: [] }
             return next
           }
           return [...prev, {
@@ -400,6 +400,7 @@ function createCallbacks(): StreamCallbacks {
       if (reportTargetIdx > 0 && messages[reportTargetIdx - 1].role !== "assistant" && data.reportId) {
         setMessages((prev: ChatMessage[]) => [...prev, { role: "assistant", content: "" }])
         reportTargetIdx = messages.length
+        setScrollTick(t => t + 1)
       }
       if (reportTargetIdx > 0 && messages[reportTargetIdx - 1].role === "assistant" && data.reportId) {
         batch(() => {
@@ -408,6 +409,7 @@ function createCallbacks(): StreamCallbacks {
             { reportId: data.reportId!, reportTitle: data.title ?? "" },
           ])
         })
+        setScrollTick(t => t + 1)
       }
     },
 
@@ -438,6 +440,7 @@ function createCallbacks(): StreamCallbacks {
           setIsStreaming(false)
           setToolEntries([])
         })
+        if (history.length > 0) setScrollTick(t => t + 1)
       } else {
         const history = toolEntries()
         if (history.length > 0) {
@@ -454,6 +457,7 @@ function createCallbacks(): StreamCallbacks {
               setToolEntries([])
             })
           }
+          setScrollTick(t => t + 1)
         } else {
           setToolEntries([])
         }

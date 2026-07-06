@@ -52,11 +52,13 @@ function ToolEntryRow(props: { entry: ToolEntry; depth: number; childrenMap: Map
             </Show>
           </Show>
         </span>
-        <For each={uniqueFavicons()}>
-          {(src) => (
-            <img src={src} class="w-3.5 h-3.5" alt="" />
-          )}
-        </For>
+        <Show when={!props.entry.done && uniqueFavicons().length > 0}>
+          <For each={uniqueFavicons()}>
+            {(src) => (
+              <img src={src} class="w-3.5 h-3.5" alt="" />
+            )}
+          </For>
+        </Show>
       </div>
       <For each={props.childrenMap.get(props.entry.id) ?? []}>
         {child => (
