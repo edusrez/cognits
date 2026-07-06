@@ -39,20 +39,32 @@ _DRAIN_TIMEOUT = float(os.environ.get("COGNITS_DRAIN_TIMEOUT", "5.0"))
 class _CancelSuppressMiddleware:
     """Pure ASGI middleware: swallow asyncio.CancelledError so uvicorn doesn't
     print a traceback when in-flight requests (e.g. SSE streams) are cancelled
-    during shutdown.  CancelledError is a BaseException (not Exception), so
+    during shutdown.  Only swallows after the response has started — before that,
+    re-raise so uvicorn doesn't log 'ASGI callable returned without completing
+    response'.  CancelledError is a BaseException (not Exception), so
     Starlette/FastAPI exception handlers don't catch it — this does."""
 
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
+        response_started = False
+
+        async def send_wrapper(message):
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
         try:
-            await self.app(scope, receive, send)
+            await self.app(scope, receive, send_wrapper)
         except asyncio.CancelledError:
-            # Shutdown in progress — the request was cancelled, not an error.
-            # Swallow it so uvicorn doesn't log a traceback.  Data persistence
-            # happens in the agent's finally block + db.shutdown(), not here.
-            pass
+            if response_started:
+                # Response was in progress — swallow to avoid traceback
+                pass
+            else:
+                # Response hadn't started — re-raise so uvicorn handles it
+                raise
 
 
 class AppState:

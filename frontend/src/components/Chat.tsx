@@ -211,6 +211,7 @@ export default function Chat(props: { viewportId?: string }) {
   createEffect(() => {
     messages()
     streamingContent()
+    toolEntries()  // scroll down when new tools appear/expand
     if (autoScroll()) kickSpring()
   })
 
