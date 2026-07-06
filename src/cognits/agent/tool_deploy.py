@@ -103,7 +103,9 @@ class DeploySubagent(Tool):
         "directory_reader to inspect the project folder, "
         "skill_planner to build or refresh the learner's skill tree "
         "by iterating with web_researcher, "
-        "study_planner to generate a study plan from the skill tree."
+        "study_planner to generate a study plan from the skill tree. "
+        "For finding skill names, use list_skills or search_skills "
+        "before calling save_pedagogical_plan or create_learning_session."
     )
     schema = {
         "type": "object",
@@ -190,12 +192,10 @@ class DeploySubagent(Tool):
             if t == "reasoning":
                 emitted_first = False
                 deploy_count = 0
-                self.emit({"type": "tool_progress", "data": {"id": self.instance_id, "agent": cfg.name, "message": "Thinking..."}})
                 return
             if t == "token":
                 if not emitted_first:
                     emitted_first = True
-                    self.emit({"type": "tool_progress", "data": {"id": self.instance_id, "agent": cfg.name, "message": "Writing..."}})
                 return
             if t == "tool_start":
                 emitted_first = False

@@ -7,6 +7,7 @@ import datetime
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from difflib import SequenceMatcher
 
 from cognits.constants import CHANGELOG_VALUE_MAX_CHARS
 from cognits.tools import Tool, tool_error
@@ -47,6 +48,41 @@ class CreateLearningSession(Tool):
         "required": ["skill_name"],
     }
 
+    @staticmethod
+    def _levenshtein(a: str, b: str) -> int:
+        if len(a) < len(b):
+            a, b = b, a
+        if len(b) == 0:
+            return len(a)
+        prev = list(range(len(b) + 1))
+        for i, ca in enumerate(a, 1):
+            curr = [i]
+            for j, cb in enumerate(b, 1):
+                curr.append(min(
+                    curr[j - 1] + 1,
+                    prev[j] + 1,
+                    prev[j - 1] + (0 if ca == cb else 1),
+                ))
+            prev = curr
+        return prev[-1]
+
+    @staticmethod
+    def _fuzzy_match_skills(skills, query: str):
+        q = " ".join(query.lower().strip().split())
+        for s in skills:
+            sn = " ".join(s.name.lower().strip().split())
+            if q in sn or sn in q:
+                return s
+        best = None
+        best_dist = 3
+        for s in skills:
+            sn = " ".join(s.name.lower().strip().split())
+            d = CreateLearningSession._levenshtein(q, sn)
+            if d < best_dist:
+                best = s
+                best_dist = d
+        return best if best_dist <= 2 else None
+
     async def execute(self, raw_args: str) -> str:
         try:
             args = json.loads(raw_args)
@@ -61,9 +97,11 @@ class CreateLearningSession(Tool):
             skills = await asyncio.to_thread(self.skills.list_active)
             match = next((s for s in skills if s.name.lower() == skill_name.lower()), None)
             if match is None:
+                match = self._fuzzy_match_skills(skills, skill_name)
+            if match is None:
                 return tool_error(
                     f"skill '{skill_name}' not found in the skill tree. "
-                    "Ask the user to choose a different skill."
+                    "Use the list_skills or search_skills tool to find the exact name."
                 )
             skill_id = match.id
         else:
@@ -329,3 +367,65 @@ class ApplyProfile(Tool):
             "message": "Profile updated successfully.",
             "sessions": profile.meta.get("sessions", 0),
         }, ensure_ascii=False)
+
+
+class ListSkills(Tool):
+    def __init__(self, skills=None):
+        self.skills = skills
+
+    name = "list_skills"
+    description = (
+        "List all skills in the skill tree. Returns skill names, domains, "
+        "and parent skill names. Use this to find the exact skill name "
+        "before calling create_learning_session or save_pedagogical_plan."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "domain": {"type": "string", "description": "Optional: filter by domain"},
+        },
+    }
+
+    async def execute(self, raw_args: str) -> str:
+        args = json.loads(raw_args) if raw_args else {}
+        domain = args.get("domain") or None
+        if self.skills is not None:
+            skills = await asyncio.to_thread(self.skills.list_active, domain)
+            result = [{"name": s.name, "domain": s.domain, "id": s.id} for s in skills]
+            return json.dumps({"skills": result}, ensure_ascii=False)
+        return json.dumps({"skills": []}, ensure_ascii=False)
+
+
+class SearchSkills(Tool):
+    def __init__(self, skills=None):
+        self.skills = skills
+
+    name = "search_skills"
+    description = (
+        "Search skills by name (fuzzy match). Returns matching skills with "
+        "their exact names for use with create_learning_session."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Skill name or keyword to search for"},
+        },
+        "required": ["query"],
+    }
+
+    async def execute(self, raw_args: str) -> str:
+        args = json.loads(raw_args)
+        query = args["query"].strip()
+        if self.skills is not None:
+            skills = await asyncio.to_thread(self.skills.list_active)
+            matches = []
+            for s in skills:
+                if query.lower() in s.name.lower() or s.name.lower() in query.lower():
+                    matches.append({"name": s.name, "domain": s.domain, "id": s.id, "score": 1.0})
+                else:
+                    ratio = SequenceMatcher(None, query.lower(), s.name.lower()).ratio()
+                    if ratio > 0.6:
+                        matches.append({"name": s.name, "domain": s.domain, "id": s.id, "score": ratio})
+            matches.sort(key=lambda x: -x["score"])
+            return json.dumps({"skills": matches[:10]}, ensure_ascii=False)
+        return json.dumps({"skills": []}, ensure_ascii=False)

@@ -36,6 +36,41 @@ class SavePedagogicalPlan(Tool):
         "required": ["skill_name", "plan_markdown"],
     }
 
+    @staticmethod
+    def _levenshtein(a: str, b: str) -> int:
+        if len(a) < len(b):
+            a, b = b, a
+        if len(b) == 0:
+            return len(a)
+        prev = list(range(len(b) + 1))
+        for i, ca in enumerate(a, 1):
+            curr = [i]
+            for j, cb in enumerate(b, 1):
+                curr.append(min(
+                    curr[j - 1] + 1,
+                    prev[j] + 1,
+                    prev[j - 1] + (0 if ca == cb else 1),
+                ))
+            prev = curr
+        return prev[-1]
+
+    @staticmethod
+    def _fuzzy_match_skills(skills, query: str):
+        q = " ".join(query.lower().strip().split())
+        for s in skills:
+            sn = " ".join(s.name.lower().strip().split())
+            if q in sn or sn in q:
+                return s
+        best = None
+        best_dist = 3
+        for s in skills:
+            sn = " ".join(s.name.lower().strip().split())
+            d = SavePedagogicalPlan._levenshtein(q, sn)
+            if d < best_dist:
+                best = s
+                best_dist = d
+        return best if best_dist <= 2 else None
+
     async def execute(self, raw_args: str) -> str:
         try:
             args = json.loads(raw_args)
@@ -50,9 +85,11 @@ class SavePedagogicalPlan(Tool):
         skills = await asyncio.to_thread(self.skills.list_active)
         match = next((s for s in skills if s.name.lower() == skill_name.lower()), None)
         if match is None:
+            match = self._fuzzy_match_skills(skills, skill_name)
+        if match is None:
             return tool_error(
                 f"skill '{skill_name}' not found in the skill tree. "
-                "Use the exact skill name as it appears in the tree."
+                "Use the list_skills or search_skills tool to find the exact name."
             )
 
         await asyncio.to_thread(

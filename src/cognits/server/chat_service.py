@@ -28,7 +28,7 @@ from cognits.agent.subagents import (
     teacher_config,
 )
 from cognits.agent.tool_deploy import DeploySubagent
-from cognits.agent.tool_ui import ApplyProfile, CreateLearningSession, FinishSetup
+from cognits.agent.tool_ui import ApplyProfile, CreateLearningSession, FinishSetup, ListSkills, SearchSkills
 from cognits.llm.types import ROLE_SYSTEM, ROLE_USER
 from cognits.constants import (
     COMPACTION_PRESERVE_TURNS,
@@ -570,6 +570,8 @@ class ChatService:
         )
         registry.register(deploy_subagent_tool)
         registry.register(CreateLearningSession(emit=process_event, skills=st.skills, session_id=lambda: sid, store=st.store))
+        registry.register(ListSkills(skills=st.skills))
+        registry.register(SearchSkills(skills=st.skills))
 
         if self.agent_id == "system_support":
             skill_planner_deployer = None

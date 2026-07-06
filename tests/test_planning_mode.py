@@ -7,7 +7,7 @@ import json
 import httpx
 import pytest
 
-from cognits.agent.tool_ui import CreateLearningSession
+from cognits.agent.tool_ui import CreateLearningSession, ListSkills, SearchSkills
 from cognits.agent.prompts import ORCHESTRATOR_SYSTEM_PROMPT
 from cognits.storage.database import Database
 from cognits.storage.learner_state import LearnerStateRepository
@@ -187,3 +187,168 @@ def test_planning_mode_injects_skill_tree_context(tmp_path, monkeypatch):
             # something blocks it, at least not 500.
             assert res.status_code in (200, 202, 400, 404, 503, 401), f"unexpected {res.status_code}"
     asyncio.run(run())
+
+
+# --- CreateLearningSession fuzzy matching ------------------------------
+
+def test_create_learning_session_exact_match(store):
+    skills, learner_state = store
+    a = Skill(id=new_skill_id(), domain="d", name="Variables", source="test")
+    skills.upsert(a)
+    events = []
+    tool = CreateLearningSession(emit=events.append, skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({"skill_name": "Variables"})))
+    data = json.loads(result)
+    assert "Learning session requested" in data["message"]
+    assert events[0]["data"]["skill_name"] == "Variables"
+
+
+def test_create_learning_session_case_insensitive(store):
+    skills, learner_state = store
+    a = Skill(id=new_skill_id(), domain="d", name="GDScript Fundamentals", source="test")
+    skills.upsert(a)
+    events = []
+    tool = CreateLearningSession(emit=events.append, skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({"skill_name": "gdscript fundamentals"})))
+    data = json.loads(result)
+    assert "Learning session requested" in data["message"]
+    assert events[0]["data"]["skill_name"] == "gdscript fundamentals"
+
+
+def test_create_learning_session_contains_match(store):
+    skills, learner_state = store
+    a = Skill(id=new_skill_id(), domain="d", name="GDScript Fundamentals", source="test")
+    skills.upsert(a)
+    events = []
+    tool = CreateLearningSession(emit=events.append, skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({"skill_name": "gdscript"})))
+    data = json.loads(result)
+    assert "Learning session requested" in data["message"]
+
+
+def test_create_learning_session_levenshtein_match(store):
+    skills, learner_state = store
+    a = Skill(id=new_skill_id(), domain="d", name="Variables", source="test")
+    skills.upsert(a)
+    events = []
+    tool = CreateLearningSession(emit=events.append, skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({"skill_name": "Variabls"})))
+    data = json.loads(result)
+    assert "Learning session requested" in data["message"]
+
+
+def test_create_learning_session_no_fuzzy_match(store):
+    skills, learner_state = store
+    a = Skill(id=new_skill_id(), domain="d", name="Variables", source="test")
+    skills.upsert(a)
+    events = []
+    tool = CreateLearningSession(emit=events.append, skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({"skill_name": "CompletelyUnrelated"})))
+    data = json.loads(result)
+    assert "error" in data
+
+
+def test_create_learning_session_levenshtein_dist2(store):
+    skills, learner_state = store
+    a = Skill(id=new_skill_id(), domain="d", name="Loops", source="test")
+    skills.upsert(a)
+    events = []
+    tool = CreateLearningSession(emit=events.append, skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({"skill_name": "Loops"})))
+    data = json.loads(result)
+    assert "Learning session requested" in data["message"]
+    # Also try dist=1 misspelling
+    result2 = asyncio.run(tool.execute(json.dumps({"skill_name": "Lops"})))
+    data2 = json.loads(result2)
+    assert "Learning session requested" in data2["message"]
+
+
+# --- ListSkills tool ---------------------------------------------------
+
+def test_list_skills_returns_all(store):
+    skills, learner_state = store
+    a = Skill(id=new_skill_id(), domain="python", name="Variables", source="test")
+    b = Skill(id=new_skill_id(), domain="gdscript", name="Signals", source="test")
+    skills.upsert(a)
+    skills.upsert(b)
+    tool = ListSkills(skills=skills)
+    result = asyncio.run(tool.execute("{}"))
+    data = json.loads(result)
+    assert len(data["skills"]) == 2
+    names = [s["name"] for s in data["skills"]]
+    assert "Variables" in names
+    assert "Signals" in names
+
+
+def test_list_skills_filter_by_domain(store):
+    skills, learner_state = store
+    a = Skill(id=new_skill_id(), domain="python", name="Variables", source="test")
+    b = Skill(id=new_skill_id(), domain="gdscript", name="Signals", source="test")
+    skills.upsert(a)
+    skills.upsert(b)
+    tool = ListSkills(skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({"domain": "python"})))
+    data = json.loads(result)
+    assert len(data["skills"]) == 1
+    assert data["skills"][0]["name"] == "Variables"
+
+
+def test_list_skills_empty_tree(store):
+    skills, learner_state = store
+    tool = ListSkills(skills=skills)
+    result = asyncio.run(tool.execute("{}"))
+    data = json.loads(result)
+    assert data["skills"] == []
+
+
+# --- SearchSkills tool -------------------------------------------------
+
+def test_search_skills_exact_match(store):
+    skills, learner_state = store
+    a = Skill(id=new_skill_id(), domain="d", name="Variables", source="test")
+    skills.upsert(a)
+    tool = SearchSkills(skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({"query": "Variables"})))
+    data = json.loads(result)
+    assert len(data["skills"]) >= 1
+    assert data["skills"][0]["name"] == "Variables"
+    assert data["skills"][0]["score"] == 1.0
+
+
+def test_search_skills_fuzzy_substring(store):
+    skills, learner_state = store
+    a = Skill(id=new_skill_id(), domain="d", name="GDScript Fundamentals", source="test")
+    skills.upsert(a)
+    tool = SearchSkills(skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({"query": "gdscript"})))
+    data = json.loads(result)
+    assert len(data["skills"]) >= 1
+    assert data["skills"][0]["score"] == 1.0
+
+
+def test_search_skills_fuzzy_sequence(store):
+    skills, learner_state = store
+    a = Skill(id=new_skill_id(), domain="d", name="Variables", source="test")
+    skills.upsert(a)
+    tool = SearchSkills(skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({"query": "Vriables"})))
+    data = json.loads(result)
+    assert len(data["skills"]) >= 1
+
+
+def test_search_skills_no_match(store):
+    skills, learner_state = store
+    a = Skill(id=new_skill_id(), domain="d", name="Variables", source="test")
+    skills.upsert(a)
+    tool = SearchSkills(skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({"query": "zzzzz"})))
+    data = json.loads(result)
+    assert data["skills"] == []
+
+
+def test_search_skills_empty_tree(store):
+    skills, learner_state = store
+    tool = SearchSkills(skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({"query": "anything"})))
+    data = json.loads(result)
+    assert data["skills"] == []
