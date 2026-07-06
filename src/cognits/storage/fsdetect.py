@@ -2,8 +2,9 @@
 
 WAL mode is unsafe on network/non-local filesystems (the wal-index lives in
 shared memory that cannot be reliably shared over 9P/CIFS/NFS/FUSE). On such
-filesystems we fall back to a rollback journal (DELETE) so committed
-transactions are not stranded in a WAL that never checkpoints correctly.
+filesystems we fall back to MEMORY journal mode (rollback journal in RAM)
+because DELETE also fails on DrvFs/9p (read-only after ~41s). MEMORY keeps
+the journal in RAM with zero file I/O for the journal.
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ WAL_UNSAFE_FSTYPES = {
     "nfs", "nfs4",
     "fuse", "davfs",
 }
-VALID_JOURNAL_MODES = {"wal", "delete", "truncate", "persist"}
+VALID_JOURNAL_MODES = {"wal", "delete", "truncate", "persist", "memory"}
 
 
 def _read_proc_mounts() -> str:
@@ -60,17 +61,21 @@ def choose_journal_mode(db_path: str | Path) -> str:
     """Decide the SQLite journal mode for `db_path`.
 
     Precedence:
-      1. COGNITS_JOURNAL_MODE env var (one of wal/delete/truncate/persist) — wins.
-      2. Auto-detect: DELETE if the path is on a WAL-unsafe fstype, else WAL.
+      1. COGNITS_JOURNAL_MODE env var (one of wal/delete/truncate/persist/memory) — wins.
+      2. Auto-detect: MEMORY if the path is on a WAL-unsafe fstype, else WAL.
     """
     forced = os.environ.get("COGNITS_JOURNAL_MODE", "").strip().lower()
     if forced in VALID_JOURNAL_MODES:
         return forced
     if is_wal_unsafe_fstype(fstype_of(db_path)):
-        return "delete"
+        return "memory"
     return "wal"
 
 
 def synchronous_for(mode: str) -> str:
     """Pair the right synchronous setting with the journal mode."""
-    return "EXTRA" if mode == "delete" else "NORMAL"
+    if mode == "memory":
+        return "OFF"
+    if mode == "delete":
+        return "EXTRA"
+    return "NORMAL"

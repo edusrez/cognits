@@ -245,9 +245,9 @@ class Database:
             actual_mode = self.conn.execute("PRAGMA journal_mode").fetchone()[0]
             self.journal_mode = str(actual_mode).lower()
 
-            # WAL cleanup: if we requested DELETE but got WAL (e.g. 9p
-            # can't checkpoint the existing WAL), force-clean and retry.
-            if mode == "delete" and self.journal_mode == "wal":
+            # WAL cleanup: if we requested DELETE or MEMORY but got WAL
+            # (e.g. 9p can't checkpoint the existing WAL), force-clean and retry.
+            if mode in ("delete", "memory") and self.journal_mode == "wal":
                 _logger.warning("database: requested delete but got wal — attempting WAL cleanup")
                 try:
                     self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -276,8 +276,8 @@ class Database:
                     self.journal_mode = str(actual_mode).lower()
 
             sync = synchronous_for(self.journal_mode)
-            # If we ended up in WAL despite requesting DELETE, use EXTRA for safety
-            if mode == "delete" and self.journal_mode == "wal":
+            # If we ended up in WAL despite requesting DELETE/MEMORY, use EXTRA for safety
+            if mode in ("delete", "memory") and self.journal_mode == "wal":
                 sync = "EXTRA"
             self.conn.execute(f"PRAGMA synchronous = {sync}")
             _logger.info("database journal_mode=%s synchronous=%s (requested=%s, path=%s)",

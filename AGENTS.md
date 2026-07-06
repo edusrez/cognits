@@ -126,7 +126,7 @@ load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3;
 automatically set by `tests/conftest.py` autouse fixture for all tests,
 so `uv run pytest` works without the explicit prefix),
 `COGNITS_JOURNAL_MODE` (override SQLite journal mode:
-wal/delete/truncate/persist).
+wal/delete/truncate/persist/memory).
 
 ## Project Structure
 
@@ -262,9 +262,9 @@ All API calls are same-origin relative `/api/*`. AGENT_LABELS loaded from `/api/
   DB file: `cognits.db` (or pre-existing `learnit.db`).
 - Journal mode auto-detection: `Database` inspects the filesystem type via
   `/proc/mounts` longest-prefix match. WAL-unsafe fstypes (DrvFs/9p, CIFS,
-  NFS, FUSE) fall back to `journal_mode=DELETE` + `synchronous=EXTRA`; safe
+  NFS, FUSE) fall back to `journal_mode=MEMORY` + `synchronous=OFF`; safe
   filesystems keep `WAL` + `NORMAL`. Override with `COGNITS_JOURNAL_MODE`
-  env var (one of `wal`/`delete`/`truncate`/`persist`).
+  env var (one of `wal`/`delete`/`truncate`/`persist`/`memory`).
 - `Database.journal_mode` is read back from SQLite after connect (it may
   silently downgrade) and logged at startup. `shutdown()` only runs
   `wal_checkpoint(TRUNCATE)` when the current mode is `"wal"`.

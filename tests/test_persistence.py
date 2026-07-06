@@ -242,3 +242,100 @@ class TestDeleteModeNoWalFiles:
         assert not shm_path.exists(), f"Unexpected SHM file: {shm_path}"
         assert db_path.exists()
         assert db_path.stat().st_size > 0
+
+
+class TestFullPersistenceCycleMemoryMode:
+    """Simulate full setup cycle in MEMORY mode: report + skill + message +
+    learner_state survive close/reopen cycles."""
+
+    def test_full_persistence_cycle_memory_mode(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("COGNITS_JOURNAL_MODE", "memory")
+        db_path = tmp_path / "persist_mem.db"
+
+        # ---------- first open ----------
+        db = Database(db_path)
+        assert db.journal_mode == "memory"
+
+        reports = ReportRepository(db)
+        skills = SkillRepository(db)
+        messages = MessageRepository(db)
+        learner = LearnerStateRepository(db)
+
+        report_id = new_report_id()
+        session_id = "sess_mem"
+        skill_id = new_skill_id()
+
+        reports.save(Report(
+            id=report_id,
+            session_id=session_id,
+            title="Memory Mode Report",
+            content="Report content for memory mode persistence test.",
+            sources=[],
+        ))
+
+        skills.upsert(Skill(
+            id=skill_id,
+            domain="science",
+            name="Memory Skill",
+            description="A test skill in memory mode.",
+            bloom_level="apply",
+            difficulty=0.3,
+        ))
+
+        messages.append(session_id, MessageRow(
+            session_id=session_id,
+            role="user",
+            content="Memory mode test message.",
+        ))
+
+        learner.upsert(LearnerState(
+            skill_id=skill_id,
+            p_mastery=0.5,
+            status_enum="not_seen",
+        ))
+
+        db.shutdown()
+
+        # ---------- second open ----------
+        db2 = Database(db_path)
+        assert db2.journal_mode == "memory"
+
+        reports2 = ReportRepository(db2)
+        skills2 = SkillRepository(db2)
+        messages2 = MessageRepository(db2)
+        learner2 = LearnerStateRepository(db2)
+
+        got = reports2.get(report_id)
+        assert got is not None
+        assert got.title == "Memory Mode Report"
+        assert got.content == "Report content for memory mode persistence test."
+
+        tree = skills2.get_tree()
+        skill_ids = [sk["id"] for sk in tree["skills"]]
+        assert skill_id in skill_ids
+
+        msgs = messages2.load(session_id)
+        assert len(msgs) == 1
+        assert msgs[0].content == "Memory mode test message."
+
+        st = learner2.get(skill_id)
+        assert st is not None
+        assert st.p_mastery == 0.5
+
+        db2.shutdown()
+
+
+class TestPersistenceAutoDetect:
+    """On native FS (tmp_path on ext4/btrfs/tmpfs), auto-detect should pick WAL."""
+
+    def test_auto_detect_returns_wal_on_native_fs(self, tmp_path, monkeypatch):
+        # No env override → auto-detect path.
+        monkeypatch.delenv("COGNITS_JOURNAL_MODE", raising=False)
+        db_path = tmp_path / "autodetect.db"
+
+        db = Database(db_path)
+        try:
+            assert db.journal_mode == "wal", \
+                f"Expected wal on native FS, got {db.journal_mode}"
+        finally:
+            db.shutdown()

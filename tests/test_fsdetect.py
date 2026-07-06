@@ -35,8 +35,13 @@ def test_choose_journal_mode_env_persist(monkeypatch):
     assert choose_journal_mode("/tmp/test.db") == "persist"
 
 
-def test_choose_journal_mode_env_invalid_falls_through(monkeypatch):
+def test_choose_journal_mode_env_memory(monkeypatch):
     monkeypatch.setenv("COGNITS_JOURNAL_MODE", "memory")
+    assert choose_journal_mode("/tmp/test.db") == "memory"
+
+
+def test_choose_journal_mode_env_invalid_falls_through(monkeypatch):
+    monkeypatch.setenv("COGNITS_JOURNAL_MODE", "foobar")
     # Not a valid journal mode — auto-detect kicks in.
     # On a native Linux filesystem, this should return "wal".
     assert choose_journal_mode("/tmp/test.db") == "wal"
@@ -56,7 +61,7 @@ def test_choose_journal_mode_auto_detect_unsafe(monkeypatch):
         "cognits.storage.fsdetect._read_proc_mounts",
         lambda: fake_mounts,
     )
-    assert choose_journal_mode("/mnt/c/Users/test.db") == "delete"
+    assert choose_journal_mode("/mnt/c/Users/test.db") == "memory"
 
 
 # -- fstype_of ----------------------------------------------------------------
@@ -144,6 +149,10 @@ def test_synchronous_for_delete():
     assert synchronous_for("delete") == "EXTRA"
 
 
+def test_synchronous_for_memory():
+    assert synchronous_for("memory") == "OFF"
+
+
 def test_synchronous_for_wal():
     assert synchronous_for("wal") == "NORMAL"
 
@@ -194,3 +203,48 @@ def test_database_delete_mode_durable(tmp_path, monkeypatch):
         assert row[0] == "durable"
     finally:
         db2.shutdown()
+
+
+def test_database_memory_mode_writable(tmp_path, monkeypatch):
+    """Open a Database with COGNITS_JOURNAL_MODE=memory, verify mode + writability."""
+    monkeypatch.setenv("COGNITS_JOURNAL_MODE", "memory")
+
+    db = Database(tmp_path / "mem.db")
+    try:
+        assert db.journal_mode == "memory"
+
+        # synchronous should be OFF (PRAGMA synchronous returns an integer: 0).
+        sync_val = db.conn.execute("PRAGMA synchronous").fetchone()[0]
+        assert sync_val == 0  # 0 = OFF
+
+        # Write data in a transaction and commit.
+        with db.transaction():
+            db.conn.execute(
+                "INSERT INTO notes (id, title) VALUES ('mem1', 'memory_mode')"
+            )
+    finally:
+        db.shutdown()
+
+    # Reopen and verify the row survived.
+    db2 = Database(tmp_path / "mem.db")
+    try:
+        assert db2.journal_mode == "memory"
+        row = db2.conn.execute(
+            "SELECT title FROM notes WHERE id = 'mem1'"
+        ).fetchone()
+        assert row is not None
+        assert row[0] == "memory_mode"
+    finally:
+        db2.shutdown()
+
+
+def test_choose_journal_mode_unsafe_fstype_returns_memory(monkeypatch):
+    """When the filesystem is 9p, choose_journal_mode returns 'memory' not 'delete'."""
+    fake_mounts = (
+        "C:\\ /mnt/c 9p rw,noatime,dirsync 0 0\n"
+    )
+    monkeypatch.setattr(
+        "cognits.storage.fsdetect._read_proc_mounts",
+        lambda: fake_mounts,
+    )
+    assert choose_journal_mode("/mnt/c/test.db") == "memory"
