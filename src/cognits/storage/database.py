@@ -7,6 +7,7 @@ across all domain repositories, plus the reentrant lock that serializes access.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import sqlite3
 import threading
@@ -14,6 +15,9 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from cognits.constants import BUSY_TIMEOUT_MS
+from cognits.storage.fsdetect import choose_journal_mode, synchronous_for
+
+_logger = logging.getLogger("cognits.database")
 
 SCHEMA_VERSION = 1
 
@@ -230,13 +234,20 @@ class Database:
         self.db_path = str(db_path)
         self.lock = threading.RLock()
         self._closed = False
+        self.journal_mode = "wal"
         self.conn = sqlite3.connect(
             self.db_path, check_same_thread=False, isolation_level=None
         )
         try:
             self.conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
-            self.conn.execute("PRAGMA journal_mode = WAL")
-            self.conn.execute("PRAGMA synchronous = NORMAL")
+            mode = choose_journal_mode(self.db_path)
+            self.conn.execute(f"PRAGMA journal_mode = {mode}")
+            actual_mode = self.conn.execute("PRAGMA journal_mode").fetchone()[0]
+            self.journal_mode = str(actual_mode).lower()
+            sync = synchronous_for(self.journal_mode)
+            self.conn.execute(f"PRAGMA synchronous = {sync}")
+            _logger.info("database journal_mode=%s synchronous=%s (requested=%s, path=%s)",
+                          self.journal_mode, sync, mode, self.db_path)
             self._check_fts5()
             self.conn.enable_load_extension(True)
             import sqlite_vec
@@ -254,7 +265,8 @@ class Database:
             return
         with self.lock:
             try:
-                self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                if self.journal_mode == "wal":
+                    self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             except sqlite3.Error:
                 pass
             try:
