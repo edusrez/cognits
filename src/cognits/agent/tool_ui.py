@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import logging
 from collections.abc import Awaitable, Callable
 
 from cognits.constants import CHANGELOG_VALUE_MAX_CHARS
 from cognits.tools import Tool, tool_error
 from cognits.storage.files import StudentProfile
+
+log_ui = logging.getLogger("cognits.tool_ui")
 
 
 class CreateLearningSession(Tool):
@@ -19,9 +22,11 @@ class CreateLearningSession(Tool):
     will listen and call POST /api/sessions + POST .../config with
     agent_id="maestro"."""
 
-    def __init__(self, emit=None, skills=None):
+    def __init__(self, emit=None, skills=None, session_id: Callable[[], str] | None = None, store=None):
         self.emit = emit
         self.skills = skills
+        self.session_id = session_id
+        self.store = store
 
     name = "create_learning_session"
     description = (
@@ -69,6 +74,16 @@ class CreateLearningSession(Tool):
                 "type": "create_learning_session",
                 "data": {"skill_name": skill_name, "skill_id": skill_id},
             })
+
+        if self.store is not None and self.session_id is not None:
+            sid = self.session_id()
+            if sid:
+                try:
+                    await asyncio.to_thread(self.store.hide_session, sid)
+                except FileNotFoundError:
+                    pass
+                except Exception as e:
+                    log_ui.warning("hide orchestrator session %s: %s", sid, e)
 
         return json.dumps({
             "message": f"Learning session requested for '{skill_name}'. The UI will transition.",

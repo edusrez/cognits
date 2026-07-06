@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from cognits.constants import MAX_NAME_LENGTH
-from cognits.server.exceptions import NotFoundError, StorageError
+from cognits.server.exceptions import NotFoundError, StorageError, SessionNotFound
 from cognits.storage.files import Session
 
 log = logging.getLogger("cognits.sessions")
@@ -40,11 +40,11 @@ def register(app: FastAPI, st) -> None:
         return JSONResponse(session.to_json())
 
     @app.get("/api/sessions")
-    async def list_sessions():
+    async def list_sessions(include_hidden: bool = False):
         if (err := ensure_sessions()) is not None:
             return err
         try:
-            sessions = await asyncio.to_thread(st.store.list_sessions)
+            sessions = await asyncio.to_thread(st.store.list_sessions, include_hidden)
         except OSError as e:
             raise StorageError(str(e))
         return JSONResponse([s.to_json() for s in sessions])
@@ -56,16 +56,35 @@ def register(app: FastAPI, st) -> None:
 
         try:
             body = await request.json()
-            name = body.get("name", "") if isinstance(body, dict) else ""
-            if not isinstance(name, str):
-                raise ValueError("name")
+            if not isinstance(body, dict):
+                raise ValueError("body")
         except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
             raise StorageError("invalid body")
-        if len(name) > MAX_NAME_LENGTH:
-            raise StorageError("name too long")
+
+        name = body.get("name")
+        hidden = body.get("hidden")
+        if name is None and hidden is None:
+            raise StorageError("name or hidden is required")
+
+        if name is not None:
+            if not isinstance(name, str):
+                raise StorageError("invalid name")
+            if len(name) > MAX_NAME_LENGTH:
+                raise StorageError("name too long")
+
+        if hidden is not None and not isinstance(hidden, bool):
+            raise StorageError("hidden must be a boolean")
 
         try:
-            await asyncio.to_thread(st.store.rename_session, session_id, name)
+            if name is not None:
+                await asyncio.to_thread(st.store.rename_session, session_id, name)
+            if hidden is not None:
+                if hidden:
+                    await asyncio.to_thread(st.store.hide_session, session_id)
+                else:
+                    await asyncio.to_thread(st.store.unhide_session, session_id)
+        except FileNotFoundError:
+            raise SessionNotFound(session_id)
         except (OSError, json.JSONDecodeError) as e:
             raise StorageError(str(e))
 

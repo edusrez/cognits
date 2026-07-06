@@ -4,6 +4,7 @@ export interface Session {
   id: string
   name: string
   createdAt: string
+  hidden?: boolean
 }
 
 export const [activeSessionId, setActiveSessionId] = createSignal<string | null>(

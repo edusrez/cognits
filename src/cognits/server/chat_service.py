@@ -569,7 +569,7 @@ class ChatService:
             tracer=tracer,
         )
         registry.register(deploy_subagent_tool)
-        registry.register(CreateLearningSession(emit=process_event, skills=st.skills))
+        registry.register(CreateLearningSession(emit=process_event, skills=st.skills, session_id=lambda: sid, store=st.store))
 
         if self.agent_id == "system_support":
             skill_planner_deployer = None

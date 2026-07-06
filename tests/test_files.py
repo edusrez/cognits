@@ -129,3 +129,71 @@ def test_reorder_sessions_uses_write_atomic(tmp_path: Path):
     assert args_path.name == "session_order.json"
     parsed = json.loads(args_data)
     assert parsed == ["a", "b", "c"]
+
+
+# --- Session hidden field -------------------------------------------------
+
+def test_session_hidden_roundtrip():
+    from cognits.storage.files import Session
+
+    s = Session(id="s1", name="Test", hidden=True)
+    d = s.to_json()
+    assert d["hidden"] is True
+    s2 = Session.from_json(d)
+    assert s2.hidden is True
+
+    s3 = Session.from_json({"id": "s2", "name": "X"})
+    assert s3.hidden is False
+
+
+def test_list_sessions_excludes_hidden(tmp_path: Path):
+    from cognits.storage.files import Session, Store
+
+    store = Store(tmp_path)
+    store.init_sessions_dir()
+    s1 = Session(id="s1", name="Visible", hidden=False)
+    s2 = Session(id="s2", name="Hidden", hidden=True)
+    store.save_session(s1)
+    store.save_session(s2)
+
+    visible = store.list_sessions()
+    assert len(visible) == 1
+    assert visible[0].id == "s1"
+
+    all_sessions = store.list_sessions(include_hidden=True)
+    assert len(all_sessions) == 2
+
+
+def test_hide_session(tmp_path: Path):
+    from cognits.storage.files import Session, Store
+
+    store = Store(tmp_path)
+    store.init_sessions_dir()
+    s = Session(id="s1", name="Test", hidden=False)
+    store.save_session(s)
+
+    store.hide_session("s1")
+    loaded = store.get_session("s1")
+    assert loaded is not None
+    assert loaded.hidden is True
+
+    store.unhide_session("s1")
+    loaded = store.get_session("s1")
+    assert loaded is not None
+    assert loaded.hidden is False
+
+
+def test_hide_session_not_found(tmp_path: Path):
+    from cognits.storage.files import Store
+
+    store = Store(tmp_path)
+    with pytest.raises(FileNotFoundError):
+        store.hide_session("nonexistent")
+
+
+def test_unhide_session_not_found(tmp_path: Path):
+    from cognits.storage.files import Store
+
+    store = Store(tmp_path)
+    with pytest.raises(FileNotFoundError):
+        store.unhide_session("nonexistent")

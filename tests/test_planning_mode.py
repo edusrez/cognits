@@ -103,6 +103,35 @@ def test_create_learning_session_unified(store):
     assert len(events) == 1
 
 
+def test_create_learning_session_hides_current_session(store):
+    skills, learner_state = store
+    a = Skill(id=new_skill_id(), domain="d", name="Variables", source="test")
+    skills.upsert(a)
+
+    events = []
+    hide_calls = []
+
+    class MockStore:
+        def hide_session(self, sid):
+            hide_calls.append(sid)
+
+    mock_store = MockStore()
+    session_id = "orchestrator_session"
+
+    tool = CreateLearningSession(
+        emit=events.append,
+        skills=skills,
+        session_id=lambda: session_id,
+        store=mock_store,
+    )
+    result = asyncio.run(tool.execute(json.dumps({"skill_name": "Variables"})))
+    data = json.loads(result)
+    assert "Learning session requested" in data["message"]
+    assert len(events) == 1
+    assert events[0]["type"] == "create_learning_session"
+    assert hide_calls == [session_id]
+
+
 # --- Orchestrator prompt checks -------------------------------------
 
 def test_orchestrator_prompt_contains_planning_mode():

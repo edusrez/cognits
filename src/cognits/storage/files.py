@@ -46,9 +46,10 @@ class Session:
     id: str = ""
     name: str = ""
     created_at: str = ""
+    hidden: bool = False
 
     def to_json(self) -> dict:
-        return {"id": self.id, "name": self.name, "createdAt": self.created_at}
+        return {"id": self.id, "name": self.name, "createdAt": self.created_at, "hidden": self.hidden}
 
     @classmethod
     def from_json(cls, d: dict) -> "Session":
@@ -56,6 +57,7 @@ class Session:
             id=d.get("id", ""),
             name=d.get("name", ""),
             created_at=d.get("createdAt", ""),
+            hidden=bool(d.get("hidden", False)),
         )
 
 
@@ -339,7 +341,7 @@ class Store:
         data = json.dumps(session.to_json(), indent=2, ensure_ascii=False).encode("utf-8")
         write_file_atomic(self._session_path(session.id), data)
 
-    def list_sessions(self) -> list[Session]:
+    def list_sessions(self, include_hidden: bool = False) -> list[Session]:
         sessions: list[Session] = []
         try:
             entries = list(self._sessions_dir().iterdir())
@@ -363,6 +365,8 @@ class Store:
             sessions = ordered
         else:
             sessions.sort(key=_session_sort_key)
+        if not include_hidden:
+            sessions = [s for s in sessions if not s.hidden]
         return sessions
 
     def get_session(self, session_id: str) -> Session | None:
@@ -377,6 +381,20 @@ class Store:
         if session is None:
             raise FileNotFoundError(f"storage: session {session_id} not found")
         session.name = new_name
+        self.save_session(session)
+
+    def hide_session(self, session_id: str) -> None:
+        session = self.get_session(session_id)
+        if session is None:
+            raise FileNotFoundError(f"storage: session {session_id} not found")
+        session.hidden = True
+        self.save_session(session)
+
+    def unhide_session(self, session_id: str) -> None:
+        session = self.get_session(session_id)
+        if session is None:
+            raise FileNotFoundError(f"storage: session {session_id} not found")
+        session.hidden = False
         self.save_session(session)
 
     def delete_session(self, session_id: str) -> None:
