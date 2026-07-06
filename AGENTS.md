@@ -122,7 +122,9 @@ uv run pytest tests/test_X.py::test_name -x --tb=short  # single test
 
 Env vars: `PORT` (default 5173), `COGNITS_HOST`/`LEARNIT_HOST` (default
 127.0.0.1), `ENV=dev` (proxy to Vite), `COGNITS_DISABLE_RAG=1` (skip model
-load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3),
+load — useful in dev/tests; first RAG start downloads ~2.3 GB BGE-M3;
+automatically set by `tests/conftest.py` autouse fixture for all tests,
+so `uv run pytest` works without the explicit prefix),
 `COGNITS_JOURNAL_MODE` (override SQLite journal mode:
 wal/delete/truncate/persist).
 
