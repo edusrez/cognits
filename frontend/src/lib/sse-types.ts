@@ -112,6 +112,7 @@ export interface ToolEntry {
   message: string;
   favicons: string[];
   done: boolean;
+  title?: string;
 }
 
 // --- Union type ---

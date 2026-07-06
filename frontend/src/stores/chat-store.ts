@@ -50,6 +50,7 @@ let lastDrainTime = 0
 let inactiveDrainActive = false
 let doneDeferred = false
 let deferredToolHistory: ToolEntry[] = []
+let deferredReports: { reportId: string; reportTitle: string }[] = []
 
 function drainFrame() {
   rafId = null
@@ -59,17 +60,32 @@ function drainFrame() {
       doneDeferred = false
       const content = streamingContent()
       const history = deferredToolHistory
+      const reports = deferredReports
       deferredToolHistory = []
+      deferredReports = []
       batch(() => {
         if (content) {
           const newMsg: ChatMessage = { role: "assistant", content }
           if (history.length > 0) newMsg.toolHistory = history
+          if (reports.length > 0) newMsg.reports = reports
           setMessages((prev: ChatMessage[]) => [...prev, newMsg])
           setStreamingContent("")
-        } else if (history.length > 0) {
-          const lastIdx = messages.length
-          if (lastIdx > 0 && messages[lastIdx - 1].role === "assistant") {
-            setMessages(lastIdx - 1, "toolHistory", history)
+        } else if (history.length > 0 || reports.length > 0) {
+          if (history.length > 0) {
+            const lastIdx = messages.length
+            if (lastIdx > 0 && messages[lastIdx - 1].role === "assistant") {
+              setMessages(lastIdx - 1, "toolHistory", history)
+            } else {
+              setMessages((prev: ChatMessage[]) => [...prev, { role: "assistant", content: "", toolHistory: history }])
+            }
+          }
+          if (reports.length > 0) {
+            const lastIdx = messages.length
+            if (lastIdx > 0 && messages[lastIdx - 1].role === "assistant") {
+              setMessages(lastIdx - 1, "reports", (prev: ChatMessage["reports"]) => [...(prev ?? []), ...reports])
+            } else {
+              setMessages((prev: ChatMessage[]) => [...prev, { role: "assistant", content: "", reports }])
+            }
           }
         }
         setStreamingReasoning("")
@@ -224,6 +240,9 @@ function createCallbacks(): StreamCallbacks {
             setToolEntries([])
           })
           pendingBuffer = last.content
+          if (snap.liveReports && snap.liveReports.length > 0) {
+            deferredReports = snap.liveReports.map(r => ({ reportId: r.reportId, reportTitle: r.reportTitle }))
+          }
           inactiveDrainActive = true
           startDrain()
           return
@@ -251,6 +270,15 @@ function createCallbacks(): StreamCallbacks {
       if (snap.liveContent) {
         pendingBuffer = snap.liveContent
         startDrain()
+      }
+      if (snap.liveReports && snap.liveReports.length > 0) {
+        const lastIdx = messages.length
+        const mapped = snap.liveReports.map(r => ({ reportId: r.reportId, reportTitle: r.reportTitle }))
+        if (lastIdx > 0 && messages[lastIdx - 1].role === "assistant") {
+          setMessages(lastIdx - 1, "reports", (prev: ChatMessage["reports"]) => [...(prev ?? []), ...mapped])
+        } else {
+          setMessages((prev: ChatMessage[]) => [...prev, { role: "assistant", content: "", reports: mapped }])
+        }
       }
     },
 
@@ -346,7 +374,7 @@ function createCallbacks(): StreamCallbacks {
           const idx = prev.findIndex(e => e.id === eId)
           if (idx >= 0) {
             const next = [...prev]
-            next[idx] = { ...next[idx], done: true }
+            next[idx] = { ...next[idx], done: true, title: data.title ?? undefined }
             return next
           }
           return [...prev, {
@@ -357,6 +385,7 @@ function createCallbacks(): StreamCallbacks {
             message: data.summary ?? "",
             favicons: [],
             done: true,
+            title: data.title ?? data.summary ?? "",
           }]
         })
       }
@@ -366,10 +395,15 @@ function createCallbacks(): StreamCallbacks {
         import("../stores/report-store").then(m => m.loadReport(data.reportId!))
       }
       import("../stores/learnit-store").then(ls => ls.refetchReports())
-      const len = messages.length
-      if (len > 0 && messages[len - 1].role === "assistant" && data.reportId) {
+      // Ensure a recent assistant message exists to attach reports to
+      let reportTargetIdx = messages.length
+      if (reportTargetIdx > 0 && messages[reportTargetIdx - 1].role !== "assistant" && data.reportId) {
+        setMessages((prev: ChatMessage[]) => [...prev, { role: "assistant", content: "" }])
+        reportTargetIdx = messages.length
+      }
+      if (reportTargetIdx > 0 && messages[reportTargetIdx - 1].role === "assistant" && data.reportId) {
         batch(() => {
-          setMessages(len - 1, "reports", (prev: ChatMessage["reports"]) => [
+          setMessages(reportTargetIdx - 1, "reports", (prev: ChatMessage["reports"]) => [
             ...(prev ?? []),
             { reportId: data.reportId!, reportTitle: data.title ?? "" },
           ])
@@ -414,7 +448,11 @@ function createCallbacks(): StreamCallbacks {
               setToolEntries([])
             })
           } else {
-            setToolEntries([])
+            const newMsg: ChatMessage = { role: "assistant", content: "", toolHistory: history }
+            batch(() => {
+              setMessages((prev: ChatMessage[]) => [...prev, newMsg])
+              setToolEntries([])
+            })
           }
         } else {
           setToolEntries([])

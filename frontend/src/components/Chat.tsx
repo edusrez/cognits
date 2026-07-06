@@ -11,38 +11,50 @@ import StreamingMessage from "./StreamingMessage"
 import { copyToClipboard } from "../lib/clipboard"
 
 function squareClass(entry: ToolEntry): string {
-  if (entry.done) return "inline-block w-2 h-2 border border-[#555] bg-[#cccccc] transition-colors duration-200"
+  if (entry.done) return "shrink-0 inline-block w-2 h-2 border border-[#555] bg-[#cccccc] transition-colors duration-200"
   const msg = entry.message
-  if (/error|fail/i.test(msg)) return "inline-block w-2 h-2 border border-[#e74c3c] bg-[#0d0d0d] transition-colors duration-200"
-  return "inline-block w-2 h-2 border border-[#555] bg-[#0d0d0d] transition-colors duration-200"
+  if (/error|fail/i.test(msg)) return "shrink-0 inline-block w-2 h-2 border border-[#e74c3c] bg-[#0d0d0d] transition-colors duration-200"
+  return "shrink-0 inline-block w-2 h-2 border border-[#555] bg-[#0d0d0d] transition-colors duration-200"
 }
 
 function ToolEntryRow(props: { entry: ToolEntry; depth: number; childrenMap: Map<string, ToolEntry[]> }) {
   const label = () => agentLabelFor(props.entry.agent)
   const indent = () => `${props.depth * 20}px`
 
-  const uniqueFavicons = createMemo(() => {
-    const seen = new Set<string>()
-    return props.entry.favicons.filter(src => {
-      if (!src || seen.has(src)) return false
-      seen.add(src)
-      return true
+  let lastFavicons: string[] = []
+  const uniqueFavicons = createMemo(
+    on(() => props.entry.favicons, (favs) => {
+      const seen = new Set<string>()
+      const result = favs.filter(src => {
+        if (!src || seen.has(src)) return false
+        seen.add(src)
+        return true
+      })
+      if (result.length === lastFavicons.length && result.every((src, i) => src === lastFavicons[i])) {
+        return lastFavicons
+      }
+      lastFavicons = result
+      return result
     })
-  })
+  )
 
   return (
-    <>
+    <div class="flex flex-col">
       <div class="flex items-center gap-1.5 py-0.5" style={{ "padding-left": indent() }}>
         <span class={squareClass(props.entry)} />
         <span class="text-[#9a9a9a] truncate">
           {label()}
-          <Show when={props.entry.message}>
-            <span class="text-[#6a6a6a]">: {props.entry.message}</span>
+          <Show when={props.entry.message || (props.entry.done && props.entry.title)}>
+            <Show when={props.entry.done && props.entry.title} fallback={
+              <span class="text-[#6a6a6a]">: {props.entry.message!}</span>
+            }>
+              <span class="text-[#9a9a9a]">: {props.entry.title}</span>
+            </Show>
           </Show>
         </span>
         <For each={uniqueFavicons()}>
           {(src) => (
-            <img src={src} class="w-3.5 h-3.5 animate-fade-in" alt="" />
+            <img src={src} class="w-3.5 h-3.5" alt="" />
           )}
         </For>
       </div>
@@ -55,7 +67,7 @@ function ToolEntryRow(props: { entry: ToolEntry; depth: number; childrenMap: Map
           />
         )}
       </For>
-    </>
+    </div>
   )
 }
 
@@ -84,7 +96,7 @@ function ToolHistoryInline(props: { entries: ToolEntry[] }) {
         <span>{props.entries.length} tools used</span>
       </div>
       <Show when={expanded()}>
-        <div class="flex flex-col gap-0.5 mt-0.5">
+        <div class="flex flex-col gap-1 mt-0.5">
           <For each={topLevel()}>
             {entry => (
               <ToolEntryRow
@@ -316,7 +328,7 @@ export default function Chat(props: { viewportId?: string }) {
         <Show when={toolEntries().length > 0}>
           <div
             style={{ "font-size": `${Math.max(10, chatFontSize() * 0.8)}px` }}
-            class="text-[#5a5a5a] mt-1 flex flex-col gap-0.5"
+            class="text-[#5a5a5a] mt-1 flex flex-col gap-1"
           >
             <div
               class="flex items-center gap-1.5 cursor-pointer select-none hover:text-[#e0e0e0]"
@@ -381,6 +393,37 @@ export default function Chat(props: { viewportId?: string }) {
                     const md = messages()
                       .filter((m: ChatMessage) => m.content)
                       .map((m: ChatMessage) => `**${m.role === "user" ? "User" : "Agent"}:** ${m.content}`)
+                      .join("\n\n---\n\n")
+                    copyToClipboard(md)
+                  },
+                },
+                {
+                  label: "Copy Conversation (DEBUG)",
+                  onClick: () => {
+                    setCtxMenu(null)
+                    const md = messages()
+                      .filter((m: ChatMessage) => m.content || m.reasoning || (m.toolHistory && m.toolHistory.length > 0) || (m.reports && m.reports.length > 0))
+                      .map((m: ChatMessage) => {
+                        const role = m.role === "user" ? "User" : m.role === "assistant" ? "Agent" : m.role === "hidden_user" ? "Hidden User" : "System"
+                        let parts = [`**${role}:**`]
+                        if (m.reasoning) parts.push(`\n[THINKING]\n${m.reasoning}`)
+                        if (m.content) parts.push(`\n${m.content}`)
+                        if (m.toolHistory && m.toolHistory.length > 0) {
+                          parts.push(`\n[TOOLS]`)
+                          for (const t of m.toolHistory) {
+                            const status = t.done ? "✓" : "…"
+                            const title = t.title ? `: ${t.title}` : t.message ? `: ${t.message}` : ""
+                            parts.push(`${status} ${t.agent}${title}`)
+                          }
+                        }
+                        if (m.reports && m.reports.length > 0) {
+                          parts.push(`\n[REPORTS]`)
+                          for (const r of m.reports) {
+                            parts.push(`- ${r.reportTitle} (id: ${r.reportId})`)
+                          }
+                        }
+                        return parts.join("\n")
+                      })
                       .join("\n\n---\n\n")
                     copyToClipboard(md)
                   },
