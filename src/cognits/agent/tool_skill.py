@@ -57,7 +57,7 @@ class SkillTreeSave(Tool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["start_build", "propose_targets", "upsert_skill", "add_edge", "finish_build", "save_assessment_items", "list_assessment_items", "validate_tree", "find_duplicate_skills", "merge_skills"],
+                "enum": ["start_build", "propose_targets", "upsert_skill", "add_edge", "remove_edge", "finish_build", "save_assessment_items", "list_assessment_items", "validate_tree", "find_duplicate_skills", "merge_skills", "delete_skill"],
                 "description": "Which tree mutation to perform.",
             },
             "trigger": {
@@ -136,10 +136,14 @@ class SkillTreeSave(Tool):
             },
             "size_range": {
                 "type": "array",
-                "description": "propose_targets: [min, max] skill count for this domain.",
+                "description": "propose_targets: [min, max] soft estimate of likely skill count based on goal-floor distance. NOT enforced — the tree grows organically to the floor.",
                 "items": {"type": "integer"},
                 "minItems": 2,
                 "maxItems": 2,
+            },
+            "size_note": {
+                "type": "string",
+                "description": "propose_targets (optional): human-readable note about organic size — actual size depends on goal complexity \u2212 floor height; could be 2 or 200.",
             },
             "bloom_targets": {
                 "type": "object",
@@ -201,6 +205,10 @@ class SkillTreeSave(Tool):
             return await self._find_duplicate_skills(args)
         if action == "merge_skills":
             return await self._merge_skills(args)
+        if action == "remove_edge":
+            return await self._remove_edge(args)
+        if action == "delete_skill":
+            return await self._delete_skill(args)
         return tool_error(f"unknown action: {action}")
 
     async def _start_build(self, args: dict) -> str:
@@ -215,6 +223,7 @@ class SkillTreeSave(Tool):
         bloom_targets = args.get("bloom_targets")
         max_depth = args.get("max_depth")
         atomicity_criterion = args.get("atomicity_criterion", "")
+        size_note = args.get("size_note", "")
 
         if not domain_type:
             return tool_error("propose_targets requires 'domain_type'")
@@ -226,6 +235,7 @@ class SkillTreeSave(Tool):
         targets_data = {
             "domain_type": domain_type,
             "size_range": size_range,
+            "size_note": size_note,
             "bloom_targets": bloom_targets,
             "max_depth": max_depth,
             "atomicity_criterion": atomicity_criterion,
@@ -691,38 +701,26 @@ class SkillTreeSave(Tool):
                         "target": f"[{lo}%, {hi}%]",
                     })
 
-            # Size target (WARN only — size is aspirational, not a hard gate)
+            # Size note (informational only — organic model has no size target)
             sr = proposed.get("size_range")
+            size_note_str = proposed.get("size_note", "")
             if sr and isinstance(sr, list) and len(sr) == 2:
-                if result["skills_n"] < sr[0]:
-                    gaps.append({
-                        "criterion": "size_target",
-                        "severity": "WARN",
-                        "current": f"{result['skills_n']} skills",
-                        "target": f"\u2265{sr[0]} (proposed min)",
-                        "fix_hint": f"Tree has {result['skills_n']} skills, below the proposed minimum of {sr[0]}. Consider adding more skills.",
-                    })
-                elif result["skills_n"] > sr[1]:
-                    gaps.append({
-                        "criterion": "size_target",
-                        "severity": "WARN",
-                        "current": f"{result['skills_n']} skills",
-                        "target": f"\u2264{sr[1]} (proposed max)",
-                        "fix_hint": f"Tree has {result['skills_n']} skills, above the proposed maximum of {sr[1]}. Consider merging or removing skills.",
-                    })
-                else:
-                    gaps.append({
-                        "criterion": "size_target",
-                        "severity": "PASS",
-                        "current": f"{result['skills_n']} skills",
-                        "target": f"[{sr[0]}, {sr[1]}]",
-                    })
+                note_target = f"soft estimate: [{sr[0]}, {sr[1]}]"
+                if size_note_str:
+                    note_target += f" ({size_note_str})"
+                gaps.append({
+                    "criterion": "size_note",
+                    "severity": "NOTE",
+                    "current": f"{result['skills_n']} skills",
+                    "target": note_target,
+                    "fix_hint": "Size is organic \u2014 actual size depends on goal complexity \u2212 floor height. No action needed.",
+                })
             else:
                 gaps.append({
-                    "criterion": "size_target",
-                    "severity": "PASS",
+                    "criterion": "size_note",
+                    "severity": "NOTE",
                     "current": f"{result['skills_n']} skills",
-                    "target": "no size target proposed",
+                    "target": "no size estimate proposed",
                 })
 
             # Max depth (WARN only)
@@ -824,6 +822,15 @@ class SkillTreeSave(Tool):
                     "current": f"max single level={result['any_bloom_max_pct']:.1f}%",
                     "target": "no single Bloom level > 40%",
                 })
+
+            # Size note (informational only — organic model has no size target)
+            gaps.append({
+                "criterion": "size_note",
+                "severity": "NOTE",
+                "current": f"{result['skills_n']} skills",
+                "target": "no size estimate proposed",
+                "fix_hint": "Size is organic \u2014 actual size depends on goal complexity \u2212 floor height. No action needed.",
+            })
 
         # proof_query
         if result["proof_pct"] < 100:
@@ -1109,6 +1116,25 @@ class SkillTreeSave(Tool):
             )
         except Exception as e:
             return tool_error(str(e))
+        return json.dumps(result, ensure_ascii=False)
+
+    async def _remove_edge(self, args: dict) -> str:
+        skill_id = args.get("skill_id")
+        prereq_id = args.get("prereq_id")
+        if not skill_id or not prereq_id:
+            return tool_error("remove_edge requires 'skill_id' and 'prereq_id'")
+        result = await asyncio.to_thread(
+            self.skills.remove_edge, skill_id, prereq_id
+        )
+        return json.dumps(result, ensure_ascii=False)
+
+    async def _delete_skill(self, args: dict) -> str:
+        skill_id = args.get("skill_id")
+        if not skill_id:
+            return tool_error("delete_skill requires 'skill_id'")
+        result = await asyncio.to_thread(
+            self.skills.delete_skill, skill_id
+        )
         return json.dumps(result, ensure_ascii=False)
 
 

@@ -388,6 +388,41 @@ class SkillRepository:
             "kept": keep_id,
         }
 
+    def delete_skill(self, skill_id: str) -> dict:
+        with self.db.transaction():
+            cur_edges = self.db.conn.execute(
+                "DELETE FROM skill_prerequisites WHERE skill_id = ? OR prereq_id = ?",
+                (skill_id, skill_id),
+            )
+            edges_removed = cur_edges.rowcount
+            cur_items = self.db.conn.execute(
+                "DELETE FROM skill_assessment_items WHERE skill_id = ?",
+                (skill_id,),
+            )
+            items_removed = cur_items.rowcount
+            self.db.conn.execute(
+                "DELETE FROM learner_state WHERE skill_id = ?",
+                (skill_id,),
+            )
+            self.db.conn.execute(
+                "DELETE FROM skills WHERE id = ?",
+                (skill_id,),
+            )
+        return {
+            "deleted": True,
+            "skill_id": skill_id,
+            "edges_removed": edges_removed,
+            "items_removed": items_removed,
+        }
+
+    def remove_edge(self, skill_id: str, prereq_id: str) -> dict:
+        with self.db.transaction():
+            cur = self.db.conn.execute(
+                "DELETE FROM skill_prerequisites WHERE skill_id = ? AND prereq_id = ?",
+                (skill_id, prereq_id),
+            )
+        return {"removed": cur.rowcount > 0}
+
     def search_fts(self, search: str, limit: int = 20) -> list[Skill]:
         fts_query = build_fts5_query(search)
         if not fts_query:

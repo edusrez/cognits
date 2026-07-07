@@ -1457,8 +1457,9 @@ def test_validate_tree_uses_proposed_targets(store):
     assert apply_gap["severity"] == "PASS", f"Expected PASS for apply_target, got {apply_gap['severity']}"
 
     # Size + depth should be present.
-    size_gap = next((g for g in data["gaps"] if g["criterion"] == "size_target"), None)
-    assert size_gap is not None, "Expected size_target gap"
+    size_gap = next((g for g in data["gaps"] if g["criterion"] == "size_note"), None)
+    assert size_gap is not None, "Expected size_note gap"
+    assert size_gap["severity"] == "NOTE"
     depth_gap = next((g for g in data["gaps"] if g["criterion"] == "depth_target"), None)
     assert depth_gap is not None, "Expected depth_target gap"
 
@@ -1648,8 +1649,9 @@ def test_validate_tree_adaptive_theory_domain(store):
     assert understand_gap["severity"] == "PASS", f"Expected PASS, got {understand_gap['severity']}"
 
     # Verify size and depth targets are present.
-    size_gap = next((g for g in data["gaps"] if g["criterion"] == "size_target"), None)
-    assert size_gap is not None, "Expected size_target gap"
+    size_gap = next((g for g in data["gaps"] if g["criterion"] == "size_note"), None)
+    assert size_gap is not None, "Expected size_note gap"
+    assert size_gap["severity"] == "NOTE"
     depth_gap = next((g for g in data["gaps"] if g["criterion"] == "depth_target"), None)
     assert depth_gap is not None, "Expected depth_target gap"
 
@@ -1967,3 +1969,299 @@ def test_merge_skills_keeps_higher_mastery(store):
 
     # B's learner state should be gone
     assert asyncio.run(asyncio.to_thread(learner_state.get, bid)) is None
+
+
+# --- delete_skill tests -------------------------------------------------
+
+def test_delete_skill_cascades(store):
+    """skill X with 2 edges (in+out), 1 item, 1 learner_state
+    -> delete_skill -> all removed, skill gone."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment)
+
+    # Create 3 skills: A -> X -> B (chain)
+    aid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "A",
+    }))))["skill_id"]
+    xid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "X",
+    }))))["skill_id"]
+    bid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "B",
+    }))))["skill_id"]
+
+    # Edge X->A (incoming prereq to X), B->X (outgoing from X)
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": xid, "prereq_id": aid,
+        "edge_type": "prereq",
+    })))
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": bid, "prereq_id": xid,
+        "edge_type": "prereq",
+    })))
+
+    # Add assessment item for X
+    asyncio.run(tool.execute(json.dumps({
+        "action": "save_assessment_items",
+        "skill_id": xid,
+        "items": [{"question": "A sufficiently long question for X",
+                   "expected_answer": "Answer", "rubric": "Rubric",
+                   "question_type": "open", "blooms_level": "remember",
+                   "difficulty": 0.5, "generation_model": "test"}],
+    })))
+
+    # Seed learner_state for X (p=0.85 to verify deletion)
+    ls = LearnerState(skill_id=xid, alpha=17.0, beta=3.0, p_mastery=0.85,
+                      status_enum="proficient")
+    asyncio.run(asyncio.to_thread(learner_state.upsert, ls))
+
+    # Verify pre-conditions
+    assert skills.get(xid) is not None
+    assert len(skills.get_prerequisites(xid)) == 1  # X->A
+    # B->X should exist too
+    prereqs_before = skills.get_prerequisites(bid)
+    assert len(prereqs_before) == 1
+    assert prereqs_before[0].prereq_id == xid
+    items_before = asyncio.run(asyncio.to_thread(assessment.list_for_skill, xid, True))
+    assert len(items_before) == 1
+    ls_before = asyncio.run(asyncio.to_thread(learner_state.get, xid))
+    assert ls_before is not None
+
+    # Delete skill X
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "delete_skill",
+        "skill_id": xid,
+    })))
+    data = json.loads(result)
+    assert data["deleted"] is True
+    assert data["skill_id"] == xid
+    assert data["edges_removed"] == 2  # X->A (in) + B->X (out)
+    assert data["items_removed"] == 1
+
+    # Skill X is gone
+    assert skills.get(xid) is None
+
+    # Edges involving X are gone
+    assert len(skills.get_prerequisites(xid)) == 0  # skill itself deleted, so this gets nothing
+    prereqs_b_after = skills.get_prerequisites(bid)
+    assert len(prereqs_b_after) == 0  # B->X edge removed
+
+    # Assessment items for X are gone
+    items_after = asyncio.run(asyncio.to_thread(assessment.list_for_skill, xid, True))
+    assert len(items_after) == 0
+
+    # Learner state for X is gone
+    assert asyncio.run(asyncio.to_thread(learner_state.get, xid)) is None
+
+    # Skills A and B still exist (only X was pruned)
+    assert skills.get(aid) is not None
+    assert skills.get(bid) is not None
+
+
+# --- remove_edge tests --------------------------------------------------
+
+def test_remove_edge(store):
+    """edge A->B exists -> remove_edge(A, B) -> edge gone, other edges intact."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment)
+
+    aid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "A",
+    }))))["skill_id"]
+    bid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "B",
+    }))))["skill_id"]
+    cid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "C",
+    }))))["skill_id"]
+
+    # B->A (edge to remove)
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": bid, "prereq_id": aid,
+        "edge_type": "prereq",
+    })))
+    # C->A (edge to keep)
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": cid, "prereq_id": aid,
+        "edge_type": "prereq",
+    })))
+
+    # Verify both edges exist
+    prereqs_b = skills.get_prerequisites(bid)
+    assert len(prereqs_b) == 1 and prereqs_b[0].prereq_id == aid
+    prereqs_c = skills.get_prerequisites(cid)
+    assert len(prereqs_c) == 1 and prereqs_c[0].prereq_id == aid
+
+    # Remove B->A edge
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "remove_edge",
+        "skill_id": bid,
+        "prereq_id": aid,
+    })))
+    data = json.loads(result)
+    assert data["removed"] is True
+
+    # B->A is gone
+    assert len(skills.get_prerequisites(bid)) == 0
+    # C->A still intact
+    prereqs_c_after = skills.get_prerequisites(cid)
+    assert len(prereqs_c_after) == 1 and prereqs_c_after[0].prereq_id == aid
+
+
+def test_remove_edge_nonexistent(store):
+    """remove_edge on non-existent edge returns removed=False."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment)
+
+    aid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "A",
+    }))))["skill_id"]
+    bid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "B",
+    }))))["skill_id"]
+
+    # No edge exists between B and A
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "remove_edge",
+        "skill_id": bid,
+        "prereq_id": aid,
+    })))
+    data = json.loads(result)
+    assert data["removed"] is False
+
+
+# --- validate_tree organic size tests -----------------------------------
+
+def test_validate_tree_no_size_check(store):
+    """A tree with 3 skills -> validate_tree has NO size_target WARN/FAIL.
+    Size is organic — even though there's a proposed size range, it's a NOTE
+    not a WARN/FAIL."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment)
+
+    # Propose targets with size_range [10, 20]
+    asyncio.run(tool.execute(json.dumps({"action": "start_build", "trigger": "test"})))
+    asyncio.run(tool.execute(json.dumps({
+        "action": "propose_targets",
+        "domain_type": "programming",
+        "size_range": [10, 20],
+        "bloom_targets": {
+            "apply": [20, 40],
+            "analyze": [10, 25],
+            "evaluate": [10, 25],
+            "create": [5, 20],
+            "understand": [15, 30],
+            "remember": [5, 15],
+        },
+        "max_depth": 5,
+        "atomicity_criterion": "test",
+    })))
+
+    # Build a small tree with only 3 skills (far below size_range [10, 20])
+    # Balanced Bloom so no Bloom FAILs
+    blooms = ["understand", "apply", "evaluate"]
+    ids = []
+    for i, bl in enumerate(blooms):
+        sid = json.loads(asyncio.run(tool.execute(json.dumps({
+            "action": "upsert_skill", "domain": "d", "name": f"S{i}",
+            "bloom_level": bl,
+        }))))["skill_id"]
+        ids.append(sid)
+
+    # Connect with edges (3 skills, 3 edges -> ratio 1.0, but we only care about size check)
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": ids[1], "prereq_id": ids[0],
+        "edge_type": "prereq", "proof_query": "pq1",
+    })))
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": ids[2], "prereq_id": ids[1],
+        "edge_type": "prereq", "proof_query": "pq2",
+    })))
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": ids[2], "prereq_id": ids[0],
+        "edge_type": "prereq", "proof_query": "pq3",
+    })))
+
+    for sid in ids:
+        asyncio.run(tool.execute(json.dumps({
+            "action": "save_assessment_items",
+            "skill_id": sid,
+            "items": [{"question": "A sufficiently long question for quality",
+                       "expected_answer": "Answer", "rubric": "Rubric",
+                       "question_type": "open", "blooms_level": "remember",
+                       "difficulty": 0.5, "generation_model": "test"}],
+        })))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    # Verify the size_note criterion exists and is NOTE severity (never FAIL/WARN)
+    size_gap = next((g for g in data["gaps"] if g["criterion"] == "size_note"), None)
+    assert size_gap is not None, "Expected size_note gap"
+    assert size_gap["severity"] == "NOTE", (
+        f"size_note should be NOTE, got {size_gap['severity']}"
+    )
+    assert "3 skills" in size_gap["current"]
+
+    # There should be no size_target criterion at all
+    size_target = next((g for g in data["gaps"] if g["criterion"] == "size_target"), None)
+    assert size_target is None, "size_target criterion should not exist (replaced by size_note)"
+
+
+def test_validate_tree_keeps_other_checks(store):
+    """After dropping size check, other checks (items, Bloom, orphans, proof_query) still work."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment)
+
+    # Create 2 skills, one with 0 assessment items -> should FAIL
+    aid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "A",
+        "bloom_level": "understand",
+    }))))["skill_id"]
+    bid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "B",
+        "bloom_level": "understand",
+    }))))["skill_id"]
+
+    # Connect with proof_query
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": bid, "prereq_id": aid,
+        "edge_type": "prereq", "proof_query": "B needs A",
+    })))
+
+    # Only A gets items — B has 0
+    asyncio.run(tool.execute(json.dumps({
+        "action": "save_assessment_items",
+        "skill_id": aid,
+        "items": [{"question": "A sufficiently long question for quality",
+                   "expected_answer": "Answer", "rubric": "Rubric",
+                   "question_type": "open", "blooms_level": "remember",
+                   "difficulty": 0.5, "generation_model": "test"}],
+    })))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    # assessment_items should FAIL
+    ai_gap = next((g for g in data["gaps"] if g["criterion"] == "assessment_items"), None)
+    assert ai_gap is not None, "Expected assessment_items gap"
+    assert ai_gap["severity"] == "FAIL"
+
+    # proof_query should PASS (only edge has proof)
+    pq_gap = next((g for g in data["gaps"] if g["criterion"] == "proof_query"), None)
+    assert pq_gap is not None, "Expected proof_query gap"
+    assert pq_gap["severity"] == "PASS"
+
+    # acyclic should PASS
+    ac_gap = next((g for g in data["gaps"] if g["criterion"] == "acyclic"), None)
+    assert ac_gap is not None, "Expected acyclic gap"
+    assert ac_gap["severity"] == "PASS"
+
+    # size_note should be NOTE (not FAIL/WARN)
+    size_gap = next((g for g in data["gaps"] if g["criterion"] == "size_note"), None)
+    assert size_gap is not None, "Expected size_note gap"
+    assert size_gap["severity"] == "NOTE"
+
+    # skills_needing_items should list bid
+    assert "skills_needing_items" in data
+    assert bid in data["skills_needing_items"]
