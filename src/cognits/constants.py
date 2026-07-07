@@ -45,6 +45,7 @@ def get_context_window(model_str: str) -> int:
 # --- Agent limits ---
 ORCHESTRATOR_MAX_STEPS = 999
 RESEARCHER_MAX_STEPS = 100
+SKILL_PLANNER_MAX_STEPS = 999  # indeterminate — the planner must complete the full tree + items + critique without deferring
 
 # --- Memory pressure thresholds (MB) ---
 MEM_WARN = 5000

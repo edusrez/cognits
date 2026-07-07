@@ -40,6 +40,7 @@ from cognits.constants import (
     get_context_window,
     ORCHESTRATOR_MAX_STEPS,
     RESEARCHER_MAX_STEPS,
+    SKILL_PLANNER_MAX_STEPS,
     SESSION_NAMER_MAX_TOKENS,
     SESSION_NAMER_TEMPERATURE,
     STUDY_PLANNER_DEFAULT_STEPS,
@@ -466,7 +467,7 @@ class ChatService:
             planner_reasoning = planner_cfg.reasoning if planner_cfg else "max"
             planner_max_steps = planner_cfg.max_steps if planner_cfg else 0
             if planner_max_steps <= 0:
-                planner_max_steps = ORCHESTRATOR_MAX_STEPS
+                planner_max_steps = SKILL_PLANNER_MAX_STEPS
             planner_max_tokens = planner_cfg.max_tokens if planner_cfg else 0
             planner_temperature = planner_cfg.temperature if planner_cfg else 0.0
             planner_top_p = planner_cfg.top_p if planner_cfg else 0.0
