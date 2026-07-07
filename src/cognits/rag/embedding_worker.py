@@ -18,7 +18,12 @@ def _ensure_model():
     global _MODEL_LOADED, _MODEL
     if _MODEL_LOADED:
         return
-    os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+    # Redirect stdout to stderr to silence ONNX output. If stdout/stderr
+    # are invalid (e.g. closed by the TUI), skip — the output is harmless.
+    try:
+        os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+    except (OSError, ValueError):
+        pass  # fd invalid — continue without redirect
     from fastembed import TextEmbedding
     from fastembed.common.model_description import ModelSource, PoolingType
 

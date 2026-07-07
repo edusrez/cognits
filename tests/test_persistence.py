@@ -325,6 +325,89 @@ class TestFullPersistenceCycleMemoryMode:
         db2.shutdown()
 
 
+class TestVacuumShutdown:
+    """Verify shutdown() uses VACUUM INTO + rename for 9p durability."""
+
+    def test_vacuum_copy_created_and_data_survives(self, tmp_path, monkeypatch):
+        """shutdown() creates a vacuum copy and renames it over the original.
+        On native FS this is harmless; on 9p it's critical. The key invariant:
+        data written before shutdown survives a reopen."""
+        monkeypatch.setenv("COGNITS_JOURNAL_MODE", "delete")
+        db_path = tmp_path / "vacuum.db"
+
+        db = Database(db_path)
+        reports = ReportRepository(db)
+        report_id = new_report_id()
+        reports.save(Report(
+            id=report_id,
+            session_id="sess_vac",
+            title="Vacuum Test",
+            content="Content that must survive shutdown.",
+        ))
+        db.shutdown()
+
+        # The vacuum copy should NOT exist — it was renamed over the original.
+        vacuum_path = Path(str(db_path) + ".vacuum")
+        assert not vacuum_path.exists(), (
+            f"Vacuum file should have been renamed, but found: {vacuum_path}"
+        )
+
+        # Reopen and verify data survived.
+        db2 = Database(db_path)
+        try:
+            reports2 = ReportRepository(db2)
+            got = reports2.get(report_id)
+            assert got is not None, "Data should survive shutdown"
+            assert got.title == "Vacuum Test"
+            assert got.content == "Content that must survive shutdown."
+        finally:
+            db2.shutdown()
+
+    def test_vacuum_preserves_all_repos(self, tmp_path, monkeypatch):
+        """Reports, messages, skills, and learner_state all survive the
+        VACUUM INTO + rename cycle."""
+        monkeypatch.setenv("COGNITS_JOURNAL_MODE", "delete")
+        db_path = tmp_path / "vacuum_all.db"
+
+        db = Database(db_path)
+        reports = ReportRepository(db)
+        messages = MessageRepository(db)
+        skills = SkillRepository(db)
+        learner = LearnerStateRepository(db)
+
+        report_id = new_report_id()
+        skill_id = new_skill_id()
+        session_id = "sess_vac_all"
+
+        reports.save(Report(
+            id=report_id, session_id=session_id,
+            title="R", content="C",
+        ))
+        messages.append(session_id, MessageRow(
+            session_id=session_id, role="user", content="M",
+        ))
+        skills.upsert(Skill(
+            id=skill_id, domain="test", name="S",
+            description="D", bloom_level="remember", difficulty=0.1,
+        ))
+        learner.upsert(LearnerState(
+            skill_id=skill_id, p_mastery=0.6, status_enum="practicing",
+        ))
+        db.shutdown()
+
+        db2 = Database(db_path)
+        try:
+            reports2 = ReportRepository(db2)
+            messages2 = MessageRepository(db2)
+            learner2 = LearnerStateRepository(db2)
+
+            assert reports2.get(report_id) is not None
+            assert len(messages2.load(session_id)) == 1
+            assert learner2.get(skill_id) is not None
+        finally:
+            db2.shutdown()
+
+
 class TestPersistenceAutoDetect:
     """On native FS (tmp_path on ext4/btrfs/tmpfs), auto-detect should pick WAL."""
 

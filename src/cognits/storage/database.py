@@ -303,6 +303,15 @@ class Database:
                     self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             except sqlite3.Error:
                 pass
+
+            # VACUUM INTO: write a clean copy with all data. This forces 9p
+            # to create and write a new file (unlike fsync which is a no-op).
+            vacuum_path = self.db_path + ".vacuum"
+            try:
+                self.conn.execute(f"VACUUM INTO '{vacuum_path}'")
+            except sqlite3.Error:
+                vacuum_path = None  # skip the rename if VACUUM fails
+
             try:
                 self.conn.commit()
             except sqlite3.Error:
@@ -311,14 +320,21 @@ class Database:
                 self.conn.close()
             except sqlite3.Error:
                 pass
-            # Force-flush the DB file to disk. Critical on 9p/DrvFs where
-            # the OS page cache may not be flushed to the Windows side
-            # before the process exits.
-            import os as _os
+
+            # Rename the vacuum copy over the original (atomic on 9p).
+            if vacuum_path:
+                try:
+                    import os as _os
+                    _os.replace(vacuum_path, self.db_path)  # atomic rename
+                except OSError:
+                    pass
+
+            # Global sync: flush ALL filesystems. Critical on 9p where fsync
+            # is a no-op — sync forces the kernel writeback to flush to 9p.
             try:
-                with open(self.db_path, "r+b") as f:
-                    _os.fsync(f.fileno())
-            except (OSError, IOError):
+                import os as _os
+                _os.sync()
+            except OSError:
                 pass
             self._closed = True
 
