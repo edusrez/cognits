@@ -15,6 +15,7 @@ Not packaged in the wheel — this is dev tooling.
 from __future__ import annotations
 
 import argparse
+import json
 import sqlite3
 import sys
 from collections import Counter, defaultdict
@@ -150,6 +151,38 @@ def _audit(db_path: Path, objective: str = "") -> int:
         print(f"Study plans:      {study_plans_n}")
 
         # ---------------------------------------------------------------
+        # Build targets (adaptive)
+        # ---------------------------------------------------------------
+        bloom_targets: dict | None = None
+        targets_data: dict | None = None
+        try:
+            row = conn.execute(
+                "SELECT targets FROM skill_builds WHERE targets IS NOT NULL AND targets != '' "
+                "ORDER BY started_at DESC LIMIT 1"
+            ).fetchone()
+            if row and row[0]:
+                targets_data = json.loads(row[0])
+                bloom_targets = targets_data.get("bloom_targets")
+        except (sqlite3.OperationalError, json.JSONDecodeError):
+            pass
+
+        if targets_data:
+            print(f"\n--- Targets (build parameters) ---")
+            print(f"  domain_type: {targets_data.get('domain_type', '?')}")
+            sz = targets_data.get("size_range", "?")
+            print(f"  size_range: {sz}")
+            md = targets_data.get("max_depth", "?")
+            print(f"  max_depth: {md}")
+            ac = targets_data.get("atomicity_criterion", "?")
+            if isinstance(ac, str) and len(ac) > 80:
+                ac = ac[:80] + "..."
+            print(f"  atomicity: {ac}")
+            if bloom_targets:
+                print(f"  bloom_targets:")
+                for lv, (lo, hi) in sorted(bloom_targets.items()):
+                    print(f"    {lv}: [{lo}, {hi}]")
+
+        # ---------------------------------------------------------------
         # Domains breakdown
         # ---------------------------------------------------------------
         domain_counts = conn.execute(
@@ -168,23 +201,55 @@ def _audit(db_path: Path, objective: str = "") -> int:
             "GROUP BY bloom_level ORDER BY COUNT(*) DESC"
         ).fetchall()
         print(f"\n--- Bloom distribution ---")
-        apply_n = 0
+        bloom_lookup: dict[str, int] = {}
         for lv, c in bloom_counts:
             pct = (c / skills_n * 100) if skills_n else 0
             print(f"  {lv}: {c} ({pct:.1f}%)")
-            if "apply" in lv.lower() or "aplicar" in lv.lower():
-                apply_n = c
-        apply_pct = (apply_n / skills_n * 100) if skills_n else 0
-        if apply_pct > 35:
-            _flag(
-                f"Bloom 'apply/create' levels at {apply_pct:.1f}% (> 35% target)",
-                "bloom_apply_gt_35",
-            )
+            bloom_lookup[lv] = c
+
+        # Build bloom verdict rows (used in verdict table below)
+        bloom_verdicts: list[tuple[str, str, str]] = []
+
+        if bloom_targets:
+            # Adaptive per-level check against proposed targets
+            for lv, (lo, hi) in sorted(bloom_targets.items()):
+                c = bloom_lookup.get(lv, 0)
+                pct = (c / skills_n * 100) if skills_n else 0
+                in_range = lo <= pct <= hi
+                label = f"Bloom '{lv}' target [{lo},{hi}]"
+                actual = f"{pct:.1f}% {'in' if in_range else '∉'} [{lo}, {hi}]"
+                result = "PASS" if in_range else "FAIL"
+                if in_range:
+                    _ok(f"Bloom '{lv}' at {pct:.1f}% in [{lo}, {hi}]", f"bloom_{lv}")
+                else:
+                    _flag(
+                        f"Bloom '{lv}' at {pct:.1f}% outside range [{lo}, {hi}]",
+                        f"bloom_{lv}",
+                    )
+                bloom_verdicts.append((label, actual, result))
         else:
-            _ok(
-                f"Bloom 'apply/create' levels at {apply_pct:.1f}% (≤ 35%)",
-                "bloom_apply_gt_35",
-            )
+            # Legacy hardcoded check (backward compat)
+            apply_n = 0
+            for lv in bloom_lookup:
+                if "apply" in lv.lower() or "aplicar" in lv.lower():
+                    apply_n = bloom_lookup[lv]
+                    break
+            apply_pct = (apply_n / skills_n * 100) if skills_n else 0
+            if apply_pct > 35:
+                _flag(
+                    f"Bloom 'apply/create' levels at {apply_pct:.1f}% (> 35% target)",
+                    "bloom_apply_gt_35",
+                )
+            else:
+                _ok(
+                    f"Bloom 'apply/create' levels at {apply_pct:.1f}% (≤ 35%)",
+                    "bloom_apply_gt_35",
+                )
+            bloom_verdicts.append((
+                "Bloom apply ≤ 35%",
+                f"{apply_pct:.1f}%",
+                "PASS" if apply_pct <= 35 else "FAIL",
+            ))
 
         # ---------------------------------------------------------------
         # Edge types + proof_query coverage
@@ -443,9 +508,7 @@ def _audit(db_path: Path, objective: str = "") -> int:
             ("Assessment items",
              f"0 zero-item skills" if zero_items == 0 else f"FAIL: {zero_items} skills with 0 items",
              "PASS" if zero_items == 0 else "FAIL"),
-            ("Bloom apply ≤ 35%",
-             f"{apply_pct:.1f}%",
-             "PASS" if apply_pct <= 35 else "FAIL"),
+            *bloom_verdicts,
             ("Proof query coverage",
              f"{proof_pct:.1f}%",
              "PASS" if proof_pct >= 100 else "FAIL"),
