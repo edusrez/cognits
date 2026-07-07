@@ -55,7 +55,7 @@ class SkillTreeSave(Tool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["start_build", "upsert_skill", "add_edge", "finish_build", "save_assessment_items", "list_assessment_items"],
+                "enum": ["start_build", "upsert_skill", "add_edge", "finish_build", "save_assessment_items", "list_assessment_items", "validate_tree"],
                 "description": "Which tree mutation to perform.",
             },
             "trigger": {
@@ -92,7 +92,7 @@ class SkillTreeSave(Tool):
             },
             "skill_id": {
                 "type": "string",
-                "description": "add_edge: id of the skill that has the prerequisite.",
+                "description": "upsert_skill (optional): provide to update an existing skill instead of creating new. add_edge: id of the skill that has the prerequisite.",
             },
             "prereq_id": {
                 "type": "string",
@@ -151,6 +151,8 @@ class SkillTreeSave(Tool):
             return await self._save_assessment_items(args)
         if action == "list_assessment_items":
             return await self._list_assessment_items(args)
+        if action == "validate_tree":
+            return await self._validate_tree(args)
         return tool_error(f"unknown action: {action}")
 
     async def _start_build(self, args: dict) -> str:
@@ -164,7 +166,7 @@ class SkillTreeSave(Tool):
         domain = args.get("domain")
         if not name or not domain:
             return tool_error("upsert_skill requires 'name' and 'domain'")
-        skill_id = new_skill_id()
+        skill_id = args.get("skill_id") or new_skill_id()
         skill = Skill(
             id=skill_id,
             domain=domain,
@@ -324,3 +326,357 @@ class SkillTreeSave(Tool):
                 "updated_at": ai.updated_at,
             })
         return json.dumps({"items": item_dicts}, ensure_ascii=False)
+
+    async def _validate_tree(self, args: dict) -> str:
+        """Run a deterministic audit of the current skill tree in the DB.
+
+        Reuses the EXACT logic from scripts/dev_judge_tree.py — queries the
+        DB for counts, Bloom distribution, assessment items, proof_query
+        coverage, connectivity (roots/orphans), and cycles. Returns a
+        structured JSON response the skill_planner can act on.
+        """
+
+        def _audit():
+            db = self.skills.db
+            with db.lock:
+                conn = db.conn
+
+                # --- Counts ---
+                skills_n = conn.execute(
+                    "SELECT COUNT(*) FROM skills WHERE status='active'"
+                ).fetchone()[0]
+                edges_n = conn.execute(
+                    "SELECT COUNT(*) FROM skill_prerequisites WHERE skill_id IS NOT NULL"
+                ).fetchone()[0]
+                items_n = conn.execute(
+                    "SELECT COUNT(*) FROM skill_assessment_items WHERE status='active'"
+                ).fetchone()[0]
+                domains_rows = conn.execute(
+                    "SELECT DISTINCT domain FROM skills WHERE status='active' ORDER BY domain"
+                ).fetchall()
+                domains_n = len(domains_rows)
+
+                # --- Bloom distribution ---
+                bloom_rows = conn.execute(
+                    "SELECT bloom_level, COUNT(*) FROM skills WHERE status='active' "
+                    "GROUP BY bloom_level"
+                ).fetchall()
+                apply_n = 0
+                analyze_n = 0
+                evaluate_n = 0
+                create_n = 0
+                for lv, c in bloom_rows:
+                    lv_lower = lv.lower() if lv else ""
+                    if "apply" in lv_lower or "aplicar" in lv_lower:
+                        apply_n += c
+                    elif "analyze" in lv_lower or "analizar" in lv_lower:
+                        analyze_n += c
+                    elif "evaluate" in lv_lower or "evaluar" in lv_lower:
+                        evaluate_n += c
+                    elif "create" in lv_lower or "crear" in lv_lower:
+                        create_n += c
+                apply_pct = (apply_n / skills_n * 100) if skills_n else 0
+                analyze_pct = (analyze_n / skills_n * 100) if skills_n else 0
+                eval_create_pct = ((evaluate_n + create_n) / skills_n * 100) if skills_n else 0
+
+                apply_skills: list[str] = []
+                if apply_pct > 35:
+                    apply_skill_rows = conn.execute(
+                        "SELECT id FROM skills WHERE status='active' AND "
+                        "(bloom_level LIKE '%apply%' OR bloom_level LIKE '%aplicar%')"
+                    ).fetchall()
+                    apply_skills = [r[0] for r in apply_skill_rows]
+
+                # --- Assessment items per skill ---
+                item_dist = conn.execute(
+                    "SELECT s.id, COUNT(a.rowid) as cnt FROM skills s "
+                    "LEFT JOIN skill_assessment_items a ON a.skill_id = s.id AND a.status='active' "
+                    "WHERE s.status='active' GROUP BY s.id"
+                ).fetchall()
+                skills_needing_items = [sid for sid, cnt in item_dist if cnt == 0]
+
+                # --- Proof query coverage ---
+                proof_nonempty = conn.execute(
+                    "SELECT COUNT(*) FROM skill_prerequisites "
+                    "WHERE proof_query IS NOT NULL AND proof_query != '' AND skill_id IS NOT NULL"
+                ).fetchone()[0]
+                proof_pct = (proof_nonempty / edges_n * 100) if edges_n else 100.0
+
+                # --- Connectivity: roots ---
+                has_prereq = set(
+                    r[0] for r in conn.execute(
+                        "SELECT DISTINCT skill_id FROM skill_prerequisites "
+                        "WHERE skill_id IS NOT NULL"
+                    ).fetchall()
+                )
+                all_skills = set(
+                    r[0] for r in conn.execute(
+                        "SELECT id FROM skills WHERE status='active'"
+                    ).fetchall()
+                )
+                roots = all_skills - has_prereq
+                ratio = edges_n / skills_n if skills_n else 0
+
+                # --- Orphans: no prereq AND no dependents ---
+                is_prereq_for = set(
+                    r[0] for r in conn.execute(
+                        "SELECT DISTINCT prereq_id FROM skill_prerequisites "
+                        "WHERE skill_id IS NOT NULL"
+                    ).fetchall()
+                )
+                orphan_ids = [s for s in roots if s not in is_prereq_for]
+
+                # --- Item quality (WARN only; not FAIL) ---
+                quality_rows = conn.execute(
+                    "SELECT id, skill_id, question, rubric, expected_answer "
+                    "FROM skill_assessment_items WHERE status='active'"
+                ).fetchall()
+                low_quality_item_ids: list[str] = []
+                low_quality_skill_ids_set: set[str] = set()
+                for qr in quality_rows:
+                    iid, sid, question, rubric, expected_answer = qr
+                    q_stripped = (question or "").strip()
+                    r_stripped = (rubric or "").strip()
+                    ea_stripped = (expected_answer or "").strip()
+                    if q_stripped and len(q_stripped) < 20:
+                        low_quality_item_ids.append(iid)
+                        low_quality_skill_ids_set.add(sid)
+                    elif not r_stripped or not ea_stripped:
+                        low_quality_item_ids.append(iid)
+                        low_quality_skill_ids_set.add(sid)
+
+                # --- Cycle check (Kahn's on prereq/alt_prereq only) ---
+                edge_pairs = [
+                    (r[0], r[1])
+                    for r in conn.execute(
+                        "SELECT skill_id, prereq_id FROM skill_prerequisites "
+                        "WHERE skill_id IS NOT NULL AND edge_type IN ('prereq','alt_prereq')"
+                    ).fetchall()
+                ]
+                acyclic, _ = _kahn_cycle_check(edge_pairs)
+
+            return {
+                "skills_n": skills_n,
+                "edges_n": edges_n,
+                "items_n": items_n,
+                "domains_n": domains_n,
+                "apply_pct": apply_pct,
+                "apply_skills": apply_skills,
+                "analyze_pct": analyze_pct,
+                "eval_create_pct": eval_create_pct,
+                "skills_needing_items": skills_needing_items,
+                "proof_pct": proof_pct,
+                "roots": list(roots),
+                "ratio": ratio,
+                "orphan_ids": orphan_ids,
+                "acyclic": acyclic,
+                "low_quality_item_ids": low_quality_item_ids,
+                "low_quality_skill_ids": list(low_quality_skill_ids_set),
+            }
+
+        result = await asyncio.to_thread(_audit)
+
+        # --- Build structured response ---
+        gaps: list[dict] = []
+        all_pass = True
+
+        # assessment_items
+        zero_items = len(result["skills_needing_items"])
+        if zero_items > 0:
+            covered = result["skills_n"] - zero_items
+            gaps.append({
+                "criterion": "assessment_items",
+                "severity": "FAIL",
+                "current": f"{zero_items} skills with 0 items ({covered}/{result['skills_n']} have \u22651)",
+                "target": "\u22651 per skill",
+                "fix_hint": "Call save_assessment_items(skill_id=X, items=[...]) for each skill_id in skills_needing_items",
+            })
+            all_pass = False
+        else:
+            gaps.append({
+                "criterion": "assessment_items",
+                "severity": "PASS",
+                "current": "All skills have \u22651 assessment item",
+                "target": "\u22651 per skill",
+            })
+
+        # bloom_apply
+        if result["apply_pct"] > 35:
+            gaps.append({
+                "criterion": "bloom_apply",
+                "severity": "FAIL",
+                "current": f"{result['apply_pct']:.1f}%",
+                "target": "\u226435%",
+                "fix_hint": "Convert apply skills to analyze/evaluate/create via upsert_skill(skill_id=X, bloom_level='analyze') \u2014 redefine the skill's cognitive focus",
+            })
+            all_pass = False
+        else:
+            gaps.append({
+                "criterion": "bloom_apply",
+                "severity": "PASS",
+                "current": f"{result['apply_pct']:.1f}%",
+                "target": "\u226435%",
+            })
+
+        # proof_query
+        if result["proof_pct"] < 100:
+            gaps.append({
+                "criterion": "proof_query",
+                "severity": "FAIL",
+                "current": f"{result['proof_pct']:.1f}% non-empty",
+                "target": "100%",
+                "fix_hint": "For each edge with empty proof_query, re-call add_edge with a non-empty proof_query \u2014 the ON CONFLICT DO UPDATE will set the proof_query",
+            })
+            all_pass = False
+        else:
+            gaps.append({
+                "criterion": "proof_query",
+                "severity": "PASS",
+                "current": "100% non-empty",
+                "target": "100%",
+            })
+
+        # connectivity
+        orphan_count = len(result["orphan_ids"])
+        if orphan_count > 0:
+            gaps.append({
+                "criterion": "connectivity_orphans",
+                "severity": "FAIL",
+                "current": f"{orphan_count} orphans, {result['ratio']:.2f} ed/skill",
+                "target": "0 orphans, 1.5-2.0 ed/skill",
+                "fix_hint": "Add a prereq edge (add_edge) to each orphan skill in orphan_skills \u2014 connect it to a logical prerequisite",
+            })
+            all_pass = False
+        elif result["ratio"] < 1.5:
+            gaps.append({
+                "criterion": "connectivity",
+                "severity": "WARN",
+                "current": f"{result['ratio']:.2f} ed/skill",
+                "target": "1.5-2.0 ed/skill",
+                "fix_hint": "Add more prerequisite edges to increase connectivity",
+            })
+        else:
+            gaps.append({
+                "criterion": "connectivity",
+                "severity": "PASS",
+                "current": f"0 orphans, {result['ratio']:.2f} ed/skill",
+                "target": "0 orphans, 1.5-2.0 ed/skill",
+            })
+
+        # acyclic
+        if not result["acyclic"]:
+            gaps.append({
+                "criterion": "acyclic",
+                "severity": "FAIL",
+                "current": "Cycle detected",
+                "target": "Acyclic",
+                "fix_hint": "Remove or reverse the edge causing the cycle",
+            })
+            all_pass = False
+        else:
+            gaps.append({
+                "criterion": "acyclic",
+                "severity": "PASS",
+                "current": "Acyclic",
+                "target": "Acyclic",
+            })
+
+        # item_quality (WARN — for evaluator, does not block passed)
+        n_lq = len(result["low_quality_item_ids"])
+        if n_lq > 0:
+            gaps.append({
+                "criterion": "item_quality",
+                "severity": "WARN",
+                "current": f"{n_lq} items with question <20 chars or empty rubric or empty expected_answer",
+                "target": "all items have ≥20-char questions + rubrics + expected_answers",
+                "fix_hint": "Improve the low-quality items (longer questions, add rubrics, fill expected_answers)",
+            })
+        else:
+            gaps.append({
+                "criterion": "item_quality",
+                "severity": "PASS",
+                "current": "All items meet quality thresholds",
+                "target": "all items have ≥20-char questions + rubrics + expected_answers",
+            })
+
+        # bloom_balance_overall (WARN — prevent analyze over-conversion)
+        if result["analyze_pct"] > 40 or result["eval_create_pct"] > 50:
+            gaps.append({
+                "criterion": "bloom_balance_overall",
+                "severity": "WARN",
+                "current": f"analyze={result['analyze_pct']:.1f}%, evaluate+create={result['eval_create_pct']:.1f}%",
+                "target": "no single non-apply level > 40%, evaluate+create ≤ 50%",
+                "fix_hint": "Rebalance — some analyze skills could be evaluate/create or understand",
+            })
+        else:
+            gaps.append({
+                "criterion": "bloom_balance_overall",
+                "severity": "PASS",
+                "current": f"analyze={result['analyze_pct']:.1f}%, evaluate+create={result['eval_create_pct']:.1f}%",
+                "target": "no single non-apply level > 40%, evaluate+create ≤ 50%",
+            })
+
+        # Summary
+        fail_gaps = [g for g in gaps if g["severity"] == "FAIL"]
+        if fail_gaps:
+            summary = f"FAIL: {len(fail_gaps)} gap(s) \u2014 "
+            summary += "; ".join(g["criterion"] for g in fail_gaps)
+        else:
+            summary = "PASS: all criteria met"
+
+        response: dict = {
+            "passed": all_pass,
+            "summary": summary,
+            "gaps": gaps,
+            "counts": {
+                "skills": result["skills_n"],
+                "edges": result["edges_n"],
+                "items": result["items_n"],
+                "domains": result["domains_n"],
+            },
+        }
+
+        if result["skills_needing_items"]:
+            response["skills_needing_items"] = result["skills_needing_items"]
+        if result["orphan_ids"]:
+            response["orphan_skills"] = result["orphan_ids"]
+        if result["apply_skills"]:
+            response["apply_skills"] = result["apply_skills"]
+        if result["low_quality_item_ids"]:
+            response["low_quality_items"] = result["low_quality_item_ids"]
+            response["low_quality_skill_ids"] = result["low_quality_skill_ids"]
+
+        return json.dumps(response, ensure_ascii=False)
+
+
+def _kahn_cycle_check(edges: list[tuple[str, str]]) -> tuple[bool, list[str]]:
+    """Return (True, []) if acyclic, else (False, cycle_start_nodes)."""
+    from collections import defaultdict
+
+    in_degree: dict[str, int] = defaultdict(int)
+    out_edges: dict[str, list[str]] = defaultdict(list)
+    nodes: set[str] = set()
+
+    for src, dst in edges:
+        nodes.add(src)
+        nodes.add(dst)
+        out_edges[src].append(dst)
+        in_degree[dst] += 1
+        in_degree.setdefault(src, 0)
+
+    queue = [n for n in nodes if in_degree[n] == 0]
+    sorted_nodes: list[str] = []
+    while queue:
+        n = queue.pop(0)
+        sorted_nodes.append(n)
+        for child in out_edges.get(n, []):
+            in_degree[child] -= 1
+            if in_degree[child] == 0:
+                queue.append(child)
+
+    if len(sorted_nodes) == len(nodes):
+        return True, []
+
+    remaining = nodes - set(sorted_nodes)
+    cycle_start = next(iter(remaining)) if remaining else "?"
+    return False, [cycle_start]

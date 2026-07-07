@@ -491,3 +491,383 @@ def test_skill_tree_save_add_edge_alt_prereq_with_group_id(store):
     assert len(prereqs) == 1
     assert prereqs[0].edge_type == "alt_prereq"
     assert prereqs[0].group_id == "g1"
+
+
+# --- validate_tree tests ----------------------------------------------
+
+def test_validate_tree_pass(store):
+    """A clean tree: every skill has ≥1 item, apply≤35%, proof_query 100%,
+    no orphans, acyclic → passed=true, no FAIL gaps."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    # Create 2 skills (non-apply), connected with proof_query.
+    a_id = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "Root",
+        "bloom_level": "understand",
+    }))))["skill_id"]
+    b_id = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "Child",
+        "bloom_level": "analyze",
+    }))))["skill_id"]
+
+    # Connect B → A with proof_query.
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": b_id, "prereq_id": a_id,
+        "edge_type": "prereq", "proof_query": "child needs root",
+    })))
+
+    # Add ≥1 assessment item to each.
+    for sid in (a_id, b_id):
+        asyncio.run(tool.execute(json.dumps({
+            "action": "save_assessment_items",
+            "skill_id": sid,
+            "items": [{"question": "Q", "expected_answer": "A", "rubric": "R",
+                       "question_type": "open", "blooms_level": "remember",
+                       "difficulty": 0.5, "generation_model": "test"}],
+        })))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    assert data["passed"] is True
+    assert "PASS" in data["summary"]
+    assert data["counts"]["skills"] == 2
+    assert data["counts"]["edges"] == 1
+    assert data["counts"]["items"] == 2
+    assert data["counts"]["domains"] == 1
+
+    # All gaps should be PASS (or WARN) — no FAIL.
+    severities = {g["severity"] for g in data["gaps"]}
+    assert "FAIL" not in severities
+
+    # No fix lists needed.
+    assert "skills_needing_items" not in data
+    assert "orphan_skills" not in data
+    assert "apply_skills" not in data
+
+
+def test_validate_tree_fails_on_missing_items(store):
+    """2 skills, 1 with 0 items → passed=false, gap assessment_items FAIL,
+    skills_needing_items lists the 0-item skill."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    a_id = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "HasItems",
+        "bloom_level": "understand",
+    }))))["skill_id"]
+    b_id = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "NoItems",
+        "bloom_level": "understand",
+    }))))["skill_id"]
+
+    # Connect with proof_query.
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": b_id, "prereq_id": a_id,
+        "edge_type": "prereq", "proof_query": "pq",
+    })))
+
+    # Only skill A gets items — B has 0.
+    asyncio.run(tool.execute(json.dumps({
+        "action": "save_assessment_items",
+        "skill_id": a_id,
+        "items": [{"question": "Q", "expected_answer": "A", "rubric": "R",
+                   "question_type": "open", "blooms_level": "remember",
+                   "difficulty": 0.5, "generation_model": "test"}],
+    })))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    assert data["passed"] is False
+    assert "assessment_items" in data["summary"]
+
+    # Find the FAIL gap for assessment_items.
+    ai_gap = next(g for g in data["gaps"] if g["criterion"] == "assessment_items")
+    assert ai_gap["severity"] == "FAIL"
+
+    # skills_needing_items should list b_id.
+    assert "skills_needing_items" in data
+    assert b_id in data["skills_needing_items"]
+    assert a_id not in data["skills_needing_items"]
+
+
+def test_validate_tree_fails_on_bloom_apply(store):
+    """apply > 35% → gap bloom_apply FAIL, apply_skills lists them."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    # 3 skills, 2 apply (66.7% > 35%).
+    ids = []
+    for name in ("UnderstandA", "ApplyB", "ApplyC"):
+        bloom = "apply" if "Apply" in name else "understand"
+        sid = json.loads(asyncio.run(tool.execute(json.dumps({
+            "action": "upsert_skill", "domain": "d", "name": name,
+            "bloom_level": bloom,
+        }))))["skill_id"]
+        ids.append(sid)
+
+    # Connect them (acyclic chain).
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": ids[1], "prereq_id": ids[0],
+        "edge_type": "prereq", "proof_query": "pq1",
+    })))
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": ids[2], "prereq_id": ids[1],
+        "edge_type": "prereq", "proof_query": "pq2",
+    })))
+
+    # ≥1 item per skill (so items don't fail).
+    for sid in ids:
+        asyncio.run(tool.execute(json.dumps({
+            "action": "save_assessment_items",
+            "skill_id": sid,
+            "items": [{"question": "Q", "expected_answer": "A", "rubric": "R",
+                       "question_type": "open", "blooms_level": "remember",
+                       "difficulty": 0.5, "generation_model": "test"}],
+        })))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    assert data["passed"] is False
+    assert "bloom_apply" in data["summary"]
+
+    bloom_gap = next(g for g in data["gaps"] if g["criterion"] == "bloom_apply")
+    assert bloom_gap["severity"] == "FAIL"
+
+    assert "apply_skills" in data
+    assert len(data["apply_skills"]) == 2
+
+
+def test_validate_tree_fails_on_orphans(store):
+    """A non-root skill with no prereq + no dependent → orphan.
+    A root (no prereq, HAS dependents) is NOT an orphan."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    # 3 skills: Root (no prereq, has dependent), Child (has prereq), Orphan (no prereq, no dependent).
+    root_id = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "Root",
+        "bloom_level": "understand",
+    }))))["skill_id"]
+    child_id = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "Child",
+        "bloom_level": "understand",
+    }))))["skill_id"]
+    orphan_id = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "Orphan",
+        "bloom_level": "understand",
+    }))))["skill_id"]
+
+    # Child → Root edge (Root is root, Child has prereq).
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": child_id, "prereq_id": root_id,
+        "edge_type": "prereq", "proof_query": "child needs root",
+    })))
+
+    # ≥1 item per skill.
+    for sid in (root_id, child_id, orphan_id):
+        asyncio.run(tool.execute(json.dumps({
+            "action": "save_assessment_items",
+            "skill_id": sid,
+            "items": [{"question": "Q", "expected_answer": "A", "rubric": "R",
+                       "question_type": "open", "blooms_level": "remember",
+                       "difficulty": 0.5, "generation_model": "test"}],
+        })))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    assert data["passed"] is False
+    assert "connectivity_orphans" in data["summary"]
+
+    orphan_gap = next(g for g in data["gaps"] if g["criterion"] == "connectivity_orphans")
+    assert orphan_gap["severity"] == "FAIL"
+
+    assert "orphan_skills" in data
+    assert orphan_id in data["orphan_skills"]
+    # Root (no prereq but has dependents) should NOT be in orphans.
+    assert root_id not in data["orphan_skills"]
+
+
+# --- upsert_skill with optional skill_id tests -----------------------
+
+def test_upsert_skill_with_skill_id_updates(store):
+    """upsert a skill, then upsert again with same skill_id + new bloom_level
+    → the skill is UPDATED (not duplicated), bloom_level changed."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    # First upsert: creates new skill.
+    r1 = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill",
+        "domain": "d",
+        "name": "Use FSM",
+        "bloom_level": "apply",
+        "description": "Implement FSM for enemy AI",
+    }))))
+    skill_id = r1["skill_id"]
+
+    # Verify initial state.
+    s1 = skills.get(skill_id)
+    assert s1.name == "Use FSM"
+    assert s1.bloom_level == "apply"
+    assert s1.description == "Implement FSM for enemy AI"
+
+    # Update: upsert with same skill_id, new bloom_level.
+    r2 = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill",
+        "skill_id": skill_id,
+        "domain": "d",
+        "name": "Analyze FSM vs Node-Based State",
+        "bloom_level": "analyze",
+        "description": "Compare FSM and node-based state patterns",
+    }))))
+    assert r2["skill_id"] == skill_id  # Same ID returned.
+
+    # Verify the skill was updated, not duplicated.
+    s2 = skills.get(skill_id)
+    assert s2.name == "Analyze FSM vs Node-Based State"
+    assert s2.bloom_level == "analyze"
+    assert s2.description == "Compare FSM and node-based state patterns"
+
+    # There should be only 1 active skill.
+    active = skills.list_active()
+    assert len(active) == 1
+
+
+def test_upsert_skill_without_skill_id_creates_new(store):
+    """Current behavior preserved: upsert without skill_id generates a new id."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    r1 = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill",
+        "domain": "d",
+        "name": "Skill A",
+        "bloom_level": "understand",
+    }))))
+    r2 = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill",
+        "domain": "d",
+        "name": "Skill B",
+        "bloom_level": "understand",
+    }))))
+
+    assert r1["skill_id"] != r2["skill_id"]
+    assert r1["skill_id"].startswith("k_")
+    assert r2["skill_id"].startswith("k_")
+
+    active = skills.list_active()
+    assert len(active) == 2
+
+
+# --- validate_tree quality WARN tests ---------------------------------
+
+def test_validate_tree_warns_on_low_quality_items(store):
+    """Low-quality items (question <20 chars or empty rubric) produce a WARN
+    gap but do NOT block passed (only FAIL gaps block)."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    # 2 skills with non-apply bloom, connected with proof_query.
+    a_id = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "SkillA",
+        "bloom_level": "understand",
+    }))))["skill_id"]
+    b_id = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "SkillB",
+        "bloom_level": "analyze",
+    }))))["skill_id"]
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": b_id, "prereq_id": a_id,
+        "edge_type": "prereq", "proof_query": "b needs a",
+    })))
+
+    # Add ONE good item to skill_a, one low-quality item to skill_b.
+    asyncio.run(tool.execute(json.dumps({
+        "action": "save_assessment_items",
+        "skill_id": a_id,
+        "items": [{"question": "A real question that is long enough to pass",
+                   "expected_answer": "Some answer", "rubric": "Grading guide",
+                   "question_type": "open", "blooms_level": "remember",
+                   "difficulty": 0.5, "generation_model": "test"}],
+    })))
+    asyncio.run(tool.execute(json.dumps({
+        "action": "save_assessment_items",
+        "skill_id": b_id,
+        "items": [{"question": "What is X?",  # <20 chars
+                   "expected_answer": "Answer", "rubric": "",  # empty rubric
+                   "question_type": "open", "blooms_level": "remember",
+                   "difficulty": 0.5, "generation_model": "test"}],
+    })))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    # Should still pass (no FAIL gaps).
+    assert data["passed"] is True, f"Expected passed=True but got gaps: {data['gaps']}"
+
+    # Should have a WARN for item_quality.
+    item_q_gap = next((g for g in data["gaps"] if g["criterion"] == "item_quality"), None)
+    assert item_q_gap is not None, "Expected item_quality gap but not found"
+    assert item_q_gap["severity"] == "WARN", f"Expected WARN severity, got {item_q_gap['severity']}"
+
+    # low_quality_items / low_quality_skill_ids should be in response.
+    assert "low_quality_items" in data, "Expected low_quality_items in response"
+    assert "low_quality_skill_ids" in data, "Expected low_quality_skill_ids in response"
+    assert len(data["low_quality_items"]) >= 1
+    assert b_id in data["low_quality_skill_ids"]
+
+
+def test_validate_tree_warns_on_bloom_over_conversion(store):
+    """analyze > 40% triggers a WARN (bloom_balance_overall) but does NOT
+    block passed. Tests the cross-check that prevents over-conversion
+    from apply->analyze."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    # 10 skills: 3 understand, 5 analyze (50% > 40%), 2 evaluate
+    # apply% = 0% so it doesn't trigger a FAIL.
+    ids = []
+    blooms = ["understand"] * 3 + ["analyze"] * 5 + ["evaluate"] * 2
+    for i, bl in enumerate(blooms):
+        sid = json.loads(asyncio.run(tool.execute(json.dumps({
+            "action": "upsert_skill", "domain": "d", "name": f"S{i}",
+            "bloom_level": bl,
+        }))))["skill_id"]
+        ids.append(sid)
+
+    # Chain them acyclically, all with proof_query.
+    for i in range(1, len(ids)):
+        asyncio.run(tool.execute(json.dumps({
+            "action": "add_edge", "skill_id": ids[i], "prereq_id": ids[i - 1],
+            "edge_type": "prereq", "proof_query": f"pq_{i}",
+        })))
+
+    # >=1 item per skill (good quality).
+    for sid in ids:
+        asyncio.run(tool.execute(json.dumps({
+            "action": "save_assessment_items",
+            "skill_id": sid,
+            "items": [{"question": "A sufficiently long question to pass quality check",
+                       "expected_answer": "Answer", "rubric": "Rubric here",
+                       "question_type": "open", "blooms_level": "remember",
+                       "difficulty": 0.5, "generation_model": "test"}],
+        })))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    # Should still pass (only WARNs, no FAILs).
+    assert data["passed"] is True, f"Expected passed=True but got gaps: {data['gaps']}"
+
+    # Should have a WARN for bloom_balance_overall.
+    bloom_gap = next((g for g in data["gaps"] if g["criterion"] == "bloom_balance_overall"), None)
+    assert bloom_gap is not None, "Expected bloom_balance_overall gap but not found"
+    assert bloom_gap["severity"] == "WARN", f"Expected WARN severity, got {bloom_gap['severity']}"
+    assert "analyze=50" in bloom_gap["current"] or "analyze=50" in bloom_gap["current"].replace(".0%", ""), (
+        f"Expected analyze=50% in current, got: {bloom_gap['current']}"
+    )

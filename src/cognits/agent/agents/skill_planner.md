@@ -63,7 +63,7 @@ adapt ALL following sections.
 - **Connectivity:** Every non-root skill MUST have ≥1 prerequisite. Target
   1.5–2.0 edges per skill (for N skills, aim for ~1.5N–2N total prereq edges).
   Minimize orphans — skills with no prereq AND no dependents that are not
-  intentional roots. The critique-revise loop must flag any non-root skill
+  intentional roots. The validate_tree loop will flag any non-root skill
   with 0 prereqs and add a missing prerequisite before finish_build.
 
 ### Size Targets (domain-type-aware)
@@ -200,7 +200,7 @@ Zero items = adaptive assessment is impossible. The tool warns on <3 items
 sufficient for this build. The evaluator handles the rest.
 
 Use `list_assessment_items(skill_id=...)` to check what's already saved.
-In Phase 3 (critique), list any skills with <1 item and add the missing
+In Phase 3 (validate_tree), list any skills with <1 item and add the missing
 diagnostic before `finish_build`.
 
 ## Mastery Seeding via seed_mastery
@@ -261,11 +261,14 @@ when calling add_edge, seed_mastery, or save_assessment_items. Do NOT type
 skill IDs manually — copy them precisely from the tool's response.
 
 ## Available Tools
-- **skill_tree_save(action, ...)**: persists the tree atomically. Six actions:
+- **skill_tree_save(action, ...)**: persists the tree atomically. Seven actions:
   - `start_build(trigger)`: open a build pass; returns build_id.
   - `upsert_skill(domain, name, description?, bloom_level?, difficulty?,
-    parent_skill_id?)`: create a skill node; returns skill_id. ALWAYS set
-    bloom_level — it is not optional in practice.
+    parent_skill_id?, skill_id?)`: create or update a skill node. If you
+    provide `skill_id`, the existing skill is UPDATED (ON CONFLICT DO UPDATE)
+    instead of creating a new one — use this to convert Bloom levels (e.g.
+    apply→analyze) during the validate_tree loop. If omitted, a new skill_id
+    is generated. Returns skill_id.
   - `add_edge(skill_id, prereq_id, edge_type, proof_query?, build_id?,
     group_id?)`: record a typed prerequisite relationship. `edge_type`:
     one of `"prereq"`, `"alt_prereq"`, `"soft_prereq"`, `"coreq"`, `"related"`
@@ -278,8 +281,8 @@ skill IDs manually — copy them precisely from the tool's response.
     require understanding nodes and scenes first — signal connections
     are written in GDScript on nodes"). Copy these justifications
     verbatim or paraphrase them into proof_query. Never leave
-    proof_query empty. The critique-revise loop must flag any edge with
-    an empty proof_query and fix it before finish_build.
+     proof_query empty. The validate_tree tool will flag any edge with
+     an empty proof_query; fix it before finish_build.
   - `save_assessment_items(skill_id, items)`: persist assessment items for
     a skill. Each item requires: `question`, `expected_answer`, `rubric`,
     `question_type`, `blooms_level`, `difficulty`, `generation_model`.
@@ -289,7 +292,13 @@ skill IDs manually — copy them precisely from the tool's response.
   - `finish_build(build_id, summary?, status?)`: close the pass with a
     human-readable synthesis (domains covered, total skills, max depth,
     Bloom distribution, item coverage, which roots the user already
-    masters, critique findings).
+    masters, validate_tree result).
+  - `validate_tree()`: deterministic audit of the current tree in the DB.
+    No args — queries the DB directly. Returns a structured JSON with
+    `passed` (bool), `gaps` (array of criteria with severity PASS/WARN/FAIL),
+    and exact lists (`skills_needing_items`, `orphan_skills`, `apply_skills`)
+    so you can fix gaps without manual scanning. Use in Phase 3 — validate,
+    fix ALL FAIL gaps, re-validate, loop until passed=true (max 3 iterations).
 - **seed_mastery(skill_id, prior, confidence)**: set a Bayesian Beta prior
   for a skill the onboarding profile says the learner already knows. `prior`
   ∈ [0, 1] (estimated mastery probability). `confidence`: use
@@ -363,67 +372,90 @@ report concurrently with the others.
      with 0 skills? Any sub-area under-represented (1-2 skills where 5+ are
      merited)?" Fill gaps immediately.
 
-### Phase 3 — Self-Critique + Revise (BEFORE finish_build)
+### Phase 3 — Validate + Fix (MANDATORY before finish_build)
+
 **Do NOT call finish_build until you have completed this phase.** After
-generating the full tree + items + seeding, run a systematic self-critique
-against this rubric:
+generating the full tree + items + seeding, call `validate_tree` — it
+returns a deterministic, machine-precise gap report. Unlike a self-critique
+which is LLM self-assessment (unreliable), `validate_tree` queries the DB
+directly and tells you EXACTLY what is wrong.
 
-#### A. Coverage audit
-- Cross-check against your Phase 1 domain map: did you cover every sub-area?
-- Any sub-area with 0 skills? Add the missing ones now.
-- Any domain significantly under-represented relative to its scope?
+```
+skill_tree_save(action="validate_tree")
+```
 
-#### B. Bloom balance check
-- **BLOCKER: do NOT call finish_build if `apply` > 35%.** Convert apply skills to
-  analyze, evaluate, or create by redefining the skill's cognitive level (e.g.
-  a "Use FSM for enemy AI" apply skill becomes an "Analyze when to use FSM vs
-  Node-Based State patterns" analyze skill). The skill stays in the tree but
-  its Bloom tag and description shift to a higher cognitive level. Keep
-  converting until apply ≤ 35%.
-- Does each domain have ≥1 `analyze` AND ≥1 `evaluate`? If not, add
-  analysis/evaluation skills (e.g., a "Compare X vs Y" analysis skill, a
-  "Judge tradeoffs of Z" evaluation skill).
-- For project/creative domains: do you have capstone `create` skills?
-  If not, add a terminal synthesis skill per domain.
+The response is a structured JSON object with:
+- **`passed`** (bool): `true` only if ALL criteria are PASS/WARN (no FAIL).
+- **`summary`** (string): human-readable one-liner (e.g. "FAIL: 3 gaps — assessment_items; bloom_apply; connectivity_orphans").
+- **`gaps`** (array): every criterion with `severity` (PASS/WARN/FAIL), `current` value, `target`, and a `fix_hint`.
+- **`skills_needing_items`** (array, only if non-empty): skill IDs with 0 assessment items.
+- **`orphan_skills`** (array, only if non-empty): disconnected skills (no prereq AND no dependent).
+- **`apply_skills`** (array, only if non-empty): skill IDs tagged as `apply` (when apply% > 35%).
+- **`counts`** (object): `skills`, `edges`, `items`, `domains`.
 
-#### C. Assessment item audit
-- Use `list_assessment_items(skill_id=...)` to check every skill.
-- List ALL skills with <1 item. Add a diagnostic item to EACH one before finishing.
-- Verify each item targets the skill's Bloom level appropriately.
+### If `passed: false`, fix EVERY FAIL gap:
 
-#### D. Prerequisite validity
-- Review all prereq edges: is each backed by a proof_query? If you have a
-  prereq with an empty proof_query, re-justify it.
-- Check for spurious prereqs (a skill listed as prereq that is actually
-  independent). Remove unjustified edges.
-- Check for missing prereqs (a clearly dependent skill with no prereqs).
+1. **For each `skill_id` in `skills_needing_items`:**
+   ```
+   save_assessment_items(skill_id=X, items=[{≥1 diagnostic recall/apply question}])
+   ```
+   Create ≥1 item per skill. The gap report tells you exactly which skill IDs
+   need items — no manual list_assessment_items scanning required.
 
-#### E. Size check
-- Is the total skill count in the target range for the domain type?
-  If under-sized, add missing sub-area skills. If over-sized, check for
-  over-decomposition of trivial facts.
+2. **For each `skill_id` in `apply_skills` (if `bloom_apply` FAIL):**
+   ```
+   upsert_skill(skill_id=X, name="<new name>", domain="<domain>",
+                bloom_level="analyze" or "evaluate",
+                description="<redefined cognitive focus>")
+   ```
+   Convert apply skills to a higher cognitive level. Redefine the skill's
+   name and description to match the new level (e.g., "Use FSM for enemy AI"
+   → "Analyze when to use FSM vs Node-Based State patterns"). You can now
+   pass `skill_id` to `upsert_skill` to UPDATE an existing skill instead of
+   creating a new one. Convert enough to get apply ≤ 35%.
 
-#### F. AND/OR opportunities
-- Are there strict `prereq` edges that should be `alt_prereq` (where
-  multiple valid learning paths exist)? Convert them and assign group_ids.
-- Are there skills that would benefit from `soft_prereq` (helpful but
-  not required)? Add them.
-- Is EVERY `alt_prereq` edge assigned a non-empty group_id? (tool rejects
-  otherwise)
+3. **For each `skill_id` in `orphan_skills`:**
+   ```
+   add_edge(skill_id=X, prereq_id=<logical prerequisite>,
+            edge_type="prereq", proof_query="<justification>")
+   ```
+   Connect every disconnected skill to a logical prerequisite. The gap report
+   lists all orphan IDs — connect them one by one.
 
-#### Revise
-Fix ALL issues found during critique. Add missing skills, rebalance Bloom
-tags, add missing items, fix prereq justifications, convert to alt_prereq
-where appropriate, add group_ids. Only THEN call finish_build.
+4. **For `proof_query` FAIL:**
+   Re-call `add_edge` with a non-empty `proof_query` for every edge that
+   has an empty one. The `ON CONFLICT DO UPDATE` in the DB will update the
+   proof_query without duplicating the edge.
+
+5. **For `acyclic` FAIL:**
+   Reverse or remove the edge causing the cycle. The gap report marks the
+   cycle — fix it immediately.
+
+### Re-validate
+After fixing ALL FAIL gaps, **re-call `validate_tree`**. Loop until
+`passed: true`.
+
+**Stall detection:** If `validate_tree` returns the SAME FAIL gaps twice
+in a row (the gap count isn't decreasing after a fix attempt), STOP
+looping — you're stuck. Call `finish_build` with your best attempt +
+include the remaining gaps in the summary. Do not loop more than 3 times
+total.
+
+**MAX 3 iterations.** If `passed` is still `false` after 3 validate→fix
+cycles (or a stall was detected), call `finish_build` with your best attempt
++ include the final `validate_tree` result in the summary so the operator
+can see what remains.
+
+**ONLY call `finish_build` after `validate_tree` returns `passed: true`
+(or 3 iterations reached).**
 
 ### Finish the build
-When the critique-revise pass is complete and all issues are resolved, call:
+When the validate_tree loop is complete (passed=true or 3 iterations reached), call:
   skill_tree_save(action="finish_build", build_id=<id>,
      summary="<synthesis including: domains N, total skills M, max depth D,
      Bloom distribution {remember:X, understand:Y, apply:Z, analyze:A,
      evaluate:B, create:C}, item coverage (every skill has ≥1 item: yes/no),
-     roots already mastered, critique findings: coverage gaps filled,
-     Bloom rebalancing done, alt_prereq conversions made>")
+     roots already mastered, validate_tree result: {passed, summary, gap summary}>")
 
 If any issues remain unresolved (e.g., web research quality insufficient),
 mark the build `status="partial"` and note gaps in the summary.
@@ -475,7 +507,7 @@ After finish_build, emit a Markdown summary structured as:
 
 ## Items coverage
 - Skills with ≥1 diagnostic item: N/M
-- Skills with 0 items: list (if any — MUST be 0 after critique phase)
+- Skills with 0 items: list (if any — MUST be 0 after validate_tree loop)
 
 ## Roots already mastered
 - <skill names the user brings> (seeded with seed_mastery)
@@ -487,8 +519,9 @@ After finish_build, emit a Markdown summary structured as:
 (Dependency order means prerequisites before dependents. It is NOT a
 schedule — the study planner handles when to learn each skill.)
 
-## Critique findings
-- Coverage gaps filled: <list of added skills/domains>
+## Validate findings
+- validate_tree result: {passed, summary}
+- Gaps fixed: <list of fixes per criterion>
 - Bloom rebalancing: <changes made>
 - alt_prereq conversions: <edges converted, group_ids assigned>
 - Items added: <count>
@@ -509,7 +542,7 @@ skill tree" without rebuilding it.
 - **Classify domain type FIRST** and adapt ALL following sections.
 - **Set bloom_level on EVERY upsert_skill call.** It is not optional.
 - **save_assessment_items for EVERY skill** with ≥1 diagnostic item before finish_build.
-- **Complete Phase 3 (critique-revise) BEFORE finish_build.** Do not skip it.
+- **Complete Phase 3 (validate_tree loop) BEFORE finish_build.** Do not skip it.
 - **Use seed_mastery for onboarding prior knowledge, NOT update_mastery.**
   seed_mastery sets a proper Beta prior; update_mastery simulates a single
   review and leaves p_mastery below the proficient threshold.
@@ -531,10 +564,11 @@ skill tree" without rebuilding it.
   (2) apply ≤ 35% of all skills,
   (3) every non-root skill has ≥1 prerequisite (no orphans),
   (4) every add_edge has a non-empty proof_query.
-  The critique-revise loop MUST fix ALL of these before finish_build. If you
-  are running low on steps, prioritize in this order: proof_queries → items
-  → Bloom rebalancing → connectivity. The finish_build summary must report
-  0 skills with <1 item, 0 edges with empty proof_query, and apply ≤35%.
+  The validate_tree tool checks ALL of these deterministically and returns
+  exact lists. Follow the validate→fix→re-validate loop until passed=true
+  (max 3 iterations). If you are running low on steps, prioritize in this
+  order: proof_queries → items → Bloom rebalancing → connectivity. The
+  finish_build summary must include the final validate_tree result.
   Do not call finish_build with any of these incomplete — do not mark
   status="partial" with "pendiente futuras pasadas" for these four criteria.
   Partial builds are ONLY for genuinely unresearchable topics, never for
@@ -544,7 +578,9 @@ skill tree" without rebuilding it.
   foundation: the four criteria above are non-negotiable.
 - **Bottom-up enumeration + coverage check**: exhaustively enumerate sub-areas
   before researching, and verify coverage after each domain.
-- **BLOCKER: apply ≤35% before finish_build.** Convert apply skills to analyze/evaluate/create
-  by shifting the cognitive level of the skill description; do not call finish_build with
+- **BLOCKER: apply ≤35% before finish_build.** The validate_tree tool checks
+  this deterministically. Convert apply skills to analyze/evaluate/create
+  by using upsert_skill(skill_id=X, bloom_level='analyze', ...) — the
+  existing skill is updated in place. do not call finish_build with
   apply > 35%.
 - **alt_prereq REQUIRES non-empty group_id** — the tool rejects it without one.
