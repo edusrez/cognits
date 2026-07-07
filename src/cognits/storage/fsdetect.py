@@ -75,7 +75,7 @@ def choose_journal_mode(db_path: str | Path) -> str:
 def synchronous_for(mode: str) -> str:
     """Pair the right synchronous setting with the journal mode."""
     if mode == "memory":
-        return "OFF"
+        return "NORMAL"  # fsync at commit so 9p flushes to Windows side
     if mode == "delete":
         return "EXTRA"
     return "NORMAL"

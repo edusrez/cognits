@@ -150,7 +150,7 @@ def test_synchronous_for_delete():
 
 
 def test_synchronous_for_memory():
-    assert synchronous_for("memory") == "OFF"
+    assert synchronous_for("memory") == "NORMAL"
 
 
 def test_synchronous_for_wal():
@@ -213,9 +213,9 @@ def test_database_memory_mode_writable(tmp_path, monkeypatch):
     try:
         assert db.journal_mode == "memory"
 
-        # synchronous should be OFF (PRAGMA synchronous returns an integer: 0).
+        # synchronous should be NORMAL (PRAGMA synchronous returns an integer: 1).
         sync_val = db.conn.execute("PRAGMA synchronous").fetchone()[0]
-        assert sync_val == 0  # 0 = OFF
+        assert sync_val == 1  # 1 = NORMAL
 
         # Write data in a transaction and commit.
         with db.transaction():

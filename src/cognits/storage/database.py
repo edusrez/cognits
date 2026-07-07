@@ -304,8 +304,21 @@ class Database:
             except sqlite3.Error:
                 pass
             try:
+                self.conn.commit()
+            except sqlite3.Error:
+                pass
+            try:
                 self.conn.close()
             except sqlite3.Error:
+                pass
+            # Force-flush the DB file to disk. Critical on 9p/DrvFs where
+            # the OS page cache may not be flushed to the Windows side
+            # before the process exits.
+            import os as _os
+            try:
+                with open(self.db_path, "r+b") as f:
+                    _os.fsync(f.fileno())
+            except (OSError, IOError):
                 pass
             self._closed = True
 
