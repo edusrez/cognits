@@ -157,7 +157,8 @@ BASE_SCHEMA = """
         started_at TEXT NOT NULL DEFAULT (datetime('now')),
         finished_at TEXT,
         status TEXT NOT NULL DEFAULT 'running',
-        summary TEXT NOT NULL DEFAULT ''
+        summary TEXT NOT NULL DEFAULT '',
+        targets TEXT NOT NULL DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS learner_state (
@@ -503,6 +504,17 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_prereqs_group"
                 " ON skill_prerequisites(group_id)"
                 " WHERE group_id IS NOT NULL"
+            )
+
+        # 0.0.8: adaptive targets for skill builds
+        has_targets = cur.execute(
+            "SELECT COUNT(*) FROM pragma_table_info('skill_builds')"
+            " WHERE name='targets'"
+        ).fetchone()[0]
+        if not has_targets:
+            cur.execute(
+                "ALTER TABLE skill_builds ADD COLUMN"
+                " targets TEXT NOT NULL DEFAULT ''"
             )
 
     def _backup(self) -> None:

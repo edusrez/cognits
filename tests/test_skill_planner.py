@@ -1332,3 +1332,321 @@ def test_validate_tree_no_warn_when_no_seeds(store):
     # Counts should show no seeded skills.
     assert data["counts"]["seeded_skills"] == 0
     assert data["counts"]["max_seeded_p_mastery"] == 0.0
+
+
+# --- propose_targets + adaptive validate_tree tests -------------------
+
+
+def test_propose_targets_stores_targets(store):
+    """Call propose_targets → the build row has the targets JSON."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    # Call start_build first (propose_targets updates the most recent build).
+    bid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "start_build", "trigger": "onboarding",
+    }))))["build_id"]
+
+    # Now propose targets.
+    targets = {
+        "domain_type": "programming",
+        "size_range": [40, 100],
+        "bloom_targets": {
+            "apply": [35, 50],
+            "analyze": [10, 20],
+            "evaluate": [5, 15],
+            "create": [5, 15],
+            "understand": [15, 25],
+            "remember": [0, 10],
+        },
+        "max_depth": 6,
+        "atomicity_criterion": "each leaf skill is a specific coding task assessable via code output",
+    }
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "propose_targets",
+        "domain_type": targets["domain_type"],
+        "size_range": targets["size_range"],
+        "bloom_targets": targets["bloom_targets"],
+        "max_depth": targets["max_depth"],
+        "atomicity_criterion": targets["atomicity_criterion"],
+    })))
+    data = json.loads(result)
+    assert data["ok"] is True
+    assert data["build_id"] == bid
+    assert data["targets"]["domain_type"] == "programming"
+
+    # Verify the build row has targets stored.
+    with db.lock:
+        row = db.conn.execute(
+            "SELECT targets FROM skill_builds WHERE id = ?", (bid,)
+        ).fetchone()
+    stored = json.loads(row[0])
+    assert stored["domain_type"] == "programming"
+    assert stored["size_range"] == [40, 100]
+    assert stored["bloom_targets"]["apply"] == [35, 50]
+    assert stored["max_depth"] == 6
+
+
+def test_validate_tree_uses_proposed_targets(store):
+    """Propose apply 40-50%, build tree with apply=45% → PASS within proposed range."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    # start_build + propose_targets with apply 40-50%.
+    asyncio.run(tool.execute(json.dumps({"action": "start_build", "trigger": "test"})))
+    asyncio.run(tool.execute(json.dumps({
+        "action": "propose_targets",
+        "domain_type": "programming",
+        "size_range": [10, 20],
+        "bloom_targets": {
+            "apply": [40, 50],
+            "understand": [20, 30],
+            "analyze": [10, 20],
+            "evaluate": [5, 15],
+            "remember": [0, 10],
+            "create": [0, 10],
+        },
+        "max_depth": 5,
+        "atomicity_criterion": "test",
+    })))
+
+    # Build a tree with apply=45% (9/20 skills) — within proposed range.
+    # 20 skills: 9 apply, 5 understand, 3 analyze, 1 evaluate, 2 remember
+    ids = []
+    blooms = (["apply"] * 9 + ["understand"] * 5 + ["analyze"] * 3
+              + ["evaluate"] * 1 + ["remember"] * 2)
+    for i, bl in enumerate(blooms):
+        sid = json.loads(asyncio.run(tool.execute(json.dumps({
+            "action": "upsert_skill", "domain": "d", "name": f"S{i}",
+            "bloom_level": bl,
+        }))))["skill_id"]
+        ids.append(sid)
+
+    # Chain (19 edges) + 5 cross = 24 edges / 20 skills = 1.2 ratio
+    for i in range(1, len(ids)):
+        asyncio.run(tool.execute(json.dumps({
+            "action": "add_edge", "skill_id": ids[i], "prereq_id": ids[i - 1],
+            "edge_type": "prereq", "proof_query": f"pq_{i}",
+        })))
+    for src, dst in [(5, 0), (10, 3), (12, 6), (15, 8), (18, 10)]:
+        asyncio.run(tool.execute(json.dumps({
+            "action": "add_edge", "skill_id": ids[src], "prereq_id": ids[dst],
+            "edge_type": "prereq", "proof_query": "pq_cross",
+        })))
+
+    for sid in ids:
+        asyncio.run(tool.execute(json.dumps({
+            "action": "save_assessment_items",
+            "skill_id": sid,
+            "items": [{"question": "A sufficiently long question for quality",
+                       "expected_answer": "Answer", "rubric": "Rubric",
+                       "question_type": "open", "blooms_level": "remember",
+                       "difficulty": 0.5, "generation_model": "test"}],
+        })))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    assert data["passed"] is True, f"Expected passed=True but got gaps: {data['gaps']}"
+
+    # Verify adaptive criteria exist.
+    apply_gap = next((g for g in data["gaps"] if g["criterion"] == "bloom_apply_target"), None)
+    assert apply_gap is not None, "Expected bloom_apply_target gap"
+    assert apply_gap["severity"] == "PASS", f"Expected PASS for apply_target, got {apply_gap['severity']}"
+
+    # Size + depth should be present.
+    size_gap = next((g for g in data["gaps"] if g["criterion"] == "size_target"), None)
+    assert size_gap is not None, "Expected size_target gap"
+    depth_gap = next((g for g in data["gaps"] if g["criterion"] == "depth_target"), None)
+    assert depth_gap is not None, "Expected depth_target gap"
+
+
+def test_validate_tree_fails_outside_proposed_range(store):
+    """Propose apply 40-50%, build with apply=55% → FAIL outside proposed range."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    asyncio.run(tool.execute(json.dumps({"action": "start_build", "trigger": "test"})))
+    asyncio.run(tool.execute(json.dumps({
+        "action": "propose_targets",
+        "domain_type": "programming",
+        "size_range": [10, 20],
+        "bloom_targets": {
+            "apply": [40, 50],
+            "understand": [20, 30],
+            "analyze": [10, 20],
+            "evaluate": [5, 15],
+            "remember": [0, 10],
+            "create": [0, 10],
+        },
+        "max_depth": 5,
+        "atomicity_criterion": "test",
+    })))
+
+    # Build a tree with apply=55% (11/20) — exceeds proposed max of 50%.
+    ids = []
+    blooms = (["apply"] * 11 + ["understand"] * 3 + ["analyze"] * 3
+              + ["evaluate"] * 2 + ["remember"] * 1)
+    for i, bl in enumerate(blooms):
+        sid = json.loads(asyncio.run(tool.execute(json.dumps({
+            "action": "upsert_skill", "domain": "d", "name": f"S{i}",
+            "bloom_level": bl,
+        }))))["skill_id"]
+        ids.append(sid)
+
+    for i in range(1, len(ids)):
+        asyncio.run(tool.execute(json.dumps({
+            "action": "add_edge", "skill_id": ids[i], "prereq_id": ids[i - 1],
+            "edge_type": "prereq", "proof_query": f"pq_{i}",
+        })))
+    for src, dst in [(5, 0), (10, 3), (12, 6), (15, 8), (18, 10)]:
+        asyncio.run(tool.execute(json.dumps({
+            "action": "add_edge", "skill_id": ids[src], "prereq_id": ids[dst],
+            "edge_type": "prereq", "proof_query": "pq_cross",
+        })))
+
+    for sid in ids:
+        asyncio.run(tool.execute(json.dumps({
+            "action": "save_assessment_items",
+            "skill_id": sid,
+            "items": [{"question": "A sufficiently long question for quality",
+                       "expected_answer": "Answer", "rubric": "Rubric",
+                       "question_type": "open", "blooms_level": "remember",
+                       "difficulty": 0.5, "generation_model": "test"}],
+        })))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    assert data["passed"] is False
+    apply_gap = next((g for g in data["gaps"] if g["criterion"] == "bloom_apply_target"), None)
+    assert apply_gap is not None, "Expected bloom_apply_target gap"
+    assert apply_gap["severity"] == "FAIL", f"Expected FAIL, got {apply_gap['severity']}"
+
+
+def test_validate_tree_falls_back_to_defaults_without_targets(store):
+    """No propose_targets called → uses hardcoded defaults (apply≤35%)."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    # start_build WITHOUT propose_targets.
+    asyncio.run(tool.execute(json.dumps({"action": "start_build", "trigger": "test"})))
+
+    # Build with apply=50% (10/20) — fails hardcoded apply≤35%.
+    ids = []
+    blooms = (["apply"] * 10 + ["understand"] * 3 + ["analyze"] * 3
+              + ["evaluate"] * 3 + ["remember"] * 1)
+    for i, bl in enumerate(blooms):
+        sid = json.loads(asyncio.run(tool.execute(json.dumps({
+            "action": "upsert_skill", "domain": "d", "name": f"S{i}",
+            "bloom_level": bl,
+        }))))["skill_id"]
+        ids.append(sid)
+
+    for i in range(1, len(ids)):
+        asyncio.run(tool.execute(json.dumps({
+            "action": "add_edge", "skill_id": ids[i], "prereq_id": ids[i - 1],
+            "edge_type": "prereq", "proof_query": f"pq_{i}",
+        })))
+    for src, dst in [(5, 0), (10, 3), (12, 6), (15, 8), (18, 10)]:
+        asyncio.run(tool.execute(json.dumps({
+            "action": "add_edge", "skill_id": ids[src], "prereq_id": ids[dst],
+            "edge_type": "prereq", "proof_query": "pq_cross",
+        })))
+
+    for sid in ids:
+        asyncio.run(tool.execute(json.dumps({
+            "action": "save_assessment_items",
+            "skill_id": sid,
+            "items": [{"question": "A sufficiently long question for quality",
+                       "expected_answer": "Answer", "rubric": "Rubric",
+                       "question_type": "open", "blooms_level": "remember",
+                       "difficulty": 0.5, "generation_model": "test"}],
+        })))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    assert data["passed"] is False
+    # Should have hardcoded bloom_apply_cap FAIL, not adaptive bloom_apply_target.
+    apply_cap = next((g for g in data["gaps"] if g["criterion"] == "bloom_apply_cap"), None)
+    assert apply_cap is not None, "Expected bloom_apply_cap gap (hardcoded fallback)"
+    assert apply_cap["severity"] == "FAIL"
+    # Adaptive criteria should NOT be present.
+    apply_target = next((g for g in data["gaps"] if g["criterion"] == "bloom_apply_target"), None)
+    assert apply_target is None, "Should not have bloom_apply_target when no targets proposed"
+
+
+def test_validate_tree_adaptive_theory_domain(store):
+    """Propose theory targets (understand 35-45%), build understand-heavy tree → PASS.
+    Under hardcoded defaults (no single >40%), understand=42% would FAIL.
+    With proposed targets, it PASSES."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    asyncio.run(tool.execute(json.dumps({"action": "start_build", "trigger": "test"})))
+    asyncio.run(tool.execute(json.dumps({
+        "action": "propose_targets",
+        "domain_type": "field",
+        "size_range": [10, 25],
+        "bloom_targets": {
+            "understand": [35, 45],
+            "analyze": [20, 30],
+            "evaluate": [15, 25],
+            "remember": [10, 20],
+            "apply": [0, 15],
+            "create": [5, 15],
+        },
+        "max_depth": 5,
+        "atomicity_criterion": "each leaf skill is a distinct concept assessable via explanation",
+    })))
+
+    # Build a tree with understand=42% (8/19 skills) — exceeds hardcoded 40%
+    # but within proposed 35-45%.
+    ids = []
+    blooms = (["understand"] * 8 + ["analyze"] * 4 + ["evaluate"] * 3
+              + ["remember"] * 2 + ["apply"] * 1 + ["create"] * 1)
+    for i, bl in enumerate(blooms):
+        sid = json.loads(asyncio.run(tool.execute(json.dumps({
+            "action": "upsert_skill", "domain": "d", "name": f"S{i}",
+            "bloom_level": bl,
+        }))))["skill_id"]
+        ids.append(sid)
+
+    # 19 skills → need ≥23 edges (19*1.2=22.8, ceil 23). Chain 18 + 5 cross = 23.
+    for i in range(1, len(ids)):
+        asyncio.run(tool.execute(json.dumps({
+            "action": "add_edge", "skill_id": ids[i], "prereq_id": ids[i - 1],
+            "edge_type": "prereq", "proof_query": f"pq_{i}",
+        })))
+    for src, dst in [(5, 0), (9, 3), (12, 6), (15, 8), (18, 10)]:
+        asyncio.run(tool.execute(json.dumps({
+            "action": "add_edge", "skill_id": ids[src], "prereq_id": ids[dst],
+            "edge_type": "prereq", "proof_query": "pq_cross",
+        })))
+
+    for sid in ids:
+        asyncio.run(tool.execute(json.dumps({
+            "action": "save_assessment_items",
+            "skill_id": sid,
+            "items": [{"question": "A sufficiently long question for quality",
+                       "expected_answer": "Answer", "rubric": "Rubric",
+                       "question_type": "open", "blooms_level": "remember",
+                       "difficulty": 0.5, "generation_model": "test"}],
+        })))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    assert data["passed"] is True, f"Expected passed=True (adaptive theory targets) but got: {data['gaps']}"
+
+    # Verify understand is within proposed target.
+    understand_gap = next((g for g in data["gaps"] if g["criterion"] == "bloom_understand_target"), None)
+    assert understand_gap is not None, "Expected bloom_understand_target gap"
+    assert understand_gap["severity"] == "PASS", f"Expected PASS, got {understand_gap['severity']}"
+
+    # Verify size and depth targets are present.
+    size_gap = next((g for g in data["gaps"] if g["criterion"] == "size_target"), None)
+    assert size_gap is not None, "Expected size_target gap"
+    depth_gap = next((g for g in data["gaps"] if g["criterion"] == "depth_target"), None)
+    assert depth_gap is not None, "Expected depth_target gap"

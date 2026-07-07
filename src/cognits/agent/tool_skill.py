@@ -55,7 +55,7 @@ class SkillTreeSave(Tool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["start_build", "upsert_skill", "add_edge", "finish_build", "save_assessment_items", "list_assessment_items", "validate_tree"],
+                "enum": ["start_build", "propose_targets", "upsert_skill", "add_edge", "finish_build", "save_assessment_items", "list_assessment_items", "validate_tree"],
                 "description": "Which tree mutation to perform.",
             },
             "trigger": {
@@ -128,6 +128,29 @@ class SkillTreeSave(Tool):
                 "type": "boolean",
                 "description": "list_assessment_items (optional): include inactive items too (default false).",
             },
+            "domain_type": {
+                "type": "string",
+                "description": "propose_targets: domain type (programming, language, paper, field, creative, project).",
+            },
+            "size_range": {
+                "type": "array",
+                "description": "propose_targets: [min, max] skill count for this domain.",
+                "items": {"type": "integer"},
+                "minItems": 2,
+                "maxItems": 2,
+            },
+            "bloom_targets": {
+                "type": "object",
+                "description": "propose_targets: per-Bloom-level % ranges. Keys: remember, understand, apply, analyze, evaluate, create. Values: [min, max].",
+            },
+            "max_depth": {
+                "type": "integer",
+                "description": "propose_targets: maximum tree depth for this domain.",
+            },
+            "atomicity_criterion": {
+                "type": "string",
+                "description": "propose_targets: human-readable atomicity criterion for this domain.",
+            },
         },
         "required": ["action"],
     }
@@ -141,6 +164,8 @@ class SkillTreeSave(Tool):
 
         if action == "start_build":
             return await self._start_build(args)
+        if action == "propose_targets":
+            return await self._propose_targets(args)
         if action == "upsert_skill":
             return await self._upsert_skill(args)
         if action == "add_edge":
@@ -160,6 +185,49 @@ class SkillTreeSave(Tool):
         sid = self.session_id() if self.session_id is not None else ""
         build_id = await asyncio.to_thread(self.skills.start_build, sid, trigger)
         return json.dumps({"build_id": build_id}, ensure_ascii=False)
+
+    async def _propose_targets(self, args: dict) -> str:
+        domain_type = args.get("domain_type", "")
+        size_range = args.get("size_range")
+        bloom_targets = args.get("bloom_targets")
+        max_depth = args.get("max_depth")
+        atomicity_criterion = args.get("atomicity_criterion", "")
+
+        if not domain_type:
+            return tool_error("propose_targets requires 'domain_type'")
+        if not isinstance(size_range, list) or len(size_range) != 2:
+            return tool_error("propose_targets requires 'size_range' as [min, max]")
+        if not isinstance(bloom_targets, dict):
+            return tool_error("propose_targets requires 'bloom_targets' object with per-level [min, max] ranges")
+
+        targets_data = {
+            "domain_type": domain_type,
+            "size_range": size_range,
+            "bloom_targets": bloom_targets,
+            "max_depth": max_depth,
+            "atomicity_criterion": atomicity_criterion,
+        }
+        targets_json = json.dumps(targets_data, ensure_ascii=False)
+
+        def _update():
+            db = self.skills.db
+            with db.lock:
+                row = db.conn.execute(
+                    "SELECT id FROM skill_builds ORDER BY started_at DESC LIMIT 1"
+                ).fetchone()
+                if row is None:
+                    return None
+                build_id = row[0]
+                db.conn.execute(
+                    "UPDATE skill_builds SET targets = ? WHERE id = ?",
+                    (targets_json, build_id),
+                )
+                return build_id
+
+        build_id = await asyncio.to_thread(_update)
+        if build_id is None:
+            return tool_error("propose_targets: no active build found — call start_build first")
+        return json.dumps({"ok": True, "build_id": build_id, "targets": targets_data}, ensure_ascii=False)
 
     async def _upsert_skill(self, args: dict) -> str:
         name = args.get("name")
@@ -477,6 +545,35 @@ class SkillTreeSave(Tool):
                 ]
                 acyclic, _ = _kahn_cycle_check(edge_pairs)
 
+                # --- Tree depth (BFS from roots through prereq/alt_prereq edges) ---
+                adj: dict[str, list[str]] = {}
+                for src, dst in edge_pairs:
+                    adj.setdefault(dst, []).append(src)
+                depths: dict[str, int] = {}
+                for r in roots:
+                    depths[r] = 0
+                queue = list(roots)
+                while queue:
+                    node = queue.pop(0)
+                    for child in adj.get(node, []):
+                        if child not in depths:
+                            depths[child] = depths[node] + 1
+                            queue.append(child)
+                max_depth_val = max(depths.values()) if depths else 0
+
+                # --- Proposed targets (from the most recent build) ---
+                targets_row = conn.execute(
+                    "SELECT targets FROM skill_builds "
+                    "WHERE targets != '' ORDER BY started_at DESC LIMIT 1"
+                ).fetchone()
+                targets_json = targets_row[0] if targets_row else None
+                targets = None
+                if targets_json:
+                    try:
+                        targets = json.loads(targets_json)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
             return {
                 "skills_n": skills_n,
                 "edges_n": edges_n,
@@ -501,6 +598,8 @@ class SkillTreeSave(Tool):
                 "acyclic": acyclic,
                 "low_quality_item_ids": low_quality_item_ids,
                 "low_quality_skill_ids": list(low_quality_skill_ids_set),
+                "targets": targets,
+                "max_depth": max_depth_val,
             }
 
         result = await asyncio.to_thread(_audit)
@@ -529,77 +628,179 @@ class SkillTreeSave(Tool):
                 "target": "\u22651 per skill",
             })
 
-        # bloom_apply_cap
-        if result["apply_pct"] > 35:
-            gaps.append({
-                "criterion": "bloom_apply_cap",
-                "severity": "FAIL",
-                "current": f"{result['apply_pct']:.1f}%",
-                "target": "\u226435%",
-                "fix_hint": "Convert apply skills to evaluate/create/understand (distribute across levels \u2014 do NOT convert all to analyze, that triggers bloom_analyze_cap). Re-upsert with the new bloom_level",
-            })
-            all_pass = False
-        else:
-            gaps.append({
-                "criterion": "bloom_apply_cap",
-                "severity": "PASS",
-                "current": f"{result['apply_pct']:.1f}%",
-                "target": "\u226435%",
-            })
+        # Bloom distribution checks — adaptive when targets proposed, hardcoded defaults otherwise
+        proposed = result.get("targets")
+        if proposed and isinstance(proposed, dict) and proposed.get("bloom_targets"):
+            bt = proposed["bloom_targets"]
+            bloom_pcts = {
+                "remember": result["remember_pct"],
+                "understand": result["understand_pct"],
+                "apply": result["apply_pct"],
+                "analyze": result["analyze_pct"],
+                "evaluate": result["evaluate_pct"],
+                "create": result["create_pct"],
+            }
+            for level, (lo, hi) in bt.items():
+                actual = bloom_pcts.get(level, 0)
+                if actual < lo:
+                    gaps.append({
+                        "criterion": f"bloom_{level}_target",
+                        "severity": "FAIL",
+                        "current": f"{actual:.1f}%",
+                        "target": f"\u2265{lo}% (proposed range [{lo}%, {hi}%])",
+                        "fix_hint": f"{level} is below the proposed minimum of {lo}%. Upsert some skills to raise {level}.",
+                    })
+                    all_pass = False
+                elif actual > hi:
+                    gaps.append({
+                        "criterion": f"bloom_{level}_target",
+                        "severity": "FAIL",
+                        "current": f"{actual:.1f}%",
+                        "target": f"\u2264{hi}% (proposed range [{lo}%, {hi}%])",
+                        "fix_hint": f"{level} is above the proposed maximum of {hi}%. Convert some {level} skills to other levels via upsert_skill.",
+                    })
+                    all_pass = False
+                else:
+                    gaps.append({
+                        "criterion": f"bloom_{level}_target",
+                        "severity": "PASS",
+                        "current": f"{actual:.1f}%",
+                        "target": f"[{lo}%, {hi}%]",
+                    })
 
-        # bloom_analyze_cap
-        if result["analyze_pct"] > 30:
-            gaps.append({
-                "criterion": "bloom_analyze_cap",
-                "severity": "FAIL",
-                "current": f"{result['analyze_pct']:.1f}%",
-                "target": "\u226430%",
-                "fix_hint": "Convert analyze skills to evaluate/create/understand via upsert_skill \u2014 distribute across multiple levels, not all to one level",
-            })
-            all_pass = False
-        else:
-            gaps.append({
-                "criterion": "bloom_analyze_cap",
-                "severity": "PASS",
-                "current": f"{result['analyze_pct']:.1f}%",
-                "target": "\u226430%",
-            })
+            # Size target (WARN only — size is aspirational, not a hard gate)
+            sr = proposed.get("size_range")
+            if sr and isinstance(sr, list) and len(sr) == 2:
+                if result["skills_n"] < sr[0]:
+                    gaps.append({
+                        "criterion": "size_target",
+                        "severity": "WARN",
+                        "current": f"{result['skills_n']} skills",
+                        "target": f"\u2265{sr[0]} (proposed min)",
+                        "fix_hint": f"Tree has {result['skills_n']} skills, below the proposed minimum of {sr[0]}. Consider adding more skills.",
+                    })
+                elif result["skills_n"] > sr[1]:
+                    gaps.append({
+                        "criterion": "size_target",
+                        "severity": "WARN",
+                        "current": f"{result['skills_n']} skills",
+                        "target": f"\u2264{sr[1]} (proposed max)",
+                        "fix_hint": f"Tree has {result['skills_n']} skills, above the proposed maximum of {sr[1]}. Consider merging or removing skills.",
+                    })
+                else:
+                    gaps.append({
+                        "criterion": "size_target",
+                        "severity": "PASS",
+                        "current": f"{result['skills_n']} skills",
+                        "target": f"[{sr[0]}, {sr[1]}]",
+                    })
+            else:
+                gaps.append({
+                    "criterion": "size_target",
+                    "severity": "PASS",
+                    "current": f"{result['skills_n']} skills",
+                    "target": "no size target proposed",
+                })
 
-        # bloom_high_order_floor
-        if result["eval_create_pct"] < 20:
-            gaps.append({
-                "criterion": "bloom_high_order_floor",
-                "severity": "FAIL",
-                "current": f"{result['eval_create_pct']:.1f}% (evaluate+create)",
-                "target": "\u226520% (evaluate+create)",
-                "fix_hint": "Convert some lower-level skills (remember/understand/apply) to evaluate or create to raise higher-order thinking coverage",
-            })
-            all_pass = False
+            # Max depth (WARN only)
+            md = proposed.get("max_depth")
+            if md is not None:
+                cur_depth = result.get("max_depth", 0)
+                if cur_depth > md:
+                    gaps.append({
+                        "criterion": "depth_target",
+                        "severity": "WARN",
+                        "current": f"max depth={cur_depth}",
+                        "target": f"\u2264{md} (proposed max depth)",
+                        "fix_hint": f"Tree depth {cur_depth} exceeds proposed max of {md}. Consider merging shallow branches or reducing over-decomposition.",
+                    })
+                else:
+                    gaps.append({
+                        "criterion": "depth_target",
+                        "severity": "PASS",
+                        "current": f"max depth={cur_depth}",
+                        "target": f"\u2264{md}",
+                    })
+            else:
+                gaps.append({
+                    "criterion": "depth_target",
+                    "severity": "PASS",
+                    "current": f"max depth={result.get('max_depth', 0)}",
+                    "target": "no depth target proposed",
+                })
         else:
-            gaps.append({
-                "criterion": "bloom_high_order_floor",
-                "severity": "PASS",
-                "current": f"{result['eval_create_pct']:.1f}% (evaluate+create)",
-                "target": "\u226520% (evaluate+create)",
-            })
+            # --- No proposed targets — fall back to hardcoded defaults ---
+            # bloom_apply_cap
+            if result["apply_pct"] > 35:
+                gaps.append({
+                    "criterion": "bloom_apply_cap",
+                    "severity": "FAIL",
+                    "current": f"{result['apply_pct']:.1f}%",
+                    "target": "\u226435%",
+                    "fix_hint": "Convert apply skills to evaluate/create/understand (distribute across levels \u2014 do NOT convert all to analyze, that triggers bloom_analyze_cap). Re-upsert with the new bloom_level",
+                })
+                all_pass = False
+            else:
+                gaps.append({
+                    "criterion": "bloom_apply_cap",
+                    "severity": "PASS",
+                    "current": f"{result['apply_pct']:.1f}%",
+                    "target": "\u226435%",
+                })
 
-        # bloom_no_single_dominance
-        if result["any_bloom_max_pct"] > 40:
-            gaps.append({
-                "criterion": "bloom_no_single_dominance",
-                "severity": "FAIL",
-                "current": f"max single level={result['any_bloom_max_pct']:.1f}%",
-                "target": "no single Bloom level > 40%",
-                "fix_hint": "Distribute skills more evenly across Bloom levels \u2014 no single level should exceed 40% of all skills",
-            })
-            all_pass = False
-        else:
-            gaps.append({
-                "criterion": "bloom_no_single_dominance",
-                "severity": "PASS",
-                "current": f"max single level={result['any_bloom_max_pct']:.1f}%",
-                "target": "no single Bloom level > 40%",
-            })
+            # bloom_analyze_cap
+            if result["analyze_pct"] > 30:
+                gaps.append({
+                    "criterion": "bloom_analyze_cap",
+                    "severity": "FAIL",
+                    "current": f"{result['analyze_pct']:.1f}%",
+                    "target": "\u226430%",
+                    "fix_hint": "Convert analyze skills to evaluate/create/understand via upsert_skill \u2014 distribute across multiple levels, not all to one level",
+                })
+                all_pass = False
+            else:
+                gaps.append({
+                    "criterion": "bloom_analyze_cap",
+                    "severity": "PASS",
+                    "current": f"{result['analyze_pct']:.1f}%",
+                    "target": "\u226430%",
+                })
+
+            # bloom_high_order_floor
+            if result["eval_create_pct"] < 20:
+                gaps.append({
+                    "criterion": "bloom_high_order_floor",
+                    "severity": "FAIL",
+                    "current": f"{result['eval_create_pct']:.1f}% (evaluate+create)",
+                    "target": "\u226520% (evaluate+create)",
+                    "fix_hint": "Convert some lower-level skills (remember/understand/apply) to evaluate or create to raise higher-order thinking coverage",
+                })
+                all_pass = False
+            else:
+                gaps.append({
+                    "criterion": "bloom_high_order_floor",
+                    "severity": "PASS",
+                    "current": f"{result['eval_create_pct']:.1f}% (evaluate+create)",
+                    "target": "\u226520% (evaluate+create)",
+                })
+
+            # bloom_no_single_dominance
+            if result["any_bloom_max_pct"] > 40:
+                gaps.append({
+                    "criterion": "bloom_no_single_dominance",
+                    "severity": "FAIL",
+                    "current": f"max single level={result['any_bloom_max_pct']:.1f}%",
+                    "target": "no single Bloom level > 40%",
+                    "fix_hint": "Distribute skills more evenly across Bloom levels \u2014 no single level should exceed 40% of all skills",
+                })
+                all_pass = False
+            else:
+                gaps.append({
+                    "criterion": "bloom_no_single_dominance",
+                    "severity": "PASS",
+                    "current": f"max single level={result['any_bloom_max_pct']:.1f}%",
+                    "target": "no single Bloom level > 40%",
+                })
 
         # proof_query
         if result["proof_pct"] < 100:

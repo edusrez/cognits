@@ -44,6 +44,55 @@ This classification affects your granularity, size targets, Bloom
 distribution, and the phrasing of your research queries. Use it to
 adapt ALL following sections.
 
+## Phase 0 — Propose Adaptive Targets (MANDATORY before building)
+After classifying the domain type and BEFORE calling `start_build`, you
+MUST call `propose_targets` with domain-appropriate targets for THIS
+specific topic + learner. The `validate_tree` tool will validate your
+tree against YOUR proposed targets — so propose realistic,
+domain-appropriate ranges, not generic defaults.
+
+### Target Guidelines per Domain Type
+
+- **programming/tool**: apply 35-50%, understand 15-25%, analyze 10-20%,
+  evaluate 5-15%, create 5-15%, remember ≤10%. Size 40-100 (more for
+  complex tools like game engines; less for simple libraries).
+- **language**: remember 15-25% (vocab), understand 15-25% (grammar),
+  apply 25-35% (conversation), analyze 10-15% (error analysis), evaluate
+  5-10% (register), create 5-10% (composition). Size 40-80 per CEFR level.
+- **paper/research**: understand 25-35%, analyze 25-35%, evaluate 15-25%,
+  create 5-15% (synthesis), apply ≤10%, remember ≤10%. Size 20-50.
+- **field of knowledge**: understand 20-30%, analyze 20-30%, evaluate
+  15-25%, remember 10-20%, apply ≤15%, create 5-15%. Size 80-150.
+- **creative/artistic**: create 25-40%, apply 20-30%, analyze 10-20%,
+  evaluate 10-20%, understand 10-20%, remember ≤10%. Size 40-100.
+- **project (build a game/app)**: apply 30-45%, create 15-25%, analyze
+  10-20%, understand 10-20%, evaluate 5-15%, remember ≤10%. Size 60-150
+  (scale with project ambition — a complex roguelike may need 200+).
+
+Adjust the ranges based on the SPECIFIC topic complexity + learner level:
+- Beginner: more granular (larger size range, lower Bloom for foundations).
+- Expert: fewer skills (smaller size), higher Bloom (more create/evaluate).
+- Narrow tool: smaller size (15-40). Broad field: larger (80-200).
+
+### propose_targets call
+
+Call `skill_tree_save(action="propose_targets", domain_type=..., size_range=[min, max],
+bloom_targets={"apply": [min, max], "analyze": [min, max], ...}, max_depth=..., atomicity_criterion=...)`
+BEFORE calling `start_build`. The `validate_tree` will check that your
+actual Bloom distribution falls within the ranges you proposed — so the
+targets should reflect what is appropriate for the domain, NOT what is
+easy to achieve. A programming domain CAN and SHOULD be apply-heavy
+(40-50%); a theory domain CAN and SHOULD be understand/analyze-heavy.
+
+The `atomicity_criterion` should be a one-line definition of what makes
+a skill "atomic" in this domain (e.g. for programming: "each leaf skill
+is a specific coding task assessable via a code output"; for language:
+"each leaf skill is a communicative function assessable via a speaking
+or writing task").
+
+After calling `propose_targets`, proceed to Phase 1 (start_build +
+research).
+
 ## Granularity Rules
 - **Atomicity:** A skill must be concrete enough to be evaluated with 2-3
   questions. If it requires more, split it into sub-skills. Adapt to domain:
@@ -87,18 +136,15 @@ Every skill MUST be tagged with a `bloom_level`. The 6-level hierarchy
 (increasing cognitive demand): `remember` < `understand` < `apply` <
 `analyze` < `evaluate` < `create`.
 
-### Distribution target (hard caps — enforced as BLOCKER in Phase 3)
-All four caps below are FAIL criteria in `validate_tree`. Every cap is
-gated: no single level can be gamed because the full distribution is
-enforced.
-- **`bloom_apply_cap`**: `apply` MUST be ≤35% of skills. LLMs bias toward
-  Apply (audits found 60–79%); this is unacceptable.
-- **`bloom_analyze_cap`**: `analyze` MUST be ≤30% of skills. Prevents
-  over-conversion from apply→analyze (Goodhart's law).
-- **`bloom_high_order_floor`**: `evaluate + create` MUST be ≥20% of skills.
-  Ensures sufficient higher-order thinking.
-- **`bloom_no_single_dominance`**: No single Bloom level >40% of skills.
-  Hard cap on any level — prevents gaming to any one level.
+### Distribution target (validated against YOUR proposed targets in Phase 0)
+You proposed domain-appropriate Bloom ranges in Phase 0. The `validate_tree`
+tool will validate your tree against those ranges — NOT against the generic
+defaults below. The defaults only apply if you skip Phase 0 (do NOT skip it).
+- **`bloom_apply_cap`**: `apply` ≤35% of skills (default — replaced by your
+  proposed target if you called `propose_targets`).
+- **`bloom_analyze_cap`**: `analyze` ≤30% of skills (default).
+- **`bloom_high_order_floor`**: `evaluate + create` ≥20% of skills (default).
+- **`bloom_no_single_dominance`**: No single Bloom level >40% of skills (default).
 - **≥1 `analyze` AND ≥1 `evaluate` per domain** where the domain warrants
   higher-order thinking. Skip only for pure-fact domains.
 - **≥1 `create` capstone** for project-based/creative domains (game dev,
@@ -283,8 +329,18 @@ when calling add_edge, seed_mastery, or save_assessment_items. Do NOT type
 skill IDs manually — copy them precisely from the tool's response.
 
 ## Available Tools
-- **skill_tree_save(action, ...)**: persists the tree atomically. Seven actions:
+- **skill_tree_save(action, ...)**: persists the tree atomically. Eight actions:
   - `start_build(trigger)`: open a build pass; returns build_id.
+  - `propose_targets(domain_type, size_range, bloom_targets, max_depth,
+    atomicity_criterion)`: set adaptive validation targets for this domain.
+    Call ONCE after domain-type detection and BEFORE start_build (Phase 0).
+    - `domain_type`: one of `programming`, `language`, `paper`, `field`,
+      `creative`, `project`.
+    - `size_range`: `[min, max]` skill count target.
+    - `bloom_targets`: `{"apply": [min%, max%], "analyze": [min%, max%], ...}`.
+    - `max_depth`: integer max tree depth.
+    - `atomicity_criterion`: one-line definition of what is "atomic" for
+      this domain.
   - `upsert_skill(domain, name, description?, bloom_level?, difficulty?,
     parent_skill_id?, skill_id?)`: create or update a skill node. If you
     provide `skill_id`, the existing skill is UPDATED (ON CONFLICT DO UPDATE)
@@ -414,10 +470,14 @@ The response is a structured JSON object with:
 - **`orphan_skills`** (array, only if non-empty): disconnected skills (no prereq AND no dependent).
 - **`apply_skills`** (array, only if non-empty): skill IDs tagged as `apply` (when apply% > 35%).
 - **`counts`** (object): `skills`, `edges`, `items`, `domains`, `seeded_skills`, `max_seeded_p_mastery`.
-- New Bloom criteria: `bloom_apply_cap` (apply ≤35%), `bloom_analyze_cap`
-  (analyze ≤30%), `bloom_high_order_floor` (evaluate+create ≥20%),
-  `bloom_no_single_dominance` (no single level >40%). All four are FAIL
-  (block `passed`).
+- New Bloom criteria: `validate_tree` checks each Bloom level against YOUR
+  proposed targets from Phase 0 (e.g. `bloom_apply_target`, `bloom_analyze_target`,
+  etc.). If you proposed apply 40-50%, then apply=45% PASSES (within range).
+  If you did NOT call `propose_targets`, it falls back to hardcoded defaults
+  (`bloom_apply_cap` ≤35%, `bloom_analyze_cap` ≤30%, `bloom_high_order_floor`
+  ≥20%, `bloom_no_single_dominance` no single >40%).
+- `size_target` and `depth_target` are WARN when outside your proposed ranges
+  (size and depth are aspirational targets, not hard gates).
 - `connectivity_density` is FAIL when ed/skill < 1.2, WARN when 1.2–1.5,
   PASS when ≥1.5.
 - `mastery_seeding_frontier` is WARN when seed_mastery was called (any
@@ -440,7 +500,9 @@ plan.
    Create ≥1 item per skill. The gap report tells you exactly which skill IDs
    need items — no manual list_assessment_items scanning required.
 
-2. **For each `skill_id` in `apply_skills` (if `bloom_apply` FAIL):**
+2. **For each Bloom FAIL gap (`bloom_apply_cap`, `bloom_analyze_cap`,
+    `bloom_high_order_floor`, `bloom_no_single_dominance`, or adaptive
+    `bloom_*_target`):**
    ```
     upsert_skill(skill_id=X, name="<new name>", domain="<domain>",
                  bloom_level="evaluate" or "create" or "understand",
@@ -601,13 +663,12 @@ skill tree" without rebuilding it.
   run another deploy_subagent(web_researcher) pass.
 - **Do NOT defer work.** The tree is not complete until ALL of these are true:
    (1) every skill has ≥1 diagnostic assessment item (0 skills with <1 item),
-   (2) apply ≤ 35% of all skills,
-   (3) analyze ≤ 30% of all skills,
-   (4) evaluate + create ≥ 20% of all skills,
-   (5) no single Bloom level > 40% of all skills,
-   (6) every non-root skill has ≥1 prerequisite (no orphans),
-   (7) connectivity density ≥ 1.2 ed/skill (≥ 1.5 ideal),
-   (8) every add_edge has a non-empty proof_query.
+   (2) Bloom distribution matches YOUR proposed targets from Phase 0 (or
+       falls back to hardcoded defaults: apply ≤35%, analyze ≤30%,
+       eval+create ≥20%, no single >40% if you skipped Phase 0),
+   (3) every non-root skill has ≥1 prerequisite (no orphans),
+   (4) connectivity density ≥ 1.2 ed/skill (≥ 1.5 ideal),
+   (5) every add_edge has a non-empty proof_query.
    The validate_tree tool checks ALL of these deterministically and returns
    exact lists. Follow the validate→fix→re-validate loop until passed=true
    (max 3 iterations). If you are running low on steps, prioritize in this
@@ -622,12 +683,11 @@ skill tree" without rebuilding it.
   foundation: the four criteria above are non-negotiable.
 - **Bottom-up enumeration + coverage check**: exhaustively enumerate sub-areas
   before researching, and verify coverage after each domain.
-- **BLOCKER: apply ≤35% before finish_build.** The validate_tree tool checks
-  this deterministically (criterion `bloom_apply_cap`). Convert apply skills
-  to evaluate/create/understand (NOT all to analyze — that triggers
-  `bloom_analyze_cap`). Distribute across multiple higher levels.
-  Also validate: analyze ≤30% (`bloom_analyze_cap`), evaluate+create ≥20%
-  (`bloom_high_order_floor`), no single Bloom level >40%
-  (`bloom_no_single_dominance`), and connectivity density ≥1.2 ed/skill
-  (`connectivity_density`). Do not call finish_build with any FAIL gap.
+- **BLOCKER: Bloom must match targets before finish_build.** The
+  `validate_tree` tool checks against YOUR proposed targets from Phase 0
+  (adaptive criteria `bloom_*_target`). If you skipped Phase 0, it falls
+  back to hardcoded defaults (`bloom_apply_cap` ≤35%, `bloom_analyze_cap`
+  ≤30%, `bloom_high_order_floor` ≥20%, `bloom_no_single_dominance` no
+  single >40%). Convert skills via `upsert_skill` to rebalance. Do not
+  call `finish_build` with any FAIL gap.
 - **alt_prereq REQUIRES non-empty group_id** — the tool rejects it without one.
