@@ -196,6 +196,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
         routes_reports,
         routes_sessions,
         routes_skills,
+        routes_study,
         routes_stream,
     )
 
@@ -206,6 +207,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
     routes_notes.register(app, state)
     routes_reports.register(app, state)
     routes_skills.register(app, state)
+    routes_study.register(app, state)
     routes_chat.register(app, state)
     routes_stream.register(app, state)
 
