@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware import Middleware
 
 from cognits import paths
+from cognits.storage.assessment import AssessmentItemRepository
 from cognits.storage.database import Database
 from cognits.storage.files import Config, Store
 from cognits.storage.learner_state import LearnerStateRepository
@@ -79,6 +80,7 @@ class AppState:
         self.study_plans: StudyPlanRepository | None = None
         self.pedagogy: PedagogicalPlanRepository | None = None
         self.session_config: SessionConfigRepository | None = None
+        self.assessment: AssessmentItemRepository | None = None
         self.cached_config: Config = Config()
         self.active_agents: dict[str, object] = {}
         self.suspended_subagents: dict[str, object] = {}
@@ -116,6 +118,7 @@ class AppState:
             self.study_plans = StudyPlanRepository(self.db)
             self.pedagogy = PedagogicalPlanRepository(self.db)
             self.session_config = SessionConfigRepository(self.db)
+            self.assessment = AssessmentItemRepository(self.db)
         except Exception as e:
             log.error("storage: init db: %s", e)
 

@@ -224,6 +224,60 @@ BASE_SCHEMA = """
     CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
         embedding float[1024]
     );
+
+    CREATE TABLE IF NOT EXISTS skill_assessment_items (
+        id TEXT PRIMARY KEY,
+        skill_id TEXT NOT NULL,
+        skill_ids TEXT NOT NULL DEFAULT '[]',
+        question TEXT NOT NULL,
+        question_type TEXT NOT NULL DEFAULT 'open'
+            CHECK(question_type IN ('open','multiple_choice','code','recall','transfer','parsons','cloze','fix_bug','concept_map','claim_evaluation')),
+        expected_answer TEXT NOT NULL DEFAULT '',
+        rubric TEXT NOT NULL DEFAULT '',
+        rubric_criteria TEXT NOT NULL DEFAULT '[]',
+        rubric_type TEXT NOT NULL DEFAULT 'analytic' CHECK(rubric_type IN ('analytic','holistic')),
+        blooms_level TEXT NOT NULL DEFAULT '',
+        difficulty REAL NOT NULL DEFAULT 0.5,
+        p_value REAL,
+        irt_a REAL, irt_b REAL, irt_c REAL,
+        irt_model TEXT NOT NULL DEFAULT 'heuristic' CHECK(irt_model IN ('heuristic','1pl','2pl','3pl')),
+        generation_model TEXT NOT NULL DEFAULT '',
+        generation_prompt_hash TEXT NOT NULL DEFAULT '',
+        template_id TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT '',
+        seed_version INTEGER NOT NULL DEFAULT 1,
+        times_presented INTEGER NOT NULL DEFAULT 0,
+        times_correct INTEGER NOT NULL DEFAULT 0,
+        avg_response_time_ms REAL,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','draft','retired','flagged')),
+        reviewed_by TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY(skill_id) REFERENCES skills(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_assessment_skill ON skill_assessment_items(skill_id);
+    CREATE INDEX IF NOT EXISTS idx_assessment_status ON skill_assessment_items(status);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS skill_assessment_items_fts USING fts5(
+        question,
+        content='skill_assessment_items',
+        content_rowid='rowid',
+        tokenize='unicode61'
+    );
+    CREATE TRIGGER IF NOT EXISTS assessment_items_fts_ai AFTER INSERT ON skill_assessment_items BEGIN
+        INSERT INTO skill_assessment_items_fts(rowid, question)
+        VALUES (new.rowid, new.question);
+    END;
+    CREATE TRIGGER IF NOT EXISTS assessment_items_fts_ad AFTER DELETE ON skill_assessment_items BEGIN
+        INSERT INTO skill_assessment_items_fts(skill_assessment_items_fts, rowid, question)
+        VALUES ('delete', old.rowid, old.question);
+    END;
+    CREATE TRIGGER IF NOT EXISTS assessment_items_fts_au AFTER UPDATE ON skill_assessment_items BEGIN
+        INSERT INTO skill_assessment_items_fts(skill_assessment_items_fts, rowid, question)
+        VALUES ('delete', old.rowid, old.question);
+        INSERT INTO skill_assessment_items_fts(rowid, question)
+        VALUES (new.rowid, new.question);
+    END;
 """
 
 
@@ -422,6 +476,7 @@ class Database:
         if version < SCHEMA_VERSION:
             cur.execute("INSERT INTO reports_fts(reports_fts) VALUES('rebuild')")
             cur.execute("INSERT INTO skills_fts(skills_fts) VALUES('rebuild')")
+            cur.execute("INSERT INTO skill_assessment_items_fts(skill_assessment_items_fts) VALUES('rebuild')")
             cur.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     def _backup(self) -> None:

@@ -287,6 +287,38 @@ class StudyPlanItem:
         }
 
 
+@dataclass
+class AssessmentItem:
+    id: str = ""
+    skill_id: str = ""
+    skill_ids: list[str] | None = None
+    question: str = ""
+    question_type: str = "open"
+    expected_answer: str = ""
+    rubric: str = ""
+    rubric_criteria: list[dict] | None = None
+    rubric_type: str = "analytic"
+    blooms_level: str = ""
+    difficulty: float = 0.5
+    p_value: float | None = None
+    irt_a: float | None = None
+    irt_b: float | None = None
+    irt_c: float | None = None
+    irt_model: str = "heuristic"
+    generation_model: str = ""
+    generation_prompt_hash: str = ""
+    template_id: str = ""
+    source: str = ""
+    seed_version: int = 1
+    times_presented: int = 0
+    times_correct: int = 0
+    avg_response_time_ms: float | None = None
+    status: str = "active"
+    reviewed_by: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+
 # --- ID generators ---
 
 def new_report_id() -> str:
@@ -311,6 +343,10 @@ def new_plan_id() -> str:
 
 def new_plan_item_id() -> str:
     return "pi_" + secrets.token_hex(8)
+
+
+def new_assessment_item_id() -> str:
+    return "ai_" + secrets.token_hex(8)
 
 
 # --- Status enums ---

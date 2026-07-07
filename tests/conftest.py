@@ -2,6 +2,7 @@
 
 import pytest
 
+from cognits.storage.assessment import AssessmentItemRepository
 from cognits.storage.database import Database
 from cognits.storage.learner_state import LearnerStateRepository
 from cognits.storage.messages import MessageRepository
@@ -66,12 +67,18 @@ def session_config(db):
 
 
 @pytest.fixture
+def assessment(db):
+    return AssessmentItemRepository(db)
+
+
+@pytest.fixture
 def real_state(tmp_path, monkeypatch):
     """AppState wired to real repos on a tmp_path Database (no LegacyStore).
     
     Use this for integration tests that must exercise production code paths."""
     monkeypatch.chdir(tmp_path)
     from cognits.server.app import AppState, create_app
+    from cognits.storage.assessment import AssessmentItemRepository
     from cognits.storage.database import Database
 
     state = AppState()
@@ -86,6 +93,7 @@ def real_state(tmp_path, monkeypatch):
     state.study_plans = StudyPlanRepository(db)
     state.pedagogy = PedagogicalPlanRepository(db)
     state.session_config = SessionConfigRepository(db)
+    state.assessment = AssessmentItemRepository(db)
     yield state, create_app(state)
     db.shutdown()
 
