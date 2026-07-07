@@ -299,6 +299,7 @@ def skill_planner_config(
     tf_client: TinyfishClient,
     reports,
     skills,
+    assessment,
     learner_state,
     session_id,
     emit: Emit,
@@ -325,7 +326,7 @@ def skill_planner_config(
     if rag_engine is not None:
         registry.register(RagSearch(rag_engine, reports_repo=reports))
     registry.register(
-        SkillTreeSave(skills=skills, session_id=session_id, emit=tool_emit)
+        SkillTreeSave(skills=skills, assessment=assessment, session_id=session_id, emit=tool_emit)
     )
     registry.register(UpdateMastery(learner_state=learner_state))
 
@@ -461,6 +462,8 @@ def evaluator_config(
     rag_engine,
     tf_client: TinyfishClient,
     reports,
+    skills,
+    assessment,
     learner_state,
     session_id,
     emit: Emit,
@@ -481,11 +484,15 @@ def evaluator_config(
     ``resume_token`` transparently."""
     from cognits.agent.tool_deploy import DeploySubagent
     from cognits.agent.tool_mastery import UpdateMastery
+    from cognits.agent.tool_skill import SkillTreeSave
 
     registry = Registry()
     if rag_engine is not None:
         registry.register(RagSearch(rag_engine, reports_repo=reports))
     registry.register(UpdateMastery(learner_state=learner_state))
+    registry.register(
+        SkillTreeSave(skills=skills, assessment=assessment, session_id=session_id)
+    )
 
     researcher_max_steps = RESEARCHER_MAX_STEPS
     subagents = {
@@ -540,6 +547,7 @@ def teacher_config(
     tf_client,
     reports,
     skills,
+    assessment,
     learner_state,
     pedagogy,
     session_id,
@@ -566,7 +574,7 @@ def teacher_config(
 
     eval_cfg = evaluator_config(
         model, reasoning, EVALUATOR_MAX_STEPS, llm_client, rag_engine, tf_client,
-        reports, learner_state, session_id, emit,
+        reports, skills, assessment, learner_state, session_id, emit,
         system_prompt_override=None,
         tinyfish_api_key=tinyfish_api_key,
         suspended_subagents=suspended_subagents,

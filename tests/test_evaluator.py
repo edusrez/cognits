@@ -253,6 +253,9 @@ def test_evaluator_in_default_agents():
 
 def test_evaluator_config_builds(tmp_path):
     skills, learner_state, reports = _make_repos(tmp_path)
+    db = skills.db
+    from cognits.storage.assessment import AssessmentItemRepository
+    assessment = AssessmentItemRepository(db)
     store = learner_state  # compat for existing code
     from cognits.agent.subagents import evaluator_config
 
@@ -266,10 +269,11 @@ def test_evaluator_config_builds(tmp_path):
     cfg = evaluator_config(
         model="m", reasoning="", max_steps=10,
         llm_client=FakeLLM(), rag_engine=None, tf_client=FakeTF(),
-        reports=store, learner_state=store, session_id=lambda: "s_test",
+        reports=store, skills=skills, assessment=assessment, learner_state=store, session_id=lambda: "s_test",
         emit=lambda e: None,
     )
     assert cfg.name == "evaluator"
     tool_names = set(cfg.tools._tools.keys())
     assert "update_mastery" in tool_names
+    assert "skill_tree_save" in tool_names
     assert "web_researcher" in cfg.subagents

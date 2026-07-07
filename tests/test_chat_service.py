@@ -217,10 +217,14 @@ def test_internal_subagents_have_internal_true():
     tmp = tempfile.mkdtemp()
     db = Database(os.path.join(tmp, "test.db"))
     from cognits.storage.reports import ReportRepository
+    from cognits.storage.skills import SkillRepository
+    from cognits.storage.assessment import AssessmentItemRepository
     reports = ReportRepository(db)
+    skills = SkillRepository(db)
+    assessment = AssessmentItemRepository(db)
     tf = TinyfishClient("key")
     try:
-        cfg = evaluator_config("m", "disabled", 1, None, None, tf, reports, None, "s1", lambda ev: None, tinyfish_api_key="key")
+        cfg = evaluator_config("m", "disabled", 1, None, None, tf, reports, skills, assessment, None, "s1", lambda ev: None, tinyfish_api_key="key")
         assert cfg.internal is True
     finally:
         db.shutdown()

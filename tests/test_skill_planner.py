@@ -11,6 +11,8 @@ from cognits.agent.tool_skill import SkillTreeSave
 from cognits.storage.database import Database
 from cognits.storage.learner_state import LearnerStateRepository
 from cognits.storage.skills import SkillRepository
+from cognits.storage.assessment import AssessmentItemRepository
+from cognits.storage.models import Skill, new_skill_id
 from cognits.tools import Registry
 
 
@@ -50,23 +52,23 @@ def _delta(content=None, tool_calls=None, finish=None):
 @pytest.fixture
 def store(tmp_path):
     db = Database(tmp_path / "test.db")
-    yield SkillRepository(db), LearnerStateRepository(db), db
+    yield SkillRepository(db), LearnerStateRepository(db), db, AssessmentItemRepository(db)
     db.shutdown()
 
 
 # --- tool-level tests ------------------------------------------------
 
 def test_skill_tree_save_start_build(store):
-    skills, learner_state, db = store
-    tool = SkillTreeSave(skills=skills, session_id=lambda: "s1")
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
     result = asyncio.run(tool.execute(json.dumps({"action": "start_build", "trigger": "onboarding"})))
     data = json.loads(result)
     assert data["build_id"].startswith("b_")
 
 
 def test_skill_tree_save_upsert_and_get(store):
-    skills, learner_state, db = store
-    tool = SkillTreeSave(skills=skills, session_id=lambda: "s1")
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
     result = asyncio.run(tool.execute(json.dumps({
         "action": "upsert_skill",
         "domain": "python",
@@ -83,8 +85,8 @@ def test_skill_tree_save_upsert_and_get(store):
 
 
 def test_skill_tree_save_add_edge_cycle_returns_tool_error(store):
-    skills, learner_state, db = store
-    tool = SkillTreeSave(skills=skills, session_id=lambda: "s1")
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
     a = json.loads(asyncio.run(tool.execute(json.dumps({"action": "upsert_skill", "domain": "d", "name": "A"}))))["skill_id"]
     b = json.loads(asyncio.run(tool.execute(json.dumps({"action": "upsert_skill", "domain": "d", "name": "B"}))))["skill_id"]
     ok = asyncio.run(tool.execute(json.dumps({"action": "add_edge", "skill_id": b, "prereq_id": a, "edge_type": "prereq"})))
@@ -96,8 +98,8 @@ def test_skill_tree_save_add_edge_cycle_returns_tool_error(store):
 
 
 def test_skill_tree_save_finish_build(store):
-    skills, learner_state, db = store
-    tool = SkillTreeSave(skills=skills, session_id=lambda: "s1")
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
     bid = json.loads(asyncio.run(tool.execute(json.dumps({"action": "start_build", "trigger": "test"}))))["build_id"]
     result = asyncio.run(tool.execute(json.dumps({
         "action": "finish_build",
@@ -116,8 +118,8 @@ def test_skill_tree_save_finish_build(store):
 
 
 def test_skill_tree_save_missing_args_returns_tool_error(store):
-    skills, learner_state, db = store
-    tool = SkillTreeSave(skills=skills)
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment)
     result = asyncio.run(tool.execute(json.dumps({"action": "upsert_skill", "domain": "d"})))
     assert "error" in json.loads(result)
 
@@ -125,7 +127,7 @@ def test_skill_tree_save_missing_args_returns_tool_error(store):
 # --- agent-level end-to-end (no nested web_researcher) ---------------
 
 def test_skill_planner_run_end_to_end_scripted(store):
-    skills, learner_state, db = store
+    skills, learner_state, db, assessment = store
     """Drive skill_planner's loop with a ScriptedLLM that issues start_build,
     upsert_skill x2, add_edge, finish_build, then emits Markdown content.
 
@@ -133,7 +135,7 @@ def test_skill_planner_run_end_to_end_scripted(store):
     that we rewrite on the fly from earlier tool results seen in messages,
     so the agent loop sees consistent IDs without us hard-coding them.
     """
-    tool = SkillTreeSave(skills=skills, session_id=lambda: "s_test")
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s_test")
     registry = Registry()
     registry.register(tool)
 
@@ -228,7 +230,7 @@ def test_skill_planner_appears_in_default_agents():
 
 
 def test_skill_planner_config_builds_registry(store):
-    skills, learner_state, db = store
+    skills, learner_state, db, assessment = store
     """skill_planner_config(...) returns a proper AgentConfig without touching
     the network. LLM and TinyFish clients are fakes that satisfy the type."""
     from cognits.agent.subagents import skill_planner_config
@@ -247,7 +249,7 @@ def test_skill_planner_config_builds_registry(store):
         llm_client=FakeLLM(),
         rag_engine=None,
         tf_client=FakeTF(),
-        reports=skills, skills=skills,
+        reports=skills, skills=skills, assessment=assessment,
         learner_state=learner_state,
         session_id=lambda: "s_test",
         emit=lambda ev: None,
@@ -262,3 +264,125 @@ def test_skill_planner_config_builds_registry(store):
     assert "update_mastery" in tool_names
     assert "deploy_subagent" in tool_names
     assert "web_researcher" in cfg.subagents
+
+
+# --- assessment item tool actions ------------------------------------
+
+def test_save_assessment_items(store):
+    skills, learner_state, db, assessment = store
+    s = Skill(id=new_skill_id(), domain="test", name="AssessTest", source="test")
+    skills.upsert(s)
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+    items = [
+        {"question": "Q1", "expected_answer": "A1", "rubric": "R1", "question_type": "open", "blooms_level": "remember", "difficulty": 0.3, "generation_model": "test"},
+        {"question": "Q2", "expected_answer": "A2", "rubric": "R2", "question_type": "open", "blooms_level": "understand", "difficulty": 0.5, "generation_model": "test"},
+        {"question": "Q3", "expected_answer": "A3", "rubric": "R3", "question_type": "open", "blooms_level": "apply", "difficulty": 0.7, "generation_model": "test"},
+    ]
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "save_assessment_items",
+        "skill_id": s.id,
+        "items": items,
+    })))
+    data = json.loads(result)
+    assert data["saved"] == 3
+    assert len(data["item_ids"]) == 3
+    assert all(iid.startswith("ai_") for iid in data["item_ids"])
+    assert "warning" not in data
+
+    # Verify they persist via list
+    result2 = asyncio.run(tool.execute(json.dumps({
+        "action": "list_assessment_items",
+        "skill_id": s.id,
+    })))
+    data2 = json.loads(result2)
+    assert len(data2["items"]) == 3
+    assert all(it["question_type"] == "open" for it in data2["items"])
+
+
+def test_save_assessment_items_warns_on_few(store):
+    skills, learner_state, db, assessment = store
+    s = Skill(id=new_skill_id(), domain="test", name="FewTest", source="test")
+    skills.upsert(s)
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+    items = [
+        {"question": "Q1", "expected_answer": "A1", "rubric": "R1", "question_type": "open", "blooms_level": "remember", "difficulty": 0.3, "generation_model": "test"},
+        {"question": "Q2", "expected_answer": "A2", "rubric": "R2", "question_type": "open", "blooms_level": "understand", "difficulty": 0.5, "generation_model": "test"},
+    ]
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "save_assessment_items",
+        "skill_id": s.id,
+        "items": items,
+    })))
+    data = json.loads(result)
+    assert data["saved"] == 2
+    assert "warning" in data
+    assert "BKT" in data["warning"]
+
+
+def test_save_assessment_items_unknown_skill(store):
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "save_assessment_items",
+        "skill_id": "k_nonexistent",
+        "items": [{"question": "Q", "expected_answer": "A", "rubric": "R", "question_type": "open", "blooms_level": "remember", "difficulty": 0.5, "generation_model": "test"}],
+    })))
+    data = json.loads(result)
+    assert "error" in data
+
+
+def test_list_assessment_items(store):
+    skills, learner_state, db, assessment = store
+    s = Skill(id=new_skill_id(), domain="test", name="ListTest", source="test")
+    skills.upsert(s)
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+    # Save 3 items with varying question_types
+    items = [
+        {"question": "Q1", "expected_answer": "A1", "rubric": "R1", "question_type": "multiple_choice", "blooms_level": "remember", "difficulty": 0.3, "generation_model": "test"},
+        {"question": "Q2", "expected_answer": "A2", "rubric": "R2", "question_type": "open", "blooms_level": "understand", "difficulty": 0.5, "generation_model": "test"},
+        {"question": "Q3", "expected_answer": "A3", "rubric": "R3", "question_type": "code", "blooms_level": "apply", "difficulty": 0.8, "generation_model": "test"},
+    ]
+    asyncio.run(tool.execute(json.dumps({
+        "action": "save_assessment_items",
+        "skill_id": s.id,
+        "items": items,
+    })))
+
+    # List them back
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "list_assessment_items",
+        "skill_id": s.id,
+    })))
+    data = json.loads(result)
+    assert len(data["items"]) == 3
+    qtypes = {it["question_type"] for it in data["items"]}
+    assert qtypes == {"multiple_choice", "open", "code"}
+    for it in data["items"]:
+        assert it["skill_id"] == s.id
+        assert it["status"] == "active"
+        assert it["irt_model"] == "heuristic"
+
+
+def test_list_assessment_items_empty_skill(store):
+    skills, learner_state, db, assessment = store
+    s = Skill(id=new_skill_id(), domain="test", name="EmptyTest", source="test")
+    skills.upsert(s)
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "list_assessment_items",
+        "skill_id": s.id,
+    })))
+    data = json.loads(result)
+    assert len(data["items"]) == 0
+
+
+def test_save_assessment_items_empty_array(store):
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "save_assessment_items",
+        "skill_id": "k_fake",
+        "items": [],
+    })))
+    data = json.loads(result)
+    assert "error" in data

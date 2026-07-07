@@ -19,7 +19,8 @@ from cognits.storage.models import LearnerState, SessionConfigRow, Skill, new_sk
 @pytest.fixture
 def store(tmp_path):
     db = Database(tmp_path / "test.db")
-    yield SkillRepository(db), LearnerStateRepository(db), SessionConfigRepository(db), PedagogicalPlanRepository(db), ReportRepository(db)
+    from cognits.storage.assessment import AssessmentItemRepository
+    yield SkillRepository(db), LearnerStateRepository(db), SessionConfigRepository(db), PedagogicalPlanRepository(db), ReportRepository(db), AssessmentItemRepository(db)
     db.shutdown()
 
 
@@ -35,7 +36,7 @@ def _seed(store, *sk):
 # --- session_config skill_id -----------------------------------------
 
 def test_session_config_save_load_skill_id(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     cfg = SessionConfigRow("s1", agent_id="maestro", skill_id="k_abc")
     session_config.save(cfg)
     loaded = session_config.load("s1")
@@ -43,7 +44,7 @@ def test_session_config_save_load_skill_id(store):
 
 
 def test_session_config_default_skill_id_empty(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     cfg = SessionConfigRow("s2", agent_id="orchestrator")
     session_config.save(cfg)
     loaded = session_config.load("s2")
@@ -53,28 +54,28 @@ def test_session_config_default_skill_id_empty(store):
 # --- pedagogical_plans CRUD ------------------------------------------
 
 def test_pedagogical_plan_save_and_get(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     pedagogy.save("k_x", "# Plan\n\nStage 1")
     got = pedagogy.get("k_x")
     assert got == "# Plan\n\nStage 1"
 
 
 def test_pedagogical_plan_overwrite(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     pedagogy.save("k_x", "Plan A")
     pedagogy.save("k_x", "Plan B")
     assert pedagogy.get("k_x") == "Plan B"
 
 
 def test_pedagogical_plan_nonexistent(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     assert pedagogy.get("k_nonexistent") is None
 
 
 # --- save_pedagogical_plan tool --------------------------------------
 
 def test_save_pedagogical_plan_tool_persists(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     from cognits.agent.pedagogical_plan import SavePedagogicalPlan
 
     s = _skill("Variables"); _seed(skills, s)
@@ -88,7 +89,7 @@ def test_save_pedagogical_plan_tool_persists(store):
 
 
 def test_save_pedagogical_plan_tool_unknown_skill(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     from cognits.agent.pedagogical_plan import SavePedagogicalPlan
 
     tool = SavePedagogicalPlan(skills=skills, pedagogy=pedagogy)
@@ -102,7 +103,7 @@ def test_save_pedagogical_plan_tool_unknown_skill(store):
 # --- _build_teacher_system_prompt ------------------------------------
 
 def test_build_teacher_system_prompt_includes_skill_metadata(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     from cognits.server.routes_chat import _build_teacher_system_prompt
 
     s = _skill("Variables"); s.domain = "python"; s.bloom_level = "understand"
@@ -114,7 +115,7 @@ def test_build_teacher_system_prompt_includes_skill_metadata(store):
 
 
 def test_build_teacher_system_prompt_includes_learner_state(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     from cognits.server.routes_chat import _build_teacher_system_prompt
 
     s = _skill("FSM"); _seed(skills, s)
@@ -126,7 +127,7 @@ def test_build_teacher_system_prompt_includes_learner_state(store):
 
 
 def test_build_teacher_system_prompt_handles_missing_plan(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     from cognits.server.routes_chat import _build_teacher_system_prompt
 
     s = _skill("Root"); _seed(skills, s)
@@ -135,7 +136,7 @@ def test_build_teacher_system_prompt_handles_missing_plan(store):
 
 
 def test_build_teacher_system_prompt_includes_plan_when_present(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     from cognits.server.routes_chat import _build_teacher_system_prompt
 
     s = _skill("X"); _seed(skills, s)
@@ -146,7 +147,7 @@ def test_build_teacher_system_prompt_includes_plan_when_present(store):
 
 
 def test_build_teacher_system_prompt_includes_profile_ctx(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     from cognits.server.routes_chat import _build_teacher_system_prompt
 
     s = _skill("Y"); _seed(skills, s)
@@ -186,7 +187,7 @@ def test_orchestrator_planning_mode_mentions_pedagogical():
 
 
 def test_create_learning_session_emits_skill_id(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     from cognits.agent.tool_ui import CreateLearningSession
 
     s = _skill("Variables"); _seed(skills, s)
@@ -201,7 +202,7 @@ def test_create_learning_session_emits_skill_id(store):
 
 
 def test_teacher_config_builds(store):
-    skills, learner_state, session_config, pedagogy, reports = store
+    skills, learner_state, session_config, pedagogy, reports, assessment = store
     from cognits.agent.subagents import teacher_config
 
     class FakeLLM:
@@ -215,7 +216,7 @@ def test_teacher_config_builds(store):
     cfg = teacher_config(
         model="m", reasoning="", max_steps=10,
         llm_client=FakeLLM(), rag_engine=None, tf_client=FakeTF(),
-        reports=store, skills=store, learner_state=store, pedagogy=store, session_id=lambda: "s_test",
+        reports=reports, skills=skills, assessment=assessment, learner_state=learner_state, pedagogy=pedagogy, session_id=lambda: "s_test",
         emit=lambda e: None,
     )
     assert cfg.name == "maestro"

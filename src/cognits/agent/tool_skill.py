@@ -17,10 +17,13 @@ import asyncio
 import json
 from collections.abc import Callable
 
+from cognits.storage.assessment import AssessmentItemRepository
 from cognits.storage.models import (
     EDGE_TYPES,
+    AssessmentItem,
     LearnerState,
     Skill,
+    new_assessment_item_id,
     new_skill_id,
 )
 from cognits.tools import Tool, tool_error
@@ -30,10 +33,12 @@ class SkillTreeSave(Tool):
     def __init__(
         self,
         skills,
+        assessment: AssessmentItemRepository,
         session_id: Callable[[], str] | None = None,
         emit=None,
     ):
         self.skills = skills
+        self.assessment = assessment
         self.session_id = session_id
         self.emit = emit
 
@@ -50,7 +55,7 @@ class SkillTreeSave(Tool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["start_build", "upsert_skill", "add_edge", "finish_build"],
+                "enum": ["start_build", "upsert_skill", "add_edge", "finish_build", "save_assessment_items", "list_assessment_items"],
                 "description": "Which tree mutation to perform.",
             },
             "trigger": {
@@ -110,6 +115,15 @@ class SkillTreeSave(Tool):
                 "type": "string",
                 "description": "finish_build (optional): 'done' (default) or 'partial' if the pass ended early.",
             },
+            "items": {
+                "type": "array",
+                "description": "save_assessment_items: array of item objects. Each must have: question, expected_answer, rubric, question_type, blooms_level, difficulty, generation_model. Optional: rubric_criteria.",
+                "items": {"type": "object"},
+            },
+            "include_all": {
+                "type": "boolean",
+                "description": "list_assessment_items (optional): include inactive items too (default false).",
+            },
         },
         "required": ["action"],
     }
@@ -129,6 +143,10 @@ class SkillTreeSave(Tool):
             return await self._add_edge(args)
         if action == "finish_build":
             return await self._finish_build(args)
+        if action == "save_assessment_items":
+            return await self._save_assessment_items(args)
+        if action == "list_assessment_items":
+            return await self._list_assessment_items(args)
         return tool_error(f"unknown action: {action}")
 
     async def _start_build(self, args: dict) -> str:
@@ -187,3 +205,97 @@ class SkillTreeSave(Tool):
             self.skills.finish_build, build_id, summary, status
         )
         return json.dumps({"ok": True}, ensure_ascii=False)
+
+    async def _save_assessment_items(self, args: dict) -> str:
+        skill_id = args.get("skill_id")
+        items = args.get("items")
+        if not skill_id:
+            return tool_error("save_assessment_items requires 'skill_id'")
+        if not isinstance(items, list) or len(items) == 0:
+            return tool_error("save_assessment_items requires non-empty 'items' array")
+
+        existing = await asyncio.to_thread(self.skills.get, skill_id)
+        if existing is None:
+            return tool_error(f"skill_id '{skill_id}' does not exist")
+
+        warning = None
+        if len(items) < 3:
+            warning = "fewer than 3 items — BKT reliability may suffer"
+
+        saved_ids = []
+        for it in items:
+            item_id = it.get("id") or new_assessment_item_id()
+            rubric_criteria = it.get("rubric_criteria")
+            rc_json = None
+            if isinstance(rubric_criteria, list):
+                rc_json = rubric_criteria
+            ai = AssessmentItem(
+                id=item_id,
+                skill_id=skill_id,
+                skill_ids=[skill_id],
+                question=it.get("question", ""),
+                question_type=it.get("question_type", "open"),
+                expected_answer=it.get("expected_answer", ""),
+                rubric=it.get("rubric", ""),
+                rubric_criteria=rc_json,
+                rubric_type=it.get("rubric_type", "analytic"),
+                blooms_level=it.get("blooms_level", ""),
+                difficulty=float(it.get("difficulty", 0.5)),
+                irt_model=it.get("irt_model", "heuristic"),
+                generation_model=it.get("generation_model", ""),
+                generation_prompt_hash=it.get("generation_prompt_hash", ""),
+                source=it.get("source", ""),
+                seed_version=int(it.get("seed_version", 1)),
+                times_presented=int(it.get("times_presented", 0)),
+                times_correct=int(it.get("times_correct", 0)),
+                status=it.get("status", "active"),
+            )
+            await asyncio.to_thread(self.assessment.save, ai)
+            saved_ids.append(item_id)
+
+        response = {"saved": len(saved_ids), "item_ids": saved_ids}
+        if warning:
+            response["warning"] = warning
+        return json.dumps(response, ensure_ascii=False)
+
+    async def _list_assessment_items(self, args: dict) -> str:
+        skill_id = args.get("skill_id")
+        if not skill_id:
+            return tool_error("list_assessment_items requires 'skill_id'")
+        include_all = bool(args.get("include_all", False))
+        items = await asyncio.to_thread(
+            self.assessment.list_for_skill, skill_id, include_all
+        )
+        item_dicts = []
+        for ai in items:
+            item_dicts.append({
+                "id": ai.id,
+                "skill_id": ai.skill_id,
+                "skill_ids": ai.skill_ids,
+                "question": ai.question,
+                "question_type": ai.question_type,
+                "expected_answer": ai.expected_answer,
+                "rubric": ai.rubric,
+                "rubric_criteria": ai.rubric_criteria,
+                "rubric_type": ai.rubric_type,
+                "blooms_level": ai.blooms_level,
+                "difficulty": ai.difficulty,
+                "p_value": ai.p_value,
+                "irt_a": ai.irt_a,
+                "irt_b": ai.irt_b,
+                "irt_c": ai.irt_c,
+                "irt_model": ai.irt_model,
+                "generation_model": ai.generation_model,
+                "generation_prompt_hash": ai.generation_prompt_hash,
+                "template_id": ai.template_id,
+                "source": ai.source,
+                "seed_version": ai.seed_version,
+                "times_presented": ai.times_presented,
+                "times_correct": ai.times_correct,
+                "avg_response_time_ms": ai.avg_response_time_ms,
+                "status": ai.status,
+                "reviewed_by": ai.reviewed_by,
+                "created_at": ai.created_at,
+                "updated_at": ai.updated_at,
+            })
+        return json.dumps({"items": item_dicts}, ensure_ascii=False)
