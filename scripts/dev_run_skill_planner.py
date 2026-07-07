@@ -72,31 +72,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-async def _emit(event_type: str, data: dict | None = None) -> None:
-    """Print progress to stdout and flush."""
-    if data is None:
-        data = {}
-    label = f"[{event_type.upper()}]"
-    if event_type == "tool_start":
-        name = data.get("name", "?")
-        print(f"{label} {name}", flush=True)
-    elif event_type == "tool_end":
-        name = data.get("name", "?")
-        dur = data.get("duration_ms", "?")
-        print(f"{label} {name} → {dur}ms", flush=True)
-    elif event_type == "subagent_end":
-        name = data.get("agent", "?")
-        title = data.get("title", "") or ""
-        internal = data.get("internal", False)
-        tag = " (internal)" if internal else ""
-        print(f"{label} {name}{tag} {title}", flush=True)
-    elif event_type == "finish":
-        pass  # quiet
-    elif event_type == "error":
-        error = data.get("error", "?")
-        print(f"{label} {error}", flush=True)
-    else:
-        print(f"{label}", flush=True)
+def _emit(ev: dict) -> None:
+    """Print progress to stdout and flush.
+
+    Receives a single dict event {"type": ..., "data": ...} from the agent.
+    Only prints high-signal events; skips token/reasoning/usage floods.
+    """
+    t = ev.get("type", "")
+    if t not in ("tool_start", "tool_end", "subagent_end", "error", "finish"):
+        return
+    data = ev.get("data") or {}
+    msg = str(data)[:160] if data else ""
+    print(f"  [{t}] {msg}", flush=True)
 
 
 def _summarize_tree(db: "Database") -> None:
