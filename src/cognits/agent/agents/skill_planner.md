@@ -211,15 +211,29 @@ Use `list_assessment_items(skill_id=...)` to check what's already saved.
 In Phase 3 (validate_tree), list any skills with <1 item and add the missing
 diagnostic before `finish_build`.
 
-## Mastery Seeding via seed_mastery
+## Mastery Seeding via seed_mastery (HARD RULE — NON-NEGOTIABLE)
 After the tree is built and BEFORE calling finish_build, seed the learner
 state for roots the user already knows (from the onboarding profile). For
 each root skill whose description overlaps with the user's declared
 experience:
 
 ```
-seed_mastery(skill_id=<the exact id>, prior=0.85, confidence="self_report")
+seed_mastery(skill_id=<the exact id>, prior=<the learner's OWN rating>, confidence="self_report")
 ```
+
+### HARD RULE: use the learner's verbatim rating as the prior
+
+For each skill the learner SELF-REPORTS knowing well (rates ≥80%
+confidence), you MUST call `seed_mastery(skill_id=X, prior=<their rating>,
+confidence="self_report")` — use the learner's OWN rating as the prior
+(e.g. if they say 85% Python, seed at prior=0.85). This is
+NON-NEGOTIABLE: a skill seeded at prior ≥0.80 crosses the 0.75 proficient
+threshold and drops from the study-plan frontier (so the plan is
+goal-directed, not "all roots"). If the learner rates a skill ≥80% and you
+seed it below 0.80, the study plan will incorrectly include it. ALWAYS use
+the learner's verbatim rating as the prior for skills they rate ≥60%.
+
+### Why this matters
 
 This sets a Bayesian Beta prior — it encodes BOTH the probability AND the
 strength of belief about prior mastery. The `prior` parameter is your
@@ -399,15 +413,25 @@ The response is a structured JSON object with:
 - **`skills_needing_items`** (array, only if non-empty): skill IDs with 0 assessment items.
 - **`orphan_skills`** (array, only if non-empty): disconnected skills (no prereq AND no dependent).
 - **`apply_skills`** (array, only if non-empty): skill IDs tagged as `apply` (when apply% > 35%).
-- **`counts`** (object): `skills`, `edges`, `items`, `domains`.
+- **`counts`** (object): `skills`, `edges`, `items`, `domains`, `seeded_skills`, `max_seeded_p_mastery`.
 - New Bloom criteria: `bloom_apply_cap` (apply ≤35%), `bloom_analyze_cap`
   (analyze ≤30%), `bloom_high_order_floor` (evaluate+create ≥20%),
   `bloom_no_single_dominance` (no single level >40%). All four are FAIL
   (block `passed`).
 - `connectivity_density` is FAIL when ed/skill < 1.2, WARN when 1.2–1.5,
   PASS when ≥1.5.
+- `mastery_seeding_frontier` is WARN when seed_mastery was called (any
+  seeded skills exist) but no seeded skill has p_mastery ≥ 0.75. This
+  means every root is in the frontier — the study plan is not goal-directed.
+  WARN gaps do NOT block `passed`, but you should address them. If the
+  learner self-reported knowing any skill well (≥80%), re-seed it at
+  prior ≥0.80 so it drops from the frontier.
 
 ### If `passed: false`, fix EVERY FAIL gap:
+Also address WARN gaps with clear fix_hints if you can (especially
+`mastery_seeding_frontier` — if the learner knows any skill well, seed it
+≥0.80). WARNs don't block `passed`, but fixing them produces a better
+plan.
 
 1. **For each `skill_id` in `skills_needing_items`:**
    ```

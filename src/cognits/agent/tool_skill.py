@@ -356,6 +356,14 @@ class SkillTreeSave(Tool):
                 ).fetchall()
                 domains_n = len(domains_rows)
 
+                # --- Mastery seeding ---
+                seed_row = conn.execute(
+                    "SELECT COUNT(*), MAX(p_mastery) FROM learner_state "
+                    "WHERE p_mastery != 0.5"
+                ).fetchone()
+                seeded_skills = seed_row[0] if seed_row else 0
+                max_seeded_p_mastery = seed_row[1] if seed_row and seed_row[1] is not None else 0.0
+
                 # --- Bloom distribution ---
                 bloom_rows = conn.execute(
                     "SELECT bloom_level, COUNT(*) FROM skills WHERE status='active' "
@@ -474,6 +482,8 @@ class SkillTreeSave(Tool):
                 "edges_n": edges_n,
                 "items_n": items_n,
                 "domains_n": domains_n,
+                "seeded_skills": seeded_skills,
+                "max_seeded_p_mastery": max_seeded_p_mastery,
                 "apply_pct": apply_pct,
                 "apply_skills": apply_skills,
                 "analyze_pct": analyze_pct,
@@ -698,6 +708,25 @@ class SkillTreeSave(Tool):
                 "target": "understand \u226440%, remember \u226415%",
             })
 
+        # mastery_seeding_frontier (WARN — seeded skills exist but none ≥0.75)
+        seeded = result["seeded_skills"]
+        max_seeded = result["max_seeded_p_mastery"]
+        if seeded > 0 and max_seeded < 0.75:
+            gaps.append({
+                "criterion": "mastery_seeding_frontier",
+                "severity": "WARN",
+                "current": f"{seeded} seeded skills, none \u22650.75 (max={max_seeded:.2f})",
+                "target": "at least one seeded skill \u22650.75 (drops from frontier)",
+                "fix_hint": "If the learner self-reports knowing any skill well (\u226580%), re-call seed_mastery with prior \u22650.80 for that skill.",
+            })
+        else:
+            gaps.append({
+                "criterion": "mastery_seeding_frontier",
+                "severity": "PASS",
+                "current": f"{seeded} seeded skills, max={max_seeded:.2f}" if seeded > 0 else "no seeded skills",
+                "target": "at least one seeded skill \u22650.75 when seeding is used",
+            })
+
         # Summary
         fail_gaps = [g for g in gaps if g["severity"] == "FAIL"]
         if fail_gaps:
@@ -715,6 +744,8 @@ class SkillTreeSave(Tool):
                 "edges": result["edges_n"],
                 "items": result["items_n"],
                 "domains": result["domains_n"],
+                "seeded_skills": result["seeded_skills"],
+                "max_seeded_p_mastery": round(result["max_seeded_p_mastery"], 2),
             },
         }
 

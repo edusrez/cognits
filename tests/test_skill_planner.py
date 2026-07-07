@@ -12,7 +12,7 @@ from cognits.storage.database import Database
 from cognits.storage.learner_state import LearnerStateRepository
 from cognits.storage.skills import SkillRepository
 from cognits.storage.assessment import AssessmentItemRepository
-from cognits.storage.models import Skill, new_skill_id
+from cognits.storage.models import LearnerState, Skill, new_skill_id
 from cognits.tools import Registry
 
 
@@ -1199,3 +1199,136 @@ def test_validate_tree_warns_on_medium_density(store):
     assert dens_gap is not None, "Expected connectivity_density gap"
     assert dens_gap["severity"] == "WARN", f"Expected WARN, got {dens_gap['severity']}"
     assert "1.20" in dens_gap["current"]
+
+
+# --- mastery_seeding_frontier WARN tests -------------------------------
+
+def _make_valid_tree(store):
+    """Helper: build a valid 5-skill tree that passes all checks (Bloom, items,
+    connectivity, proof). Returns (tool, skill_ids_dict) for further setup."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    ids = {}
+    for name, bloom in [("RememberA", "remember"), ("UnderstandB", "understand"),
+                         ("ApplyC", "apply"), ("AnalyzeD", "analyze"),
+                         ("EvaluateE", "evaluate")]:
+        sid = json.loads(asyncio.run(tool.execute(json.dumps({
+            "action": "upsert_skill", "domain": "d", "name": name,
+            "bloom_level": bloom,
+        }))))["skill_id"]
+        ids[name] = sid
+
+    # 7 edges (ratio=1.4) — passes density
+    edges = [
+        ("UnderstandB", "RememberA"),
+        ("ApplyC", "RememberA"),
+        ("ApplyC", "UnderstandB"),
+        ("AnalyzeD", "UnderstandB"),
+        ("AnalyzeD", "ApplyC"),
+        ("EvaluateE", "ApplyC"),
+        ("EvaluateE", "AnalyzeD"),
+    ]
+    for src_name, dst_name in edges:
+        asyncio.run(tool.execute(json.dumps({
+            "action": "add_edge",
+            "skill_id": ids[src_name], "prereq_id": ids[dst_name],
+            "edge_type": "prereq", "proof_query": f"{src_name} needs {dst_name}",
+        })))
+
+    # 1 item per skill (good quality).
+    for sid in ids.values():
+        asyncio.run(tool.execute(json.dumps({
+            "action": "save_assessment_items",
+            "skill_id": sid,
+            "items": [{"question": "A sufficiently long question to pass quality",
+                       "expected_answer": "Answer", "rubric": "Rubric",
+                       "question_type": "open", "blooms_level": "remember",
+                       "difficulty": 0.5, "generation_model": "test"}],
+        })))
+
+    return tool, ids
+
+
+def test_validate_tree_warns_on_no_high_mastery_seed(store):
+    """3 seeded skills all at p=0.60 → WARN mastery_seeding_frontier,
+    passed still true (no FAIL gaps), max_seeded_p_mastery=0.60."""
+    skills, learner_state, db, assessment = store
+    tool, ids = _make_valid_tree(store)
+
+    # Seed 3 skills at p_mastery=0.60 (below 0.75 threshold).
+    for name in ("RememberA", "UnderstandB", "ApplyC"):
+        ls = LearnerState(
+            skill_id=ids[name],
+            alpha=3.0, beta=2.0, p_mastery=0.60,
+            status_enum="developing",
+        )
+        asyncio.run(asyncio.to_thread(learner_state.upsert, ls))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    # Should still pass (only WARNs, no FAILs).
+    assert data["passed"] is True, f"Expected passed=True but got gaps: {data['gaps']}"
+
+    # Check WARN for mastery_seeding_frontier.
+    seed_gap = next((g for g in data["gaps"] if g["criterion"] == "mastery_seeding_frontier"), None)
+    assert seed_gap is not None, "Expected mastery_seeding_frontier gap but not found"
+    assert seed_gap["severity"] == "WARN", f"Expected WARN, got {seed_gap['severity']}"
+    assert "3 seeded" in seed_gap["current"] or "none" in seed_gap["current"]
+
+    # Counts should reflect seeding state.
+    assert data["counts"]["seeded_skills"] == 3
+    assert data["counts"]["max_seeded_p_mastery"] == 0.60
+
+
+def test_validate_tree_no_warn_when_high_mastery_seed(store):
+    """One seeded skill at p=0.85 → no mastery_seeding_frontier WARN (PASS)."""
+    skills, learner_state, db, assessment = store
+    tool, ids = _make_valid_tree(store)
+
+    # Seed one skill at p_mastery=0.85 (above 0.75 threshold).
+    ls = LearnerState(
+        skill_id=ids["RememberA"],
+        alpha=17.0, beta=3.0, p_mastery=0.85,
+        status_enum="proficient",
+    )
+    asyncio.run(asyncio.to_thread(learner_state.upsert, ls))
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    # Should pass.
+    assert data["passed"] is True, f"Expected passed=True but got gaps: {data['gaps']}"
+
+    # mastery_seeding_frontier should be PASS (not WARN).
+    seed_gap = next((g for g in data["gaps"] if g["criterion"] == "mastery_seeding_frontier"), None)
+    assert seed_gap is not None, "Expected mastery_seeding_frontier gap but not found"
+    assert seed_gap["severity"] == "PASS", f"Expected PASS, got {seed_gap['severity']}"
+
+    # Counts should reflect seeding state.
+    assert data["counts"]["seeded_skills"] == 1
+    assert data["counts"]["max_seeded_p_mastery"] == 0.85
+
+
+def test_validate_tree_no_warn_when_no_seeds(store):
+    """No seeded skills at all → no WARN (PASS with 'no seeded skills' current)."""
+    skills, learner_state, db, assessment = store
+    tool, ids = _make_valid_tree(store)
+
+    # No explicit learner_state upserts — all default to p_mastery=0.5.
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "validate_tree"})))
+    data = json.loads(result)
+
+    # Should pass.
+    assert data["passed"] is True, f"Expected passed=True but got gaps: {data['gaps']}"
+
+    # mastery_seeding_frontier should be PASS.
+    seed_gap = next((g for g in data["gaps"] if g["criterion"] == "mastery_seeding_frontier"), None)
+    assert seed_gap is not None, "Expected mastery_seeding_frontier gap but not found"
+    assert seed_gap["severity"] == "PASS", f"Expected PASS, got {seed_gap['severity']}"
+
+    # Counts should show no seeded skills.
+    assert data["counts"]["seeded_skills"] == 0
+    assert data["counts"]["max_seeded_p_mastery"] == 0.0
