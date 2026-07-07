@@ -1,6 +1,6 @@
 # Cognits
 
-**C**ontext-**O**riented **G**uidance (and) **N**eural **I**ntelligent **T**utoring **S**ystem.
+**C**ontext-**O**riented **G**uidance and **N**eural **I**ntelligent **T**utoring **S**ystem.
 
 Cognits is a multi-agent learning system. It anchors itself to your project
 folder — whether you're building a game, creating a web app, learning a new
