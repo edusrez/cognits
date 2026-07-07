@@ -34,7 +34,11 @@ def _ensure_model():
         size_in_gb=2.27,
         additional_files=["onnx/model.onnx_data", "onnx/sentencepiece.bpe.model"],
     )
-    _MODEL = TextEmbedding(model_name="BAAI/bge-m3", threads=1)
+    _MODEL = TextEmbedding(
+        model_name="BAAI/bge-m3",
+        cache_dir=os.environ.get("FASTEMBED_CACHE_DIR"),
+        threads=1,
+    )
     _MODEL_LOADED = True
 
 

@@ -24,6 +24,7 @@ log = logging.getLogger("cognits.rag")
 
 from cognits.constants import RAG_DEFAULT_MAX_RESULTS
 from cognits.server.exceptions import CognitsError
+from cognits.storage.fsdetect import fstype_of, is_wal_unsafe_fstype
 
 
 class RagNotReady(CognitsError):
@@ -124,6 +125,19 @@ class RagEngine:
 
     def _load(self) -> None:
         log.debug("rag: loading BGE-M3 (first time downloads ~2.3 GB)...")
+        # Redirect model cache to native Linux FS when on 9p/DrvFs.
+        # ONNX Runtime mmap's the .onnx model file, which fails on 9p.
+        cache_dir = os.environ.get("FASTEMBED_CACHE_DIR",
+                       str(Path.home() / ".cache" / "fastembed"))
+        if is_wal_unsafe_fstype(fstype_of(cache_dir)):
+            redirect = str(Path("/tmp").resolve() / "fastembed_cache")
+            Path(redirect).mkdir(parents=True, exist_ok=True)
+            os.environ["FASTEMBED_CACHE_DIR"] = redirect
+            log.warning(
+                "rag: model cache redirected to %s (9p/DrvFs detected at %s)",
+                redirect,
+                cache_dir,
+            )
         # Phase 1: warm cache in subprocess — ONNX holds the GIL for seconds
         # during graph optimisation; a child process has its own GIL so the
         # parent's spinner stays smooth.
