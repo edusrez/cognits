@@ -101,7 +101,11 @@ class SkillTreeSave(Tool):
             "edge_type": {
                 "type": "string",
                 "enum": list(EDGE_TYPES),
-                "description": "add_edge: 'prereq' (must learn first), 'coreq' (taken together), 'related' (loose link).",
+                "description": "add_edge: 'prereq' (AND, all must be mastered), 'alt_prereq' (OR, any one in same group_id satisfies — requires group_id), 'coreq' (taken together), 'related' (loose link), 'soft_prereq' (bonus, never blocks).",
+            },
+            "group_id": {
+                "type": "string",
+                "description": "add_edge: REQUIRED for edge_type='alt_prereq'. Shared identifier for OR-alternatives — edges with the same group_id form an OR-set.",
             },
             "proof_query": {
                 "type": "string",
@@ -182,6 +186,11 @@ class SkillTreeSave(Tool):
         edge_type = args.get("edge_type", "prereq")
         proof_query = args.get("proof_query", "")
         build_id = args.get("build_id", "")
+        group_id = args.get("group_id", "")
+        # Validate alt_prereq requires group_id (redundant with repo-side
+        # check, but gives the LLM a friendlier tool_error).
+        if edge_type == "alt_prereq" and not group_id:
+            return tool_error("alt_prereq requires group_id")
         try:
             await asyncio.to_thread(
                 self.skills.add_edge,
@@ -190,6 +199,7 @@ class SkillTreeSave(Tool):
                 edge_type,
                 proof_query,
                 build_id,
+                group_id,
             )
         except ValueError as e:
             return tool_error(str(e))

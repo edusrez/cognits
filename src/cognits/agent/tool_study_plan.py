@@ -109,6 +109,7 @@ class PlanStudy(Tool):
                     skill_id=e["skillId"],
                     prereq_id=e["prereqId"],
                     edge_type=e.get("edgeType", "prereq"),
+                    group_id=e.get("groupId", ""),
                 )
                 for e in edges_raw
             ]

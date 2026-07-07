@@ -161,12 +161,12 @@ class SkillRepository:
         rows = self.db.conn.execute(
             """WITH RECURSIVE chain(id) AS (
                    SELECT prereq_id FROM skill_prerequisites
-                   WHERE skill_id = ? AND edge_type = 'prereq'
+                   WHERE skill_id = ? AND edge_type IN ('prereq','alt_prereq')
                    UNION
                    SELECT sp.prereq_id
                    FROM skill_prerequisites sp
                    JOIN chain ON sp.skill_id = chain.id
-                   WHERE sp.edge_type = 'prereq'
+                   WHERE sp.edge_type IN ('prereq','alt_prereq')
                )
                SELECT 1 FROM chain WHERE id = ? LIMIT 1""",
             (start_id, target_id),
@@ -180,9 +180,14 @@ class SkillRepository:
         edge_type: str = "prereq",
         proof_query: str = "",
         build_id: str = "",
+        group_id: str = "",
     ) -> None:
         if edge_type not in EDGE_TYPES:
             raise ValueError(f"invalid edge_type: {edge_type}")
+        # alt_prereq requires a non-empty group_id — otherwise it's a
+        # single-element OR which is semantically meaningless.
+        if edge_type == "alt_prereq" and not group_id:
+            raise ValueError("alt_prereq requires a non-empty group_id")
         with self.db.lock:
             missing = []
             for sid in (skill_id, prereq_id):
@@ -196,24 +201,26 @@ class SkillRepository:
                     "skill not found: " + ", ".join(missing)
                     + ". Use the exact skill_id returned by upsert."
                 )
-            if edge_type == "prereq" and self._prereq_reaches(prereq_id, skill_id):
+            # Cycle detection: both prereq and alt_prereq can form cycles.
+            if edge_type in ("prereq", "alt_prereq") and self._prereq_reaches(prereq_id, skill_id):
                 raise ValueError(
                     f"cycle detected: {prereq_id} already depends on {skill_id}"
                 )
             self.db.conn.execute(
                 """INSERT INTO skill_prerequisites
-                       (skill_id, prereq_id, edge_type, proof_query, build_id)
-                   VALUES (?, ?, ?, ?, ?)
+                       (skill_id, prereq_id, edge_type, proof_query, build_id, group_id)
+                   VALUES (?, ?, ?, ?, ?, ?)
                    ON CONFLICT(skill_id, prereq_id, edge_type) DO UPDATE SET
                        proof_query = excluded.proof_query,
-                       build_id    = excluded.build_id""",
-                (skill_id, prereq_id, edge_type, proof_query, build_id),
+                       build_id    = excluded.build_id,
+                       group_id    = excluded.group_id""",
+                (skill_id, prereq_id, edge_type, proof_query, build_id, group_id),
             )
 
     def get_prerequisites(self, skill_id: str) -> list[SkillPrereq]:
         with self.db.lock:
             rows = self.db.conn.execute(
-                """SELECT skill_id, prereq_id, edge_type, proof_query, build_id, created_at
+                """SELECT skill_id, prereq_id, edge_type, proof_query, build_id, group_id, created_at
                    FROM skill_prerequisites WHERE skill_id = ?""",
                 (skill_id,),
             ).fetchall()
@@ -229,7 +236,7 @@ class SkillRepository:
                    ORDER BY domain, name"""
             ).fetchall()
             edge_rows = self.db.conn.execute(
-                """SELECT skill_id, prereq_id, edge_type, proof_query, build_id, created_at
+                """SELECT skill_id, prereq_id, edge_type, proof_query, build_id, group_id, created_at
                    FROM skill_prerequisites
                    ORDER BY skill_id, edge_type"""
             ).fetchall()
@@ -250,7 +257,7 @@ class SkillRepository:
         with self.db.lock:
             rows = self.db.conn.execute(
                 """SELECT skill_id, prereq_id FROM skill_prerequisites
-                   WHERE edge_type = 'prereq'"""
+                   WHERE edge_type IN ('prereq','alt_prereq')"""
             ).fetchall()
         for skill_id, prereq_id in rows:
             if skill_id in indeg and prereq_id in indeg:

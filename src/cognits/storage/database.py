@@ -131,9 +131,11 @@ BASE_SCHEMA = """
     CREATE TABLE IF NOT EXISTS skill_prerequisites (
         skill_id TEXT NOT NULL,
         prereq_id TEXT NOT NULL,
-        edge_type TEXT NOT NULL CHECK (edge_type IN ('prereq','coreq','related','soft_prereq')),
+        edge_type TEXT NOT NULL CHECK (edge_type IN
+            ('prereq','coreq','related','soft_prereq','alt_prereq')),
         proof_query TEXT NOT NULL DEFAULT '',
         build_id TEXT,
+        group_id TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         PRIMARY KEY (skill_id, prereq_id, edge_type),
         FOREIGN KEY (skill_id) REFERENCES skills(id),
@@ -141,6 +143,8 @@ BASE_SCHEMA = """
     );
     CREATE INDEX IF NOT EXISTS idx_prereqs_skill ON skill_prerequisites(skill_id);
     CREATE INDEX IF NOT EXISTS idx_prereqs_prereq ON skill_prerequisites(prereq_id);
+    CREATE INDEX IF NOT EXISTS idx_prereqs_group
+        ON skill_prerequisites(group_id) WHERE group_id IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS skill_builds (
         id TEXT PRIMARY KEY,
@@ -478,6 +482,28 @@ class Database:
             cur.execute("INSERT INTO skills_fts(skills_fts) VALUES('rebuild')")
             cur.execute("INSERT INTO skill_assessment_items_fts(skill_assessment_items_fts) VALUES('rebuild')")
             cur.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+        # 0.0.8: add group_id to skill_prerequisites for alt_prereq
+        # OR-bundles.  Runs unconditionally because SCHEMA_VERSION stays
+        # at 1 during pre-release; inherited DBs with user_version=1 need
+        # this migration too.  Idempotent via has_group_id check.
+        # The CHECK constraint on existing databases cannot be altered
+        # (SQLite limitation) — validation of edge_type + group_id is
+        # enforced in Python (SkillRepository and SkillTreeSave tool).
+        has_group_id = cur.execute(
+            "SELECT COUNT(*) FROM pragma_table_info('skill_prerequisites')"
+            " WHERE name='group_id'"
+        ).fetchone()[0]
+        if not has_group_id:
+            cur.execute(
+                "ALTER TABLE skill_prerequisites ADD COLUMN"
+                " group_id TEXT"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_prereqs_group"
+                " ON skill_prerequisites(group_id)"
+                " WHERE group_id IS NOT NULL"
+            )
 
     def _backup(self) -> None:
         bak = self.db_path + ".bak"

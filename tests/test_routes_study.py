@@ -169,3 +169,59 @@ def test_post_validates_body(real_state):
             })
             assert resp.status_code == 400
     asyncio.run(do())
+
+
+# ---------------------------------------------------------------------------
+# group_id round-trip (alt_prereq OR-bundles via HTTP)
+# ---------------------------------------------------------------------------
+
+def _seed_alt_prereq_tree(skills_repo, learner_state_repo):
+    """S has alt_prereq group g1=[A, B]. A is mastered, B is not.
+    Without group_id round-trip, S would be excluded from frontier."""
+    sk_a = Skill(id="k_alt_a", name="Alt A", domain="math",
+                 description="OR-group member A", bloom_level="remember",
+                 difficulty=0.3)
+    sk_b = Skill(id="k_alt_b", name="Alt B", domain="math",
+                 description="OR-group member B", bloom_level="remember",
+                 difficulty=0.3)
+    sk_s = Skill(id="k_alt_s", name="Target S", domain="math",
+                 description="Target skill with alt prereq group",
+                 bloom_level="apply", difficulty=0.5)
+
+    skills_repo.upsert(sk_a)
+    skills_repo.upsert(sk_b)
+    skills_repo.upsert(sk_s)
+
+    # Both edges belong to group "g1" (alt_prereq = OR-bundle).
+    skills_repo.add_edge("k_alt_s", "k_alt_a", edge_type="alt_prereq", group_id="g1")
+    skills_repo.add_edge("k_alt_s", "k_alt_b", edge_type="alt_prereq", group_id="g1")
+
+    # Mark A as mastered — OR-group g1 is satisfied.
+    learner_state_repo.upsert(LearnerState(
+        skill_id="k_alt_a", p_mastery=MASTERY_PROFICIENT_P + 0.05,
+        status_enum="mastered",
+    ))
+
+
+def test_post_study_plan_preserves_group_id(real_state):
+    """group_id survives round-trip through get_tree -> SkillPrereq -> planner.
+    S with alt_prereq g1=[A,B] where A is mastered → S is in frontier."""
+    state, app = real_state
+    _seed_alt_prereq_tree(state.skills, state.learner_state)
+
+    async def do():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+            resp = await client.post("/api/study_plan", json={
+                "goal": "Target S",
+                "max_items": 10,
+            })
+            assert resp.status_code == 201, resp.text
+            body = resp.json()
+            assert body["frontier_size"] >= 1
+            item_ids = {it["skillId"] for it in body["items"]}
+            assert "k_alt_s" in item_ids, (
+                "Target S should be in frontier because OR-group g1 is satisfied "
+                f"via mastered A. Items: {item_ids}"
+            )
+    asyncio.run(do())

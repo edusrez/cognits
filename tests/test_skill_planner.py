@@ -386,3 +386,50 @@ def test_save_assessment_items_empty_array(store):
     })))
     data = json.loads(result)
     assert "error" in data
+
+
+# --- alt_prereq edge type ------------------------------------------------
+
+def test_skill_tree_save_add_edge_alt_prereq_requires_group_id(store):
+    """tool_error returned when alt_prereq given without group_id."""
+    skills, learner_state, db, assessment = store
+    a = json.loads(asyncio.run(SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1").execute(
+        json.dumps({"action": "upsert_skill", "domain": "d", "name": "X"})
+    )))["skill_id"]
+    b = json.loads(asyncio.run(SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1").execute(
+        json.dumps({"action": "upsert_skill", "domain": "d", "name": "Y"})
+    )))["skill_id"]
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge",
+        "skill_id": b,
+        "prereq_id": a,
+        "edge_type": "alt_prereq",
+    })))
+    data = json.loads(result)
+    assert "error" in data
+    assert "group_id" in data["error"].lower()
+
+
+def test_skill_tree_save_add_edge_alt_prereq_with_group_id(store):
+    """alt_prereq with group_id succeeds."""
+    skills, learner_state, db, assessment = store
+    a = json.loads(asyncio.run(SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1").execute(
+        json.dumps({"action": "upsert_skill", "domain": "d", "name": "X"})
+    )))["skill_id"]
+    b = json.loads(asyncio.run(SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1").execute(
+        json.dumps({"action": "upsert_skill", "domain": "d", "name": "Y"})
+    )))["skill_id"]
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge",
+        "skill_id": b,
+        "prereq_id": a,
+        "edge_type": "alt_prereq",
+        "group_id": "g1",
+    })))
+    assert json.loads(result) == {"ok": True}
+    prereqs = skills.get_prerequisites(b)
+    assert len(prereqs) == 1
+    assert prereqs[0].edge_type == "alt_prereq"
+    assert prereqs[0].group_id == "g1"

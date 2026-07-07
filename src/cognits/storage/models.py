@@ -157,6 +157,7 @@ class SkillPrereq:
     edge_type: str = "prereq"
     proof_query: str = ""
     build_id: str = ""
+    group_id: str = ""
     created_at: str = ""
 
     def to_json(self) -> dict:
@@ -166,6 +167,7 @@ class SkillPrereq:
             "edgeType": self.edge_type,
             "proofQuery": self.proof_query,
             "buildId": self.build_id,
+            "groupId": self.group_id,
             "createdAt": self.created_at,
         }
 
@@ -351,7 +353,14 @@ def new_assessment_item_id() -> str:
 
 # --- Status enums ---
 
-EDGE_TYPES = ("prereq", "coreq", "related", "soft_prereq")
+EDGE_TYPES = ("prereq", "coreq", "related", "soft_prereq", "alt_prereq")
+# Edge type semantics:
+#   prereq      - AND: ALL must be mastered for the skill to enter the frontier.
+#   alt_prereq  - OR:  ANY one in the same group_id satisfies that group.
+#                 Multiple groups: AND across groups. Requires non-empty group_id.
+#   soft_prereq - helpful-but-not-required (bonus in scoring, doesn't gate).
+#   coreq       - taken together, undirected, non-gating.
+#   related     - loose link, undirected, non-gating.
 PLAN_STATUS = ("active", "superseded")
 PLAN_ITEM_STATUS = ("pending", "in_progress", "done", "skipped", "goal_removed")
 PLAN_ITEM_MODE = ("socratic", "exercise", "project")

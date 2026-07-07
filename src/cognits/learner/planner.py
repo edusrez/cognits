@@ -40,6 +40,7 @@ DIFFICULTY_WEIGHT: float = 1.0      # prefer easier skills
 BLOOM_WEIGHT: float = 0.5           # prefer lower Bloom levels
 USER_PRIORITY_MULTIPLIER: float = 8.0  # explicit user request
 SOFT_PREREQ_BONUS: float = 1.0      # all soft prereqs mastered → small boost
+MULTI_PATH_BONUS: float = 0.5       # alt_prereq groups satisfied → reduced entropy
 
 
 def _parse_iso(s: str | None) -> datetime | None:
@@ -75,16 +76,25 @@ def compute_frontier(
     edges: list[SkillPrereq],
     states: dict[str, LearnerState],
 ) -> set[str]:
-    """ALEKS outer fringe: set of skill IDs whose hard prerequisites are
-    all mastered and the skill itself is NOT yet mastered.
-    
+    """ALEKS outer fringe with AND/OR prerequisite support.
+
+    A skill is in the frontier (ready to learn) iff:
+    1. The skill itself is NOT yet mastered.
+    2. ALL hard (``prereq``) edges point to mastered skills.
+    3. For EACH ``alt_prereq`` group (by ``group_id``), AT LEAST ONE
+       edge in the group points to a mastered skill.
+       (AND across groups, OR within a group.)
+
+    ``soft_prereq``, ``coreq``, and ``related`` edges do NOT gate
+    the frontier — they only influence scoring.
+
     Uses adaptive proficiency thresholds: skills with many downstream
     dependents require higher confidence (0.90), leaf skills with none
     can use a lower bar (0.75), default is 0.80."""
     # Count how many skills depend on each skill (as hard prereq).
     dependent_count: dict[str, int] = {}
     for e in edges:
-        if e.edge_type == "prereq":
+        if e.edge_type in ("prereq", "alt_prereq"):
             dependent_count[e.prereq_id] = dependent_count.get(e.prereq_id, 0) + 1
 
     mastered: set[str] = {
@@ -92,30 +102,49 @@ def compute_frontier(
         for sid, st in states.items()
         if st.p_mastery >= _proficient_threshold(sid, dependent_count)
     }
-    # Build lookup: skill_id -> set of hard prereq IDs.
-    hard_prereqs: dict[str, set[str]] = {}
+
+    # Build per-skill prerequisite structure:
+    #   prereqs_by_skill[sid] = {
+    #       "hard": set of hard prereq IDs,
+    #       "alt_groups": {group_id -> set of prereq IDs},
+    #   }
+    prereqs_by_skill: dict[str, dict] = {}
     for skill in skills:
-        hard_prereqs[skill.id] = set()
+        prereqs_by_skill[skill.id] = {"hard": set(), "alt_groups": {}}
+
     for e in edges:
         if e.edge_type == "prereq":
-            hard_prereqs.setdefault(e.skill_id, set()).add(e.prereq_id)
+            prereqs_by_skill.setdefault(e.skill_id, {"hard": set(), "alt_groups": {}})
+            prereqs_by_skill[e.skill_id]["hard"].add(e.prereq_id)
+        elif e.edge_type == "alt_prereq":
+            prereqs_by_skill.setdefault(e.skill_id, {"hard": set(), "alt_groups": {}})
+            groups = prereqs_by_skill[e.skill_id]["alt_groups"]
+            gid = e.group_id or "__ungrouped__"
+            groups.setdefault(gid, set()).add(e.prereq_id)
 
     frontier: set[str] = set()
     for skill in skills:
         sid = skill.id
         if sid in mastered:
             continue
-        if sid not in hard_prereqs:
-            # Skill present in skills list but not in hard_prereqs dict:
-            # it has no prereqs at all (root skill) -> in frontier.
-            frontier.add(sid)
+        prereq_data = prereqs_by_skill.get(sid, {"hard": set(), "alt_groups": {}})
+        hard_set: set = prereq_data["hard"]
+        alt_groups: dict = prereq_data["alt_groups"]
+
+        # (a) All hard prereqs must be mastered.
+        if not hard_set.issubset(mastered):
             continue
-        prereq_set = hard_prereqs[sid]
-        if not prereq_set:
+
+        # (b) For each alt_prereq group, at least one prereq must be mastered.
+        all_groups_ok = True
+        for gid, members in alt_groups.items():
+            if not members & mastered:  # intersection empty → no member mastered
+                all_groups_ok = False
+                break
+
+        if all_groups_ok:
             frontier.add(sid)
-            continue
-        if prereq_set.issubset(mastered):
-            frontier.add(sid)
+
     return frontier
 
 
@@ -126,8 +155,8 @@ def compute_goal_distances(
     goal_name: str,
     skills: list[Skill],
 ) -> dict[str, int]:
-    """BFS backward from the goal skill through ``prereq`` edges only.
-    Returns ``{skill_id: distance}`` where distance is the number of
+    """BFS backward from the goal skill through ``prereq`` and ``alt_prereq``
+    edges. Returns ``{skill_id: distance}`` where distance is the number of
     prerequisite hops to reach the goal. Skills not reaching the goal
     (disconnected subgraph) are absent from the dict."""
     # Resolve goal name → id (name matching is case-insensitive).
@@ -139,10 +168,10 @@ def compute_goal_distances(
     if goal_id is None:
         return {}
 
-    # Build adjacency from skill_id -> its direct prerequisites.
+    # Build adjacency from skill_id -> its direct prerequisites (hard + alt).
     adj: dict[str, list[str]] = {}
     for e in edges:
-        if e.edge_type == "prereq":
+        if e.edge_type in ("prereq", "alt_prereq"):
             adj.setdefault(e.skill_id, []).append(e.prereq_id)
 
     distances: dict[str, int] = {}
@@ -230,6 +259,24 @@ def generate_plan(
         if e.edge_type == "soft_prereq":
             soft_prereqs_by_skill.setdefault(e.skill_id, set()).add(e.prereq_id)
 
+    # Build lookup: which skills have at least one alt_prereq group satisfied?
+    # Structure: {skill_id -> True} if ≥1 alt_group is satisfied.
+    alt_satisfied: dict[str, bool] = {}
+    alt_groups_by_skill: dict[str, dict[str, set[str]]] = {}
+    for e in edges:
+        if e.edge_type == "alt_prereq":
+            gid = e.group_id or "__ungrouped__"
+            alt_groups_by_skill.setdefault(e.skill_id, {}).setdefault(gid, set()).add(e.prereq_id)
+    for sid, groups in alt_groups_by_skill.items():
+        for gid, members in groups.items():
+            if any(
+                states.get(p) is not None
+                and states[p].p_mastery >= MASTERY_THRESHOLD
+                for p in members
+            ):
+                alt_satisfied[sid] = True
+                break  # one satisfied group is enough for the bonus
+
     scored: list[tuple[str, float]] = []
     for sid in frontier:
         skill = next((s for s in skills if s.id == sid), None)
@@ -247,6 +294,11 @@ def generate_plan(
             for p in soft_set
         ):
             sc += SOFT_PREREQ_BONUS
+
+        # Multi-path bonus: at least one alt_prereq group satisfied
+        # (indicates a well-connected concept).
+        if alt_satisfied.get(sid):
+            sc += MULTI_PATH_BONUS
 
         scored.append((sid, sc))
 
