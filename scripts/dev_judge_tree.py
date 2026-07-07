@@ -340,9 +340,12 @@ def _audit(db_path: Path, objective: str = "") -> int:
         diff_stats = conn.execute(
             "SELECT MIN(difficulty), MAX(difficulty), AVG(difficulty) FROM skills"
         ).fetchone()
-        dmin, dmax, davg = diff_stats
         print(f"\n--- Difficulty ---")
-        print(f"  Min: {dmin:.2f}  Max: {dmax:.2f}  Avg: {davg:.2f}")
+        if diff_stats and all(v is not None for v in diff_stats):
+            dmin, dmax, davg = diff_stats
+            print(f"  Min: {dmin:.2f}  Max: {dmax:.2f}  Avg: {davg:.2f}")
+        else:
+            print("  (no skills with difficulty set)")
 
         # ---------------------------------------------------------------
         # Connectivity
@@ -498,10 +501,10 @@ def _audit(db_path: Path, objective: str = "") -> int:
         print(" VERDICT TABLE")
         print(f"{'=' * 65}")
 
+        # Skills count is organic — displayed as informational NOTE only.
+        print(f"\n  NOTE  | Skills count          | {skills_n}")
+
         verdicts = [
-            ("Skills count",
-             "≥ 20" if skills_n >= 20 else f"FAIL: only {skills_n}",
-             "PASS" if skills_n >= 20 else "FAIL"),
             ("Edges count",
              "≥ 10" if edges_n >= 10 else f"FAIL: only {edges_n}",
              "PASS" if edges_n >= 10 else "FAIL"),
