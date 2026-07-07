@@ -87,10 +87,18 @@ Every skill MUST be tagged with a `bloom_level`. The 6-level hierarchy
 (increasing cognitive demand): `remember` < `understand` < `apply` <
 `analyze` < `evaluate` < `create`.
 
-### Distribution target (hard cap — enforced as BLOCKER in Phase 3)
-- **`apply` MUST be ≤35% of skills.** LLMs bias toward Apply (audits found
-  60–79%); this is unacceptable. finish_build is BLOCKED if apply > 35%.
-  Use the other levels deliberately.
+### Distribution target (hard caps — enforced as BLOCKER in Phase 3)
+All four caps below are FAIL criteria in `validate_tree`. Every cap is
+gated: no single level can be gamed because the full distribution is
+enforced.
+- **`bloom_apply_cap`**: `apply` MUST be ≤35% of skills. LLMs bias toward
+  Apply (audits found 60–79%); this is unacceptable.
+- **`bloom_analyze_cap`**: `analyze` MUST be ≤30% of skills. Prevents
+  over-conversion from apply→analyze (Goodhart's law).
+- **`bloom_high_order_floor`**: `evaluate + create` MUST be ≥20% of skills.
+  Ensures sufficient higher-order thinking.
+- **`bloom_no_single_dominance`**: No single Bloom level >40% of skills.
+  Hard cap on any level — prevents gaming to any one level.
 - **≥1 `analyze` AND ≥1 `evaluate` per domain** where the domain warrants
   higher-order thinking. Skip only for pure-fact domains.
 - **≥1 `create` capstone** for project-based/creative domains (game dev,
@@ -392,6 +400,12 @@ The response is a structured JSON object with:
 - **`orphan_skills`** (array, only if non-empty): disconnected skills (no prereq AND no dependent).
 - **`apply_skills`** (array, only if non-empty): skill IDs tagged as `apply` (when apply% > 35%).
 - **`counts`** (object): `skills`, `edges`, `items`, `domains`.
+- New Bloom criteria: `bloom_apply_cap` (apply ≤35%), `bloom_analyze_cap`
+  (analyze ≤30%), `bloom_high_order_floor` (evaluate+create ≥20%),
+  `bloom_no_single_dominance` (no single level >40%). All four are FAIL
+  (block `passed`).
+- `connectivity_density` is FAIL when ed/skill < 1.2, WARN when 1.2–1.5,
+  PASS when ≥1.5.
 
 ### If `passed: false`, fix EVERY FAIL gap:
 
@@ -404,15 +418,17 @@ The response is a structured JSON object with:
 
 2. **For each `skill_id` in `apply_skills` (if `bloom_apply` FAIL):**
    ```
-   upsert_skill(skill_id=X, name="<new name>", domain="<domain>",
-                bloom_level="analyze" or "evaluate",
-                description="<redefined cognitive focus>")
-   ```
-   Convert apply skills to a higher cognitive level. Redefine the skill's
-   name and description to match the new level (e.g., "Use FSM for enemy AI"
-   → "Analyze when to use FSM vs Node-Based State patterns"). You can now
-   pass `skill_id` to `upsert_skill` to UPDATE an existing skill instead of
-   creating a new one. Convert enough to get apply ≤ 35%.
+    upsert_skill(skill_id=X, name="<new name>", domain="<domain>",
+                 bloom_level="evaluate" or "create" or "understand",
+                 description="<redefined cognitive focus>")
+    ```
+    If `bloom_apply_cap` FAILS (apply > 35%): convert apply skills to
+    **evaluate, create, or understand** (NOT all to analyze — that triggers
+    `bloom_analyze_cap`). Distribute the conversions across multiple higher
+    levels. Re-upsert each converted skill with
+    `upsert_skill(skill_id=X, bloom_level='evaluate'|'create'|'understand', ...)`
+    + redefine the name/description to match the new cognitive level. Aim for:
+    apply 25–35%, analyze ≤30%, evaluate+create ≥20%.
 
 3. **For each `skill_id` in `orphan_skills`:**
    ```
@@ -560,27 +576,34 @@ skill tree" without rebuilding it.
 - Do not invent prerequisites the web research didn't support; if unsure,
   run another deploy_subagent(web_researcher) pass.
 - **Do NOT defer work.** The tree is not complete until ALL of these are true:
-  (1) every skill has ≥1 diagnostic assessment item (0 skills with <1 item),
-  (2) apply ≤ 35% of all skills,
-  (3) every non-root skill has ≥1 prerequisite (no orphans),
-  (4) every add_edge has a non-empty proof_query.
-  The validate_tree tool checks ALL of these deterministically and returns
-  exact lists. Follow the validate→fix→re-validate loop until passed=true
-  (max 3 iterations). If you are running low on steps, prioritize in this
-  order: proof_queries → items → Bloom rebalancing → connectivity. The
-  finish_build summary must include the final validate_tree result.
-  Do not call finish_build with any of these incomplete — do not mark
-  status="partial" with "pendiente futuras pasadas" for these four criteria.
-  Partial builds are ONLY for genuinely unresearchable topics, never for
-  item/Bloom/connectivity/proof gaps you could fix yourself.
+   (1) every skill has ≥1 diagnostic assessment item (0 skills with <1 item),
+   (2) apply ≤ 35% of all skills,
+   (3) analyze ≤ 30% of all skills,
+   (4) evaluate + create ≥ 20% of all skills,
+   (5) no single Bloom level > 40% of all skills,
+   (6) every non-root skill has ≥1 prerequisite (no orphans),
+   (7) connectivity density ≥ 1.2 ed/skill (≥ 1.5 ideal),
+   (8) every add_edge has a non-empty proof_query.
+   The validate_tree tool checks ALL of these deterministically and returns
+   exact lists. Follow the validate→fix→re-validate loop until passed=true
+   (max 3 iterations). If you are running low on steps, prioritize in this
+   order: proof_queries → items → Bloom rebalancing → connectivity. The
+   finish_build summary must include the final validate_tree result.
+   Do not call finish_build with any of these incomplete — do not mark
+   status="partial" with "pendiente futuras pasadas" for these criteria.
+   Partial builds are ONLY for genuinely unresearchable topics, never for
+   item/Bloom/connectivity/proof gaps you could fix yourself.
 - The tree is a living structure — future sessions may add new domains or
   refine skill descriptions. But you MUST deliver a complete, usable
   foundation: the four criteria above are non-negotiable.
 - **Bottom-up enumeration + coverage check**: exhaustively enumerate sub-areas
   before researching, and verify coverage after each domain.
 - **BLOCKER: apply ≤35% before finish_build.** The validate_tree tool checks
-  this deterministically. Convert apply skills to analyze/evaluate/create
-  by using upsert_skill(skill_id=X, bloom_level='analyze', ...) — the
-  existing skill is updated in place. do not call finish_build with
-  apply > 35%.
+  this deterministically (criterion `bloom_apply_cap`). Convert apply skills
+  to evaluate/create/understand (NOT all to analyze — that triggers
+  `bloom_analyze_cap`). Distribute across multiple higher levels.
+  Also validate: analyze ≤30% (`bloom_analyze_cap`), evaluate+create ≥20%
+  (`bloom_high_order_floor`), no single Bloom level >40%
+  (`bloom_no_single_dominance`), and connectivity density ≥1.2 ed/skill
+  (`connectivity_density`). Do not call finish_build with any FAIL gap.
 - **alt_prereq REQUIRES non-empty group_id** — the tool rejects it without one.

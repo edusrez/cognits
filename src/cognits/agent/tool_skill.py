@@ -361,13 +361,19 @@ class SkillTreeSave(Tool):
                     "SELECT bloom_level, COUNT(*) FROM skills WHERE status='active' "
                     "GROUP BY bloom_level"
                 ).fetchall()
+                remember_n = 0
+                understand_n = 0
                 apply_n = 0
                 analyze_n = 0
                 evaluate_n = 0
                 create_n = 0
                 for lv, c in bloom_rows:
                     lv_lower = lv.lower() if lv else ""
-                    if "apply" in lv_lower or "aplicar" in lv_lower:
+                    if "remember" in lv_lower or "recordar" in lv_lower:
+                        remember_n += c
+                    elif "understand" in lv_lower or "comprender" in lv_lower or "entender" in lv_lower:
+                        understand_n += c
+                    elif "apply" in lv_lower or "aplicar" in lv_lower:
                         apply_n += c
                     elif "analyze" in lv_lower or "analizar" in lv_lower:
                         analyze_n += c
@@ -375,9 +381,17 @@ class SkillTreeSave(Tool):
                         evaluate_n += c
                     elif "create" in lv_lower or "crear" in lv_lower:
                         create_n += c
+                remember_pct = (remember_n / skills_n * 100) if skills_n else 0
+                understand_pct = (understand_n / skills_n * 100) if skills_n else 0
                 apply_pct = (apply_n / skills_n * 100) if skills_n else 0
                 analyze_pct = (analyze_n / skills_n * 100) if skills_n else 0
-                eval_create_pct = ((evaluate_n + create_n) / skills_n * 100) if skills_n else 0
+                evaluate_pct = (evaluate_n / skills_n * 100) if skills_n else 0
+                create_pct = (create_n / skills_n * 100) if skills_n else 0
+                eval_create_pct = evaluate_pct + create_pct
+                any_bloom_max_pct = max(
+                    remember_pct, understand_pct, apply_pct,
+                    analyze_pct, evaluate_pct, create_pct
+                )
 
                 apply_skills: list[str] = []
                 if apply_pct > 35:
@@ -464,6 +478,11 @@ class SkillTreeSave(Tool):
                 "apply_skills": apply_skills,
                 "analyze_pct": analyze_pct,
                 "eval_create_pct": eval_create_pct,
+                "remember_pct": remember_pct,
+                "understand_pct": understand_pct,
+                "evaluate_pct": evaluate_pct,
+                "create_pct": create_pct,
+                "any_bloom_max_pct": any_bloom_max_pct,
                 "skills_needing_items": skills_needing_items,
                 "proof_pct": proof_pct,
                 "roots": list(roots),
@@ -500,22 +519,76 @@ class SkillTreeSave(Tool):
                 "target": "\u22651 per skill",
             })
 
-        # bloom_apply
+        # bloom_apply_cap
         if result["apply_pct"] > 35:
             gaps.append({
-                "criterion": "bloom_apply",
+                "criterion": "bloom_apply_cap",
                 "severity": "FAIL",
                 "current": f"{result['apply_pct']:.1f}%",
                 "target": "\u226435%",
-                "fix_hint": "Convert apply skills to analyze/evaluate/create via upsert_skill(skill_id=X, bloom_level='analyze') \u2014 redefine the skill's cognitive focus",
+                "fix_hint": "Convert apply skills to evaluate/create/understand (distribute across levels \u2014 do NOT convert all to analyze, that triggers bloom_analyze_cap). Re-upsert with the new bloom_level",
             })
             all_pass = False
         else:
             gaps.append({
-                "criterion": "bloom_apply",
+                "criterion": "bloom_apply_cap",
                 "severity": "PASS",
                 "current": f"{result['apply_pct']:.1f}%",
                 "target": "\u226435%",
+            })
+
+        # bloom_analyze_cap
+        if result["analyze_pct"] > 30:
+            gaps.append({
+                "criterion": "bloom_analyze_cap",
+                "severity": "FAIL",
+                "current": f"{result['analyze_pct']:.1f}%",
+                "target": "\u226430%",
+                "fix_hint": "Convert analyze skills to evaluate/create/understand via upsert_skill \u2014 distribute across multiple levels, not all to one level",
+            })
+            all_pass = False
+        else:
+            gaps.append({
+                "criterion": "bloom_analyze_cap",
+                "severity": "PASS",
+                "current": f"{result['analyze_pct']:.1f}%",
+                "target": "\u226430%",
+            })
+
+        # bloom_high_order_floor
+        if result["eval_create_pct"] < 20:
+            gaps.append({
+                "criterion": "bloom_high_order_floor",
+                "severity": "FAIL",
+                "current": f"{result['eval_create_pct']:.1f}% (evaluate+create)",
+                "target": "\u226520% (evaluate+create)",
+                "fix_hint": "Convert some lower-level skills (remember/understand/apply) to evaluate or create to raise higher-order thinking coverage",
+            })
+            all_pass = False
+        else:
+            gaps.append({
+                "criterion": "bloom_high_order_floor",
+                "severity": "PASS",
+                "current": f"{result['eval_create_pct']:.1f}% (evaluate+create)",
+                "target": "\u226520% (evaluate+create)",
+            })
+
+        # bloom_no_single_dominance
+        if result["any_bloom_max_pct"] > 40:
+            gaps.append({
+                "criterion": "bloom_no_single_dominance",
+                "severity": "FAIL",
+                "current": f"max single level={result['any_bloom_max_pct']:.1f}%",
+                "target": "no single Bloom level > 40%",
+                "fix_hint": "Distribute skills more evenly across Bloom levels \u2014 no single level should exceed 40% of all skills",
+            })
+            all_pass = False
+        else:
+            gaps.append({
+                "criterion": "bloom_no_single_dominance",
+                "severity": "PASS",
+                "current": f"max single level={result['any_bloom_max_pct']:.1f}%",
+                "target": "no single Bloom level > 40%",
             })
 
         # proof_query
@@ -536,31 +609,40 @@ class SkillTreeSave(Tool):
                 "target": "100%",
             })
 
-        # connectivity
+        # connectivity (orphans + density)
         orphan_count = len(result["orphan_ids"])
         if orphan_count > 0:
             gaps.append({
                 "criterion": "connectivity_orphans",
                 "severity": "FAIL",
                 "current": f"{orphan_count} orphans, {result['ratio']:.2f} ed/skill",
-                "target": "0 orphans, 1.5-2.0 ed/skill",
+                "target": "0 orphans, \u22651.2 ed/skill min (\u22651.5 ideal)",
                 "fix_hint": "Add a prereq edge (add_edge) to each orphan skill in orphan_skills \u2014 connect it to a logical prerequisite",
+            })
+            all_pass = False
+        elif result["ratio"] < 1.2:
+            gaps.append({
+                "criterion": "connectivity_density",
+                "severity": "FAIL",
+                "current": f"{result['ratio']:.2f} ed/skill",
+                "target": "\u22651.2 ed/skill min (\u22651.5 ideal)",
+                "fix_hint": f"Add more prereq edges \u2014 skills should have 2+ prerequisites where logical (convergent structure). Current ratio {result['ratio']:.2f}.",
             })
             all_pass = False
         elif result["ratio"] < 1.5:
             gaps.append({
-                "criterion": "connectivity",
+                "criterion": "connectivity_density",
                 "severity": "WARN",
                 "current": f"{result['ratio']:.2f} ed/skill",
-                "target": "1.5-2.0 ed/skill",
+                "target": "\u22651.2 ed/skill min (\u22651.5 ideal)",
                 "fix_hint": "Add more prerequisite edges to increase connectivity",
             })
         else:
             gaps.append({
-                "criterion": "connectivity",
+                "criterion": "connectivity_density",
                 "severity": "PASS",
                 "current": f"0 orphans, {result['ratio']:.2f} ed/skill",
-                "target": "0 orphans, 1.5-2.0 ed/skill",
+                "target": "0 orphans, \u22651.2 ed/skill min (\u22651.5 ideal)",
             })
 
         # acyclic
@@ -599,21 +681,21 @@ class SkillTreeSave(Tool):
                 "target": "all items have ≥20-char questions + rubrics + expected_answers",
             })
 
-        # bloom_balance_overall (WARN — prevent analyze over-conversion)
-        if result["analyze_pct"] > 40 or result["eval_create_pct"] > 50:
+        # bloom_balance_overall (WARN — informational for understand/remember distribution, does not block passed)
+        if result["understand_pct"] > 40 or result["remember_pct"] > 15:
             gaps.append({
                 "criterion": "bloom_balance_overall",
                 "severity": "WARN",
-                "current": f"analyze={result['analyze_pct']:.1f}%, evaluate+create={result['eval_create_pct']:.1f}%",
-                "target": "no single non-apply level > 40%, evaluate+create ≤ 50%",
-                "fix_hint": "Rebalance — some analyze skills could be evaluate/create or understand",
+                "current": f"understand={result['understand_pct']:.1f}%, remember={result['remember_pct']:.1f}%",
+                "target": "understand \u226440%, remember \u226415%",
+                "fix_hint": "Rebalance \u2014 some understand/remember skills could be apply/analyze/evaluate",
             })
         else:
             gaps.append({
                 "criterion": "bloom_balance_overall",
                 "severity": "PASS",
-                "current": f"analyze={result['analyze_pct']:.1f}%, evaluate+create={result['eval_create_pct']:.1f}%",
-                "target": "no single non-apply level > 40%, evaluate+create ≤ 50%",
+                "current": f"understand={result['understand_pct']:.1f}%, remember={result['remember_pct']:.1f}%",
+                "target": "understand \u226440%, remember \u226415%",
             })
 
         # Summary
