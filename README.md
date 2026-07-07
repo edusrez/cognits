@@ -1,6 +1,6 @@
 # Cognits
 
-**C**ontext-**O**riented **G**eneration for **N**eural **I**ntelligent **T**utoring **S**ystems.
+**C**ontext-**O**riented **G**uidance (and) **N**eural **I**ntelligent **T**utoring **S**ystem.
 
 Cognits is a multi-agent learning system. It anchors itself to your project
 folder — whether you're building a game, creating a web app, learning a new
@@ -20,9 +20,10 @@ skill tree, and guide you through Socratic learning sessions.
    It adapts to your responses in real time, asking you to predict, reflect,
    and articulate what you've learned.
 
-3. **Assessment & mastery tracking** — An independent Evaluator agent grades
-   your answers, updates your mastery level per skill (BKT + FSRS), and
-   schedules spaced-repetition reviews.
+3. **Assessment & mastery tracking** — An independent Evaluator agent
+   asynchronously reviews the teacher's responses after each turn, updates
+   your mastery level per skill (BKT + FSRS), and flags Socratic violations
+   for the next session — without interrupting the conversation flow.
 
 4. **Session analysis** — After each session, an analyzer reviews the full
    transcript and updates your learner profile — inferred preferences,
@@ -47,7 +48,7 @@ encrypted at rest. No data is sent anywhere except the LLM API you configure.
 
 ## Installation
 
-Requires **Python 3.12** (ChromaDB is not yet compatible with 3.13).
+Requires **Python 3.11–3.13**.
 
 ### macOS / Linux / Windows (WSL2)
 
@@ -74,14 +75,39 @@ conda install -c conda-forge onnxruntime
 uv tool install cognits
 ```
 
+### WSL2 note
+
+On WSL2 with the project folder on a Windows drive (`/mnt/c/...`), Cognits
+automatically detects the 9p/DrvFs filesystem and:
+- Uses `journal_mode=MEMORY` for SQLite (WAL and DELETE are unreliable on 9p).
+- Redirects the RAG model cache to `/tmp/fastembed_cache` (ONNX Runtime
+  can't mmap model files from 9p).
+
+No manual configuration needed. The first launch still downloads BGE-M3
+(~2.3 GB) to `/tmp`; on WSL restart the download repeats (tmpfs is
+RAM-backed). For persistence across WSL restarts, set
+`FASTEMBED_CACHE_DIR` to a path on the WSL ext4 filesystem (e.g.
+`~/.local/share/fastembed`).
+
 ### Disable RAG (faster startup, smaller footprint)
 
 Set `COGNITS_DISABLE_RAG=1` to skip loading the BGE-M3 embedding model
 (~2.3 GB download). RAG-dependent features (knowledge base search) will
 be unavailable but the tutor still works.
 
-> The installation includes the local RAG engine (onnxruntime + ChromaDB, ~600 MB).
+> The installation includes the local RAG engine (onnxruntime + sqlite-vec, ~600 MB).
 > On first launch, the BGE-M3 embeddings model is downloaded (~2.3 GB).
+
+### Environment variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PORT` | `5173` | Server port |
+| `COGNITS_HOST` | `127.0.0.1` | Bind address |
+| `ENV` | — | `dev` proxies to Vite (HMR) |
+| `COGNITS_DISABLE_RAG` | — | `1` skips BGE-M3 model load |
+| `COGNITS_JOURNAL_MODE` | auto | `wal`/`delete`/`truncate`/`persist`/`memory` |
+| `FASTEMBED_CACHE_DIR` | `~/.cache/fastembed` | RAG model cache path |
 
 ## Usage
 

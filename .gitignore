@@ -34,3 +34,6 @@ _drafts/
 
 # Research reports (temporary; indexed for inter-agent sharing)
 _research/
+
+# Development specs (internal)
+docs/specs/
