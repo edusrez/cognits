@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import multiprocessing
 import os
 import threading
@@ -84,3 +85,23 @@ def test_no_redirect_when_on_native_fs(tmp_path, engine, monkeypatch):
     # Restore
     if saved is not None:
         os.environ["FASTEMBED_CACHE_DIR"] = saved
+
+
+def test_start_background_sets_ready_on_error(monkeypatch):
+    """When _load() raises, ready is set in finally and error is populated."""
+    def _raise(*args, **kwargs):
+        raise RuntimeError("simulated load failure")
+
+    monkeypatch.setattr(RagEngine, "_load", _raise)
+
+    async def run():
+        eng = RagEngine.start_background()
+        try:
+            await asyncio.wait_for(eng.ready.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            pytest.fail("ready was never set after _load failure")
+        assert eng.ready.is_set()
+        assert eng.error is not None
+        assert "simulated load failure" in eng.error
+
+    asyncio.run(run())

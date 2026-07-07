@@ -8,6 +8,7 @@ import pytest
 
 from cognits.agent.agent import AgentConfig
 from cognits.agent.tool_deploy import DeploySubagent
+from cognits.rag.engine import RagNotReady
 from cognits.storage.database import Database
 from cognits.storage.reports import ReportRepository
 from cognits.tools import Registry
@@ -240,3 +241,69 @@ def test_concurrent_executes_produce_distinct_instance_ids(tmp_path):
         f"concurrent deploys reused the same instance_id ({id_a}). "
         f"instance_id must be a local variable, not self.instance_id."
     )
+
+
+def test_rag_not_ready_deferred_warning(tmp_path):
+    """When rag_engine.index() raises RagNotReady, the deploy CONTINUES
+    (report saved + subagent_end emitted) — indexing is deferred for
+    later backfill, not a hard error."""
+    db = Database(tmp_path / "test.db")
+    reports = ReportRepository(db)
+
+    class FailingRag:
+        async def index(self, chunks):
+            raise RagNotReady("RAG engine still loading")
+
+    deploy = _make_deploy(reports, rag_engine=FailingRag())
+    emits: list[dict] = []
+    deploy.emit = lambda ev: emits.append(ev)
+
+    async def run():
+        return await deploy.execute(
+            json.dumps({"type": "test_sub", "query": "hello"})
+        )
+
+    result = asyncio.run(run())
+    data = json.loads(result)
+    assert data["content"] == "hello DONE"
+    assert data["reportId"]
+
+    # Report saved despite index failure
+    report = reports.get(data["reportId"])
+    assert report is not None
+    assert report.content == "hello DONE"
+
+    # subagent_end emitted (with reportId since save succeeded)
+    assert any(e["type"] == "subagent_end" for e in emits)
+    se = next(e for e in emits if e["type"] == "subagent_end")
+    assert se["data"]["reportId"] == data["reportId"]
+
+
+def test_rag_index_real_error_still_continues(tmp_path):
+    """When rag_engine.index() raises a real error (not RagNotReady),
+    the deploy CONTINUES — report is saved, subagent_end emitted.
+    The report is usable even without vector index."""
+    db = Database(tmp_path / "test.db")
+    reports = ReportRepository(db)
+
+    class FailingRag:
+        async def index(self, chunks):
+            raise RuntimeError("disk full")
+
+    deploy = _make_deploy(reports, rag_engine=FailingRag())
+    emits: list[dict] = []
+    deploy.emit = lambda ev: emits.append(ev)
+
+    async def run():
+        return await deploy.execute(
+            json.dumps({"type": "test_sub", "query": "hello"})
+        )
+
+    result = asyncio.run(run())
+    data = json.loads(result)
+    assert data["content"] == "hello DONE"
+    assert data["reportId"]
+
+    report = reports.get(data["reportId"])
+    assert report is not None
+    assert any(e["type"] == "subagent_end" for e in emits)

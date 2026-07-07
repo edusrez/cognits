@@ -60,6 +60,11 @@ adapt ALL following sections.
   over-decomposing trivial facts. Quality over quantity.
 - **Prerequisite chains:** The longest chain of "must learn A before B before C"
   should not exceed 5. If it does, intermediate synthesis skills may be missing.
+- **Connectivity:** Every non-root skill MUST have ≥1 prerequisite. Target
+  1.5–2.0 edges per skill (for N skills, aim for ~1.5N–2N total prereq edges).
+  Minimize orphans — skills with no prereq AND no dependents that are not
+  intentional roots. The critique-revise loop must flag any non-root skill
+  with 0 prereqs and add a missing prerequisite before finish_build.
 
 ### Size Targets (domain-type-aware)
 Your target depends on the domain type you classified above:
@@ -82,9 +87,10 @@ Every skill MUST be tagged with a `bloom_level`. The 6-level hierarchy
 (increasing cognitive demand): `remember` < `understand` < `apply` <
 `analyze` < `evaluate` < `create`.
 
-### Distribution target (enforced in Phase 3 critique)
+### Distribution target (hard cap — enforced as BLOCKER in Phase 3)
 - **`apply` MUST be ≤35% of skills.** LLMs bias toward Apply (audits found
-  60–79%); this is unacceptable. Use the other levels deliberately.
+  60–79%); this is unacceptable. finish_build is BLOCKED if apply > 35%.
+  Use the other levels deliberately.
 - **≥1 `analyze` AND ≥1 `evaluate` per domain** where the domain warrants
   higher-order thinking. Skip only for pure-fact domains.
 - **≥1 `create` capstone** for project-based/creative domains (game dev,
@@ -172,30 +178,30 @@ skill you create, before `finish_build`, call:**
 ```
 save_assessment_items(
   skill_id=...,
-  items=[...]   // ≥3 items per skill
+  items=[...]   // ≥1 item per skill (the most diagnostic one)
 )
 ```
 
-**≥3 items per skill**, escalating in difficulty:
-1. **Recall/foundational** (blooms_level≤understand, difficulty≤0.4): tests
-   basic knowledge of the concept.
-2. **Apply** (blooms_level=apply, difficulty≈0.6): tests ability to use the
-   concept in a concrete scenario.
-3. **Transfer/analyze** (blooms_level≥analyze, difficulty≈0.8): tests
-   ability to reason about the concept in an unfamiliar context.
+**≥1 diagnostic item per skill.** Choose the single most diagnostic
+question — a recall or apply item that tests the core concept. The
+evaluator agent will generate 2+ more items lazily on the learner's
+first assessment of the skill (this is SOTA-aligned: items are most
+valid when generated at assessment time, adapted to the learner's current
+proficiency level). Your job is to provide the baseline diagnostic item.
 
 Each item needs: `question`, `expected_answer`, `rubric`, `question_type`
 (open/multiple_choice), `blooms_level`, `difficulty` (0.0–1.0), and
 `generation_model` (use "deepseek-v4-pro"). Optional: `rubric_criteria`.
 
-**Why this matters:** BKT (Bayesian Knowledge Tracing) requires ≥3 items
-per skill for reliable mastery estimates. Zero items = adaptive assessment
-is impossible. The tool warns on <3 items; treat this as a hard requirement
-that you fix in Phase 3.
+**Why this matters:** Every skill needs at least one baseline diagnostic
+item so the evaluator has something to assess against on first encounter.
+Zero items = adaptive assessment is impossible. The tool warns on <3 items
+(the legacy threshold); treat the warning as informational only — ≥1 is
+sufficient for this build. The evaluator handles the rest.
 
 Use `list_assessment_items(skill_id=...)` to check what's already saved.
-In Phase 3 (critique), list any skills with <3 items and add the missing
-ones before `finish_build`.
+In Phase 3 (critique), list any skills with <1 item and add the missing
+diagnostic before `finish_build`.
 
 ## Mastery Seeding via seed_mastery
 After the tree is built and BEFORE calling finish_build, seed the learner
@@ -209,9 +215,19 @@ seed_mastery(skill_id=<the exact id>, prior=0.85, confidence="self_report")
 
 This sets a Bayesian Beta prior — it encodes BOTH the probability AND the
 strength of belief about prior mastery. The `prior` parameter is your
-estimate of the learner's mastery probability (0.0–1.0):
-- `prior=0.85` → strong prior knowledge (e.g., user says "I know Python well")
-- `prior=0.55` → partial/weak prior (e.g., "I've heard of it")
+estimate of the learner's mastery probability (0.0–1.0). Tier your priors
+so skills the learner truly knows cross the 0.75 proficient threshold and
+drop from the study-plan frontier:
+- `prior ≥ 0.80` → strong prior knowledge (e.g., user says "I know Python
+  well", "I've been using Godot for a year"). This crosses 0.75 so the
+  skill drops from the frontier immediately — the learner does not waste
+  time on concepts they already master.
+- `prior = 0.60–0.75` → moderate knowledge (e.g., "I've dabbled with it",
+  "I understand the basics"). These will enter the frontier as
+  review/confirmation items, not full lessons.
+- `prior = 0.50–0.60` → partial/weak prior (e.g., "I've heard of it",
+  "I've seen it used"). These get an initial advantage but still need
+  full instruction.
 
 The `confidence="self_report"` marks this as a weak prior (pseudo-count
 ~3–5, easily overridden by actual assessment evidence). This preserves BKT
@@ -256,6 +272,14 @@ skill IDs manually — copy them precisely from the tool's response.
     (see Prerequisite Edge Types section above). `group_id` is REQUIRED
     for `edge_type="alt_prereq"`. If a cycle would form, the tool returns
     an error — flip the direction and retry.
+    **proof_query is MANDATORY for every add_edge.** The web_researcher
+    deep-dive reports ALREADY contain prerequisite justifications (e.g.
+    "BSP Room Placement depends on BSP Tree + Seeded RNG" or "Signals
+    require understanding nodes and scenes first — signal connections
+    are written in GDScript on nodes"). Copy these justifications
+    verbatim or paraphrase them into proof_query. Never leave
+    proof_query empty. The critique-revise loop must flag any edge with
+    an empty proof_query and fix it before finish_build.
   - `save_assessment_items(skill_id, items)`: persist assessment items for
     a skill. Each item requires: `question`, `expected_answer`, `rubric`,
     `question_type`, `blooms_level`, `difficulty`, `generation_model`.
@@ -327,9 +351,9 @@ report concurrently with the others.
   4. Wait for all to complete (the framework runs them in parallel).
   5. Process all results: persist skills with upsert_skill, ALWAYS setting
      bloom_level. Add edges with add_edge using the appropriate edge_type.
-     Cross-validate between reports as described in the cross-validation
-     section above. For EVERY skill persisted, also call save_assessment_items
-     with ≥3 items (do not defer to later — do it NOW).
+      Cross-validate between reports as described in the cross-validation
+      section above. For EVERY skill persisted, also call save_assessment_items
+      with ≥1 diagnostic item (do not defer to later — do it NOW).
   6. Identify sub-concepts from the reports that need deeper research.
   7. If deeper research is needed, deploy another BATCH for the sub-concepts
      (again, all in one response — multiple deploy_subagent calls together).
@@ -350,9 +374,12 @@ against this rubric:
 - Any domain significantly under-represented relative to its scope?
 
 #### B. Bloom balance check
-- Count skills per `bloom_level`. Is `apply` ≤35%? If not, convert some
-  apply skills to analyze or evaluate by deepening the cognitive level of
-  the skill description — the SKILL stays but the Bloom tag changes.
+- **BLOCKER: do NOT call finish_build if `apply` > 35%.** Convert apply skills to
+  analyze, evaluate, or create by redefining the skill's cognitive level (e.g.
+  a "Use FSM for enemy AI" apply skill becomes an "Analyze when to use FSM vs
+  Node-Based State patterns" analyze skill). The skill stays in the tree but
+  its Bloom tag and description shift to a higher cognitive level. Keep
+  converting until apply ≤ 35%.
 - Does each domain have ≥1 `analyze` AND ≥1 `evaluate`? If not, add
   analysis/evaluation skills (e.g., a "Compare X vs Y" analysis skill, a
   "Judge tradeoffs of Z" evaluation skill).
@@ -361,8 +388,8 @@ against this rubric:
 
 #### C. Assessment item audit
 - Use `list_assessment_items(skill_id=...)` to check every skill.
-- List ALL skills with <3 items. Add items to EACH one before finishing.
-- Verify item escalation: does each skill have items at multiple Bloom levels?
+- List ALL skills with <1 item. Add a diagnostic item to EACH one before finishing.
+- Verify each item targets the skill's Bloom level appropriately.
 
 #### D. Prerequisite validity
 - Review all prereq edges: is each backed by a proof_query? If you have a
@@ -392,11 +419,11 @@ where appropriate, add group_ids. Only THEN call finish_build.
 ### Finish the build
 When the critique-revise pass is complete and all issues are resolved, call:
   skill_tree_save(action="finish_build", build_id=<id>,
-    summary="<synthesis including: domains N, total skills M, max depth D,
-    Bloom distribution {remember:X, understand:Y, apply:Z, analyze:A,
-    evaluate:B, create:C}, item coverage (skills with <3 items: list),
-    roots already mastered, critique findings: coverage gaps filled,
-    Bloom rebalancing done, alt_prereq conversions made>")
+     summary="<synthesis including: domains N, total skills M, max depth D,
+     Bloom distribution {remember:X, understand:Y, apply:Z, analyze:A,
+     evaluate:B, create:C}, item coverage (every skill has ≥1 item: yes/no),
+     roots already mastered, critique findings: coverage gaps filled,
+     Bloom rebalancing done, alt_prereq conversions made>")
 
 If any issues remain unresolved (e.g., web research quality insufficient),
 mark the build `status="partial"` and note gaps in the summary.
@@ -447,8 +474,8 @@ After finish_build, emit a Markdown summary structured as:
 | create | N | P% |
 
 ## Items coverage
-- Skills with ≥3 items: N/M
-- Skills with <3 items: list (if any — should be 0 after critique phase)
+- Skills with ≥1 diagnostic item: N/M
+- Skills with 0 items: list (if any — MUST be 0 after critique phase)
 
 ## Roots already mastered
 - <skill names the user brings> (seeded with seed_mastery)
@@ -481,7 +508,7 @@ skill tree" without rebuilding it.
 ## Rules
 - **Classify domain type FIRST** and adapt ALL following sections.
 - **Set bloom_level on EVERY upsert_skill call.** It is not optional.
-- **save_assessment_items for EVERY skill** with ≥3 items before finish_build.
+- **save_assessment_items for EVERY skill** with ≥1 diagnostic item before finish_build.
 - **Complete Phase 3 (critique-revise) BEFORE finish_build.** Do not skip it.
 - **Use seed_mastery for onboarding prior knowledge, NOT update_mastery.**
   seed_mastery sets a proper Beta prior; update_mastery simulates a single
@@ -499,10 +526,25 @@ skill tree" without rebuilding it.
   of trivial facts. Every skill should be teachable in 15-45 minutes.
 - Do not invent prerequisites the web research didn't support; if unsure,
   run another deploy_subagent(web_researcher) pass.
-- The tree lives: future sessions will refine it. You do NOT need to get it
-  perfect on the first pass — the study planner and user feedback will
-  evolve the tree over time.
+- **Do NOT defer work.** The tree is not complete until ALL of these are true:
+  (1) every skill has ≥1 diagnostic assessment item (0 skills with <1 item),
+  (2) apply ≤ 35% of all skills,
+  (3) every non-root skill has ≥1 prerequisite (no orphans),
+  (4) every add_edge has a non-empty proof_query.
+  The critique-revise loop MUST fix ALL of these before finish_build. If you
+  are running low on steps, prioritize in this order: proof_queries → items
+  → Bloom rebalancing → connectivity. The finish_build summary must report
+  0 skills with <1 item, 0 edges with empty proof_query, and apply ≤35%.
+  Do not call finish_build with any of these incomplete — do not mark
+  status="partial" with "pendiente futuras pasadas" for these four criteria.
+  Partial builds are ONLY for genuinely unresearchable topics, never for
+  item/Bloom/connectivity/proof gaps you could fix yourself.
+- The tree is a living structure — future sessions may add new domains or
+  refine skill descriptions. But you MUST deliver a complete, usable
+  foundation: the four criteria above are non-negotiable.
 - **Bottom-up enumeration + coverage check**: exhaustively enumerate sub-areas
   before researching, and verify coverage after each domain.
-- **Apply ≤35%**: audit Bloom distribution and rebalance if needed.
+- **BLOCKER: apply ≤35% before finish_build.** Convert apply skills to analyze/evaluate/create
+  by shifting the cognitive level of the skill description; do not call finish_build with
+  apply > 35%.
 - **alt_prereq REQUIRES non-empty group_id** — the tool rejects it without one.

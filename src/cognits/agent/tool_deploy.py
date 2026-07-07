@@ -13,6 +13,7 @@ from cognits.agent.agent import Agent, AgentConfig, Emit
 from cognits.constants import AGENT_LABELS, DEFAULT_MODEL, REPORT_SUMMARY_MAX_CHARS, REPORT_TITLE_MAX_CHARS, TOOL_PHRASES
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.llm.types import ROLE_USER, Message
+from cognits.rag.engine import RagNotReady
 from cognits.storage.models import Report, new_report_id
 from cognits.tools import Tool, tool_error
 
@@ -316,6 +317,8 @@ class DeploySubagent(Tool):
                         gc.collect()
                     except asyncio.CancelledError:
                         raise
+                    except RagNotReady as e:
+                        log.warning("deploy: index deferred for report %s (RAG not ready, will backfill on startup): %s", report_id, e)
                     except Exception as e:
                         log.error("deploy: index chunks (report %s): %s", report_id, e)
 

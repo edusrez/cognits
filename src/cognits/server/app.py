@@ -124,8 +124,14 @@ class AppState:
 
     @property
     def rag_or_none(self):
+        # NOTE: rag_or_none is captured at ChatService construction time
+        # (chat_service.py:566 + subagent_config builders).  If the engine
+        # becomes ready mid-build, the captured reference stays None.  This
+        # is acceptable: reports saved during the not-ready window are
+        # indexed by the backfill scan on next startup; agents can still
+        # run productively with deploy_subagent tool results + TinyFish.
         r = self.rag
-        return r if r is not None and r.error is None else None
+        return r if r is not None and r.error is None and r.ready.is_set() else None
 
     async def drain_agents(self, timeout: float) -> None:
         """Cancels all active runs and waits for their finally blocks to
@@ -143,6 +149,71 @@ class AppState:
             log.warning("server: drain timeout (%d agents still open)", len(pending))
 
 
+async def _backfill_rag_index(state: AppState) -> None:
+    """Fire-and-forget: wait for RAG to be ready, then index any reports
+    whose chunks were never saved (e.g. reports created before the BGE-M3
+    model finished loading).  Idempotent — re-indexed chunks are handled
+    by ON CONFLICT DO UPDATE in vector_index."""
+    if state.rag is None:
+        return
+    try:
+        await asyncio.wait_for(state.rag.ready.wait(), timeout=600)
+    except asyncio.TimeoutError:
+        log.warning("backfill: RAG not ready after 600s, skipping")
+        return
+    except asyncio.CancelledError:
+        return
+    if state.rag.error is not None:
+        log.warning("rag backfill: RAG engine failed during startup: %s", state.rag.error)
+        return
+    if state.db is None or state.reports is None:
+        return
+
+    def _scan() -> list[tuple]:
+        # NOTE: COUNT=0 catches both zero-chunk and fully-missing entries.
+        # Partial-chunk reports (crash during a previous indexing loop) are NOT
+        # re-indexed — that edge case would require comparing expected vs stored
+        # counts, which is over-engineering for a crash-during-loop scenario.
+        with state.db.lock:
+            return state.db.conn.execute(
+                """SELECT r.id, r.title, r.content, r.subagent
+                   FROM reports r
+                   WHERE (SELECT COUNT(*) FROM report_chunks rc WHERE rc.report_id = r.id) = 0"""
+            ).fetchall()  # type: ignore[union-attr]
+
+    try:
+        unindexed = await asyncio.to_thread(_scan)
+    except Exception as e:
+        log.error("rag backfill: scan failed: %s", e)
+        return
+
+    if not unindexed:
+        log.debug("rag backfill: all reports already indexed")
+        return
+
+    log.info("rag backfill: found %d un-indexed reports — re-indexing", len(unindexed))
+
+    from cognits.rag.chunker import split_markdown
+
+    indexed_count = 0
+    for row in unindexed:
+        report_id, title, content, subagent = row
+        if not content:
+            continue
+        try:
+            chunks = split_markdown(content, report_id, title, source_type=subagent)
+            if chunks:
+                n = await state.rag.index(chunks)  # type: ignore[union-attr]
+                log.info("rag backfill: indexed %d chunks for report %s", n, report_id)
+                indexed_count += 1
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log.error("rag backfill: failed to index report %s: %s", report_id, e)
+
+    log.info("rag backfill: re-indexed %d/%d reports", indexed_count, len(unindexed))
+
+
 def create_app(state: AppState | None = None) -> FastAPI:
     if state is None:
         state = AppState()
@@ -158,6 +229,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
             state.rag = RagEngine.start_background()
             if state.db is not None:
                 state.rag.set_db(state.db)
+            asyncio.create_task(_backfill_rag_index(state))
         if state.docling_engine is None and os.environ.get("COGNITS_DISABLE_RAG") != "1":
             from cognits.docling_engine import DoclingEngine
 

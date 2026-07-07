@@ -59,7 +59,7 @@ class RagEngine:
             except Exception as e:
                 engine.error = f"{e}"
                 log.error("rag: init: %s (RAG features disabled)", e)
-            else:
+            finally:
                 loop.call_soon_threadsafe(engine.ready.set)
 
         engine._executor.submit(_init)

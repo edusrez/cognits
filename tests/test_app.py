@@ -1,4 +1,4 @@
-"""Tests for server/app.py: drain timeout configuration and cancel-suppress middleware."""
+"""Tests for server/app.py: drain timeout configuration, cancel-suppress middleware, and rag_or_none."""
 
 import asyncio
 import os
@@ -6,6 +6,7 @@ import os
 import pytest
 
 import cognits.server.app as app_mod
+from cognits.rag.engine import RagEngine
 
 
 def test_drain_timeout_exists():
@@ -78,3 +79,39 @@ async def test_cancel_suppress_passthrough(real_app):
     client = TestClient(real_app, raise_server_exceptions=False)
     resp = client.get("/api/health")
     assert resp.status_code == 200
+
+
+# --- rag_or_none tests ---
+
+
+def test_rag_or_none_returns_none_when_rag_is_none():
+    """rag_or_none returns None when rag is not set."""
+    state = app_mod.AppState()
+    state.rag = None
+    assert state.rag_or_none is None
+
+
+def test_rag_or_none_returns_none_when_ready_not_set():
+    """rag_or_none returns None when RAG engine exists but is not ready."""
+    state = app_mod.AppState()
+    state.rag = RagEngine()
+    assert state.rag.error is None
+    assert not state.rag.ready.is_set()
+    assert state.rag_or_none is None
+
+
+def test_rag_or_none_returns_engine_when_ready():
+    """rag_or_none returns the engine when ready.is_set() + no error."""
+    state = app_mod.AppState()
+    state.rag = RagEngine()
+    state.rag.ready.set()
+    assert state.rag_or_none is state.rag
+
+
+def test_rag_or_none_returns_none_when_engine_has_error():
+    """rag_or_none returns None when ready but error is set (failed init)."""
+    state = app_mod.AppState()
+    state.rag = RagEngine()
+    state.rag.ready.set()
+    state.rag.error = "something went wrong"
+    assert state.rag_or_none is None
