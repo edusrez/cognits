@@ -211,6 +211,21 @@ class SkillTreeSave(Tool):
             return tool_error("finish_build requires 'build_id'")
         summary = args.get("summary", "")
         status = args.get("status", "done")
+
+        # Count how many active skills have < 3 assessment items (best-effort).
+        try:
+            all_skills = await asyncio.to_thread(self.skills.list_active)
+            if all_skills:
+                skill_ids = [s.id for s in all_skills]
+                items = await asyncio.to_thread(self.assessment.list_for_skills, skill_ids, True)
+                counts: dict[str, int] = {}
+                for it in items:
+                    counts[it.skill_id] = counts.get(it.skill_id, 0) + 1
+                n_underitemed = sum(1 for sid in skill_ids if counts.get(sid, 0) < 3)
+                summary += f" | {n_underitemed}/{len(skill_ids)} skills have <3 assessment items"
+        except Exception:
+            pass
+
         await asyncio.to_thread(
             self.skills.finish_build, build_id, summary, status
         )

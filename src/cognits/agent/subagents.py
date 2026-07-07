@@ -319,7 +319,7 @@ def skill_planner_config(
     the caller does not register this subagent at all.
     """
     from cognits.agent.tool_deploy import DeploySubagent
-    from cognits.agent.tool_mastery import UpdateMastery
+    from cognits.agent.tool_mastery import SeedMastery, UpdateMastery
     from cognits.agent.tool_skill import SkillTreeSave
 
     registry = Registry()
@@ -329,6 +329,7 @@ def skill_planner_config(
         SkillTreeSave(skills=skills, assessment=assessment, session_id=session_id, emit=tool_emit)
     )
     registry.register(UpdateMastery(learner_state=learner_state))
+    registry.register(SeedMastery(learner_state=learner_state, skills=skills))
 
     researcher_max_steps = RESEARCHER_MAX_STEPS  # DEFAULT_RESEARCHER_MAX_STEPS in routes_chat
     subagents = {

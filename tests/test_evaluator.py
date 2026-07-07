@@ -98,6 +98,122 @@ def test_update_mastery_invalid_rating(tmp_path):
     assert "error" in json.loads(result)
 
 
+# --- seed_mastery tool ------------------------------------------------
+
+def test_seed_mastery_sets_beta_prior(tmp_path):
+    skills, learner_state, reports = _make_repos(tmp_path)
+    from cognits.agent.tool_mastery import SeedMastery
+
+    s = _skill("SeededSkill"); skills.upsert(s)
+    tool = SeedMastery(learner_state=learner_state, skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({
+        "skill_id": s.id,
+        "prior": 0.85,
+        "confidence": "self_report",
+    })))
+    data = json.loads(result)
+
+    assert data["skill_id"] == s.id
+    assert data["p_mastery"] == pytest.approx(0.85)
+    assert data["alpha"] == pytest.approx(4.25)
+    assert data["beta"] == pytest.approx(0.75)
+    assert data["confidence"] == 5
+    assert data["status"] != "not_seen"
+
+    st = learner_state.get(s.id)
+    assert st is not None
+    assert st.alpha == pytest.approx(4.25)
+    assert st.beta == pytest.approx(0.75)
+    assert st.p_mastery == pytest.approx(0.85)
+    assert st.reps == 1
+    assert st.last_review is None
+    assert st.next_review is None
+
+
+def test_seed_mastery_diagnostic_uses_C10(tmp_path):
+    skills, learner_state, reports = _make_repos(tmp_path)
+    from cognits.agent.tool_mastery import SeedMastery
+
+    s = _skill("DiagnosticSkill"); skills.upsert(s)
+    tool = SeedMastery(learner_state=learner_state, skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({
+        "skill_id": s.id,
+        "prior": 0.9,
+        "confidence": "diagnostic",
+    })))
+    data = json.loads(result)
+
+    assert data["p_mastery"] == pytest.approx(0.9)
+    assert data["alpha"] == pytest.approx(9.0)
+    assert data["beta"] == pytest.approx(1.0)
+    assert data["confidence"] == 10
+
+
+def test_seed_mastery_preserves_bkt_for_future_update(tmp_path):
+    skills, learner_state, reports = _make_repos(tmp_path)
+    from cognits.agent.tool_mastery import SeedMastery
+
+    s = _skill("BKTSeed"); skills.upsert(s)
+    tool = SeedMastery(learner_state=learner_state, skills=skills)
+
+    # Seed with C=5, prior=0.85 → alpha=4.25, beta=0.75
+    asyncio.run(tool.execute(json.dumps({
+        "skill_id": s.id,
+        "prior": 0.85,
+        "confidence": "self_report",
+    })))
+
+    st = learner_state.get(s.id)
+    assert st.p_mastery == pytest.approx(0.85)
+
+    # Simulate a future review: correctness=0.5 (weak performance).
+    # Reset reps/stability so record_review takes the first-review FSRS path
+    # (the seed set the BKT prior; this is the first real review).
+    st.reps = 0
+    st.stability = None
+    st.difficulty = None
+    st.last_review = None
+
+    record_review(
+        st,
+        correctness=0.5,
+        rating=2,
+        now_iso="2026-07-07T00:00:00Z",
+    )
+    # After review: alpha = 4.25 + 0.5 = 4.75, beta = 0.75 + 0.5 = 1.25
+    assert st.alpha == pytest.approx(4.75)
+    assert st.beta == pytest.approx(1.25)
+    assert st.p_mastery == pytest.approx(4.75 / 6.0)  # ≈ 0.7917
+
+
+def test_seed_mastery_unknown_skill(tmp_path):
+    skills, learner_state, reports = _make_repos(tmp_path)
+    from cognits.agent.tool_mastery import SeedMastery
+
+    tool = SeedMastery(learner_state=learner_state, skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({
+        "skill_id": "k_nonexistent",
+        "prior": 0.85,
+    })))
+    data = json.loads(result)
+    assert "error" in data
+    assert "unknown skill_id" in data["error"]
+
+
+def test_seed_mastery_invalid_prior(tmp_path):
+    skills, learner_state, reports = _make_repos(tmp_path)
+    from cognits.agent.tool_mastery import SeedMastery
+
+    s = _skill(); skills.upsert(s)
+    tool = SeedMastery(learner_state=learner_state, skills=skills)
+    result = asyncio.run(tool.execute(json.dumps({
+        "skill_id": s.id,
+        "prior": 1.5,
+    })))
+    data = json.loads(result)
+    assert "error" in data
+
+
 # --- evaluator prompt checks -----------------------------------------
 
 def test_evaluator_prompt_describes_two_phases():

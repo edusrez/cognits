@@ -159,6 +159,64 @@ def test_multi_path_bonus():
     )
 
 
+# --- bloom hierarchy (BLOOM_RANK) -------------------------------------
+
+def test_bloom_hierarchy_respected():
+    """A skill with bloom_level='understand' (rank 2) should score HIGHER
+    (lower bloom = preferred) than one with bloom_level='create' (rank 6)."""
+    s_low = _skill("LowBloom", difficulty=0.5)
+    s_low.bloom_level = "understand"
+    s_high = _skill("HighBloom", difficulty=0.5)
+    s_high.bloom_level = "create"
+    # Same state → difference driven solely by bloom.
+    st = {
+        s_low.id: _state(s_low.id, p=0.3),
+        s_high.id: _state(s_high.id, p=0.3),
+    }
+    score_low = P.score_skill(s_low, st[s_low.id], goal_dist=0)
+    score_high = P.score_skill(s_high, st[s_high.id], goal_dist=0)
+    assert score_low > score_high, (
+        f"understand (rank 2) should outscore create (rank 6). "
+        f"Got low={score_low:.4f}, high={score_high:.4f}"
+    )
+
+
+def test_bloom_unknown_defaults_to_apply():
+    """Empty or unknown bloom_level → rank 3 (apply)."""
+    s_empty = _skill("NoBloom", difficulty=0.5)
+    s_empty.bloom_level = ""
+    s_known = _skill("Apply", difficulty=0.5)
+    s_known.bloom_level = "apply"
+    st = {
+        s_empty.id: _state(s_empty.id, p=0.3),
+        s_known.id: _state(s_known.id, p=0.3),
+    }
+    score_empty = P.score_skill(s_empty, st[s_empty.id], goal_dist=0)
+    score_known = P.score_skill(s_known, st[s_known.id], goal_dist=0)
+    assert abs(score_empty - score_known) < 1e-9, (
+        f"empty bloom should score same as apply (rank 3). "
+        f"Got empty={score_empty:.4f}, known={score_known:.4f}"
+    )
+
+
+def test_bloom_multiword_takes_first():
+    """bloom_level='apply (hands-on)' → first word 'apply' → rank 3."""
+    s_multi = _skill("MultiBloom", difficulty=0.5)
+    s_multi.bloom_level = "apply (hands-on)"
+    s_single = _skill("SingleBloom", difficulty=0.5)
+    s_single.bloom_level = "apply"
+    st = {
+        s_multi.id: _state(s_multi.id, p=0.3),
+        s_single.id: _state(s_single.id, p=0.3),
+    }
+    score_multi = P.score_skill(s_multi, st[s_multi.id], goal_dist=0)
+    score_single = P.score_skill(s_single, st[s_single.id], goal_dist=0)
+    assert abs(score_multi - score_single) < 1e-9, (
+        f"multiword 'apply (hands-on)' should score same as 'apply'. "
+        f"Got multi={score_multi:.4f}, single={score_single:.4f}"
+    )
+
+
 def test_multi_path_bonus_only_when_alt_satisfied():
     """Skill with alt group but no master -> blocked from frontier (gate not satisfied)."""
     a = _skill("A"); s1 = _skill("S1"); s2 = _skill("S2")

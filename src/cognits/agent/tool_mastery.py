@@ -1,10 +1,18 @@
-"""update_mastery tool — called by the Evaluator subagent to persist
-a review of the learner's skill state using the BKT + FSRS-6 learner model.
+""""update_mastery" and "seed_mastery" tools for the learner model.
 
-The tool wraps ``learner.record_review()`` (from learner/model.py), which
-runs the FSRS step first (stability / difficulty / next_review), then the
-BKT soft-evidence update (alpha / beta / p_mastery), and finally recomputes
-the discrete mastery level. The result is persisted through ReportStore.
+update_mastery — called by the Evaluator subagent to persist a review of
+the learner's skill state using the BKT + FSRS-6 learner model. The tool
+wraps ``learner.record_review()`` (from learner/model.py), which runs the
+FSRS step first (stability / difficulty / next_review), then the BKT
+soft-evidence update (alpha / beta / p_mastery), and finally recomputes
+the discrete mastery level.
+
+seed_mastery — called by the Skill Planner during onboarding to seed a
+Bayesian Beta prior for skills the learner already knows. Instead of
+simulating a fake review, it sets alpha/beta directly from a self-reported
+or diagnosed prior with a confidence parameter that controls how strongly
+the prior is held against future evidence. The result is persisted and
+respects BKT conjugacy for future updates.
 """
 
 from __future__ import annotations
@@ -13,6 +21,8 @@ import asyncio
 import json
 from datetime import datetime, timezone
 
+from cognits.learner.model import mastery_level
+from cognits.storage.models import LearnerState
 from cognits.tools import Tool, tool_error
 
 
@@ -96,6 +106,96 @@ class UpdateMastery(Tool):
                 "p_mastery_after": state.p_mastery,
                 "status_enum": state.status_enum,
                 "next_review": state.next_review,
+            },
+            ensure_ascii=False,
+        )
+
+
+class SeedMastery(Tool):
+    def __init__(self, learner_state, skills):
+        self.learner_state = learner_state
+        self.skills = skills
+
+    name = "seed_mastery"
+    description = (
+        "Seed a skill's mastery state using a Bayesian Beta prior. "
+        "This sets alpha and beta directly (alpha = prior × C, "
+        "beta = (1-prior) × C) where C is the confidence level "
+        "(5 for self_report, 10 for diagnostic). Use this during "
+        "onboarding to mark skills the learner already knows. "
+        "update_mastery is for real reviews during learning; "
+        "seed_mastery is for initial priors before any review data."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "skill_id": {
+                "type": "string",
+                "description": "The skill's ID (k_...).",
+            },
+            "prior": {
+                "type": "number",
+                "description": "Self-reported/diagnosed probability the learner has already mastered this skill, ∈ [0,1].",
+            },
+            "confidence": {
+                "type": "string",
+                "enum": ["self_report", "diagnostic"],
+                "description": "Confidence level in the prior. self_report=C5 (weak, easily overridden by reviews), diagnostic=C10 (strong, from an assessment). Default self_report.",
+            },
+        },
+        "required": ["skill_id", "prior"],
+    }
+
+    async def execute(self, raw_args: str) -> str:
+        try:
+            args = json.loads(raw_args)
+            skill_id = args["skill_id"]
+            prior = float(args["prior"])
+            confidence = args.get("confidence", "self_report")
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+            return tool_error(f"invalid args: {e}")
+
+        if prior < 0.0 or prior > 1.0:
+            return tool_error(f"prior must be 0..1, got {prior}")
+
+        if confidence not in ("self_report", "diagnostic"):
+            return tool_error(
+                f"confidence must be 'self_report' or 'diagnostic', got {confidence}"
+            )
+
+        C = 5 if confidence == "self_report" else 10
+
+        skill = await asyncio.to_thread(self.skills.get, skill_id)
+        if skill is None:
+            return tool_error(f"unknown skill_id: {skill_id}")
+
+        alpha = prior * C
+        beta = (1.0 - prior) * C
+
+        state = await asyncio.to_thread(self.learner_state.get, skill_id)
+        if state is None:
+            state = LearnerState(skill_id=skill_id)
+
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        state.alpha = alpha
+        state.beta = beta
+        state.p_mastery = alpha / (alpha + beta)
+        state.reps = max(state.reps, 1)
+
+        state.status_enum = mastery_level(state, now_iso)
+        state.updated_at = now_iso
+
+        await asyncio.to_thread(self.learner_state.upsert, state)
+
+        return json.dumps(
+            {
+                "skill_id": skill_id,
+                "p_mastery": state.p_mastery,
+                "alpha": state.alpha,
+                "beta": state.beta,
+                "confidence": C,
+                "status": state.status_enum,
             },
             ensure_ascii=False,
         )

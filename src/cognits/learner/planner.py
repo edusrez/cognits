@@ -38,6 +38,18 @@ PATH_RELEVANCE_MAX: float = 5.0     # proximity to user's stated goal
 QUICK_WIN_BONUS: float = 2.0        # skills close to mastering (0.70–0.95)
 DIFFICULTY_WEIGHT: float = 1.0      # prefer easier skills
 BLOOM_WEIGHT: float = 0.5           # prefer lower Bloom levels
+
+# Bloom's taxonomy rank: lower number = more fundamental.
+# Used by score_skill (and later by duration estimation in T9).
+BLOOM_RANK: dict[str, int] = {
+    "remember": 1,
+    "understand": 2,
+    "apply": 3,
+    "analyze": 4,
+    "evaluate": 5,
+    "create": 6,
+}
+
 USER_PRIORITY_MULTIPLIER: float = 8.0  # explicit user request
 SOFT_PREREQ_BONUS: float = 1.0      # all soft prereqs mastered → small boost
 MULTI_PATH_BONUS: float = 0.5       # alt_prereq groups satisfied → reduced entropy
@@ -224,8 +236,9 @@ def score_skill(
     # 4. Difficulty (easier first).
     s += DIFFICULTY_WEIGHT * (1.0 - max(0.0, min(1.0, skill.difficulty)))
 
-    # 5. Bloom level (lower levels first — clamped to 1..6).
-    bloom = max(1, min(6, len(skill.bloom_level) if skill.bloom_level else 3))
+    # 5. Bloom level (lower levels first — proper hierarchy, not len()).
+    _bloom_word = (skill.bloom_level or "").strip().lower().split()[0] if skill.bloom_level else ""
+    bloom = BLOOM_RANK.get(_bloom_word, 3)  # default 3 (apply) for unknown/empty
     s += BLOOM_WEIGHT * (1.0 - bloom / 6.0)
 
     # 6. User explicit priorities.

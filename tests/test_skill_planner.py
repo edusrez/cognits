@@ -262,6 +262,7 @@ def test_skill_planner_config_builds_registry(store):
     tool_names = set(cfg.tools._tools.keys())
     assert "skill_tree_save" in tool_names
     assert "update_mastery" in tool_names
+    assert "seed_mastery" in tool_names
     assert "deploy_subagent" in tool_names
     assert "web_researcher" in cfg.subagents
 
@@ -386,6 +387,63 @@ def test_save_assessment_items_empty_array(store):
     })))
     data = json.loads(result)
     assert "error" in data
+
+
+# --- finish_build under-itemed count ---------------------------------
+
+def test_finish_build_reports_underitemed_count(store):
+    """finish_build appends '<N>/<M> skills have <3 assessment items' to summary."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
+
+    # Create 2 skills.
+    a_id = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "A",
+    }))))["skill_id"]
+    b_id = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "B",
+    }))))["skill_id"]
+
+    # Give skill A 3 items (enough), skill B 1 item (under).
+    items_a = [
+        {"question": f"Q{i}", "expected_answer": "A", "rubric": "R",
+         "question_type": "open", "blooms_level": "remember", "difficulty": 0.3,
+         "generation_model": "test"}
+        for i in range(3)
+    ]
+    items_b = [
+        {"question": "Q1", "expected_answer": "A", "rubric": "R",
+         "question_type": "open", "blooms_level": "remember", "difficulty": 0.3,
+         "generation_model": "test"}
+    ]
+    for sid, items in ((a_id, items_a), (b_id, items_b)):
+        asyncio.run(tool.execute(json.dumps({
+            "action": "save_assessment_items",
+            "skill_id": sid,
+            "items": items,
+        })))
+
+    # Finish build — summary should mention under-itemed count.
+    bid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "start_build", "trigger": "test",
+    }))))["build_id"]
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "finish_build",
+        "build_id": bid,
+        "summary": "built 2 skills",
+        "status": "done",
+    })))
+    assert json.loads(result) == {"ok": True}
+
+    # Check the persisted summary includes the under-itemed count.
+    with db.lock:
+        row = db.conn.execute(
+            "SELECT summary FROM skill_builds WHERE id = ?", (bid,)
+        ).fetchone()
+    summary = row[0]
+    assert "1/2 skills have <3 assessment items" in summary, (
+        f"Expected '1/2 skills have <3 assessment items' in summary, got: {summary}"
+    )
 
 
 # --- alt_prereq edge type ------------------------------------------------
