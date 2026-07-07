@@ -476,7 +476,7 @@ class ChatService:
                 llm_client,
                 st.rag_or_none,
                 tf_client,
-                st.reports, st.skills,
+                st.reports, st.skills, st.learner_state,
                 lambda: sid, process_event,
                 max_tokens=planner_max_tokens or None,
                 temperature=planner_temperature or None,

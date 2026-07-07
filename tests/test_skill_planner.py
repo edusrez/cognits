@@ -248,6 +248,7 @@ def test_skill_planner_config_builds_registry(store):
         rag_engine=None,
         tf_client=FakeTF(),
         reports=skills, skills=skills,
+        learner_state=learner_state,
         session_id=lambda: "s_test",
         emit=lambda ev: None,
         tinyfish_api_key="fake_key",
@@ -258,5 +259,6 @@ def test_skill_planner_config_builds_registry(store):
     assert cfg.max_steps == 999
     tool_names = set(cfg.tools._tools.keys())
     assert "skill_tree_save" in tool_names
+    assert "update_mastery" in tool_names
     assert "deploy_subagent" in tool_names
     assert "web_researcher" in cfg.subagents
