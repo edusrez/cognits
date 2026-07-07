@@ -278,6 +278,116 @@ class SkillRepository:
             out.extend(by_id[i] for i in stuck)
         return out
 
+    def merge_skills(self, keep_id: str, merge_ids: list[str]) -> dict:
+        """Merge multiple skills into keep_id.
+
+        Remaps prerequisite edges, moves assessment items, merges learner
+        state (keeps the higher p_mastery), and deletes the merged skills.
+        All operations run in a single transaction.
+        """
+        with self.db.transaction():
+            edges_remapped = 0
+            items_moved = 0
+            for merge_id in merge_ids:
+                if merge_id == keep_id:
+                    continue
+
+                # Re-point edges where merge_id is the prereq OR the skill.
+                for col in ("prereq_id", "skill_id"):
+                    cur = self.db.conn.execute(
+                        f"UPDATE skill_prerequisites SET {col} = ? WHERE {col} = ?",
+                        (keep_id, merge_id),
+                    )
+                    edges_remapped += cur.rowcount
+
+                # Remove self-references (keep_id -> keep_id) created by re-pointing.
+                self.db.conn.execute(
+                    "DELETE FROM skill_prerequisites WHERE skill_id = ? AND prereq_id = ?",
+                    (keep_id, keep_id),
+                )
+
+                # Deduplicate colliding edges: for each (skill_id, prereq_id, edge_type)
+                # group where keep_id is involved, keep only the row with the lowest rowid.
+                dup_rows = self.db.conn.execute(
+                    """SELECT skill_id, prereq_id, edge_type, MIN(rowid)
+                       FROM skill_prerequisites
+                       WHERE skill_id = ? OR prereq_id = ?
+                       GROUP BY skill_id, prereq_id, edge_type
+                       HAVING COUNT(*) > 1""",
+                    (keep_id, keep_id),
+                ).fetchall()
+                for skill, prereq, et, min_rid in dup_rows:
+                    self.db.conn.execute(
+                        """DELETE FROM skill_prerequisites
+                           WHERE skill_id = ? AND prereq_id = ?
+                             AND edge_type = ? AND rowid != ?""",
+                        (skill, prereq, et, min_rid),
+                    )
+
+                # Move assessment items from merge_id to keep_id.
+                cur = self.db.conn.execute(
+                    "UPDATE skill_assessment_items SET skill_id = ? WHERE skill_id = ?",
+                    (keep_id, merge_id),
+                )
+                items_moved += cur.rowcount
+
+                # Merge learner state: keep whichever has higher p_mastery.
+                kept_ls = self.db.conn.execute(
+                    """SELECT p_mastery, alpha, beta, reps, lapses,
+                              retrievability, stability, difficulty, status_enum,
+                              last_review, next_review, scaffolding_level
+                       FROM learner_state WHERE skill_id = ?""",
+                    (keep_id,),
+                ).fetchone()
+                merge_ls = self.db.conn.execute(
+                    """SELECT p_mastery, alpha, beta, reps, lapses,
+                              retrievability, stability, difficulty, status_enum,
+                              last_review, next_review, scaffolding_level
+                       FROM learner_state WHERE skill_id = ?""",
+                    (merge_id,),
+                ).fetchone()
+                if merge_ls and kept_ls:
+                    kept_p = kept_ls[0] if kept_ls[0] is not None else 0.5
+                    merge_p = merge_ls[0] if merge_ls[0] is not None else 0.5
+                    if merge_p > kept_p:
+                        self.db.conn.execute(
+                            """UPDATE learner_state SET
+                                p_mastery = ?, alpha = ?, beta = ?,
+                                reps = ?, lapses = ?,
+                                retrievability = ?, stability = ?, difficulty = ?,
+                                status_enum = ?,
+                                last_review = ?, next_review = ?,
+                                scaffolding_level = ?,
+                                updated_at = datetime('now')
+                            WHERE skill_id = ?""",
+                            (
+                                merge_ls[0], merge_ls[1], merge_ls[2],
+                                merge_ls[3], merge_ls[4],
+                                merge_ls[5], merge_ls[6], merge_ls[7],
+                                merge_ls[8],
+                                merge_ls[9], merge_ls[10],
+                                merge_ls[11],
+                                keep_id,
+                            ),
+                        )
+
+                # Delete the merged skill's learner state row.
+                self.db.conn.execute(
+                    "DELETE FROM learner_state WHERE skill_id = ?", (merge_id,),
+                )
+
+                # Delete the merged skill row.
+                self.db.conn.execute(
+                    "DELETE FROM skills WHERE id = ?", (merge_id,),
+                )
+
+        return {
+            "merged": len(merge_ids),
+            "edges_remapped": edges_remapped,
+            "items_moved": items_moved,
+            "kept": keep_id,
+        }
+
     def search_fts(self, search: str, limit: int = 20) -> list[Skill]:
         fts_query = build_fts5_query(search)
         if not fts_query:

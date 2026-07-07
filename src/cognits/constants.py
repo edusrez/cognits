@@ -46,6 +46,7 @@ def get_context_window(model_str: str) -> int:
 ORCHESTRATOR_MAX_STEPS = 999
 RESEARCHER_MAX_STEPS = 100
 SKILL_PLANNER_MAX_STEPS = 999  # indeterminate — the planner must complete the full tree + items + critique without deferring
+BRANCH_BUILDER_MAX_STEPS = 200  # per-domain branch builder; single domain is smaller than the whole tree
 
 # --- Memory pressure thresholds (MB) ---
 MEM_WARN = 5000
@@ -54,7 +55,8 @@ MEM_CRITICAL = 6800
 
 # --- Concurrency ---
 MAX_CONCURRENT_TOOLS = 4
-MAX_CONCURRENT_DEPLOYS = 4
+# bumped for fractal branch-builder fan-out; trades memory (~7GB RSS under load per AGENTS.md mem-warning — ensure 4GB swap on <=8GB machines)
+MAX_CONCURRENT_DEPLOYS = 16
 TINYFISH_CONCURRENCY = 3
 TOOL_SEM_LOW = 1
 
@@ -191,6 +193,7 @@ AGENT_LABELS: dict[str, str] = {
     "documentalist": "Documentalist",
     "session_analyzer": "Session Analyzer",
     "session_namer": "Session Namer",
+    "skill_branch_builder": "Branch Builder",
     "skill_planner": "Skill Planner",
     "study_planner": "Study Planner",
     "evaluator": "Evaluator",

@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from cognits.agent.agent import AgentConfig, Emit
 from cognits.agent.agent_loader import load_agent_prompt
-from cognits.constants import DEFAULT_FLASH_MODEL, DOCUMENTALIST_MAX_STEPS, EVALUATOR_MAX_STEPS, FAVICON_URL_TEMPLATE, RESEARCHER_MAX_STEPS
+from cognits.constants import DEFAULT_FLASH_MODEL, DEFAULT_MODEL, DOCUMENTALIST_MAX_STEPS, EVALUATOR_MAX_STEPS, FAVICON_URL_TEMPLATE, RESEARCHER_MAX_STEPS, BRANCH_BUILDER_MAX_STEPS
 from cognits.agent.tool_rag import RagSearch
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.tinyfish import TinyfishClient, TinyfishError
@@ -326,7 +326,7 @@ def skill_planner_config(
     if rag_engine is not None:
         registry.register(RagSearch(rag_engine, reports_repo=reports))
     registry.register(
-        SkillTreeSave(skills=skills, assessment=assessment, session_id=session_id, emit=tool_emit)
+        SkillTreeSave(skills=skills, assessment=assessment, session_id=session_id, emit=tool_emit, rag_engine=rag_engine)
     )
     registry.register(UpdateMastery(learner_state=learner_state))
     registry.register(SeedMastery(learner_state=learner_state, skills=skills))
@@ -340,7 +340,23 @@ def skill_planner_config(
             max_steps=researcher_max_steps,
             system_prompt=load_agent_prompt("web_researcher"),
             tools=new_researcher_tools(tf_client, rag_engine, reports=reports),
-        )
+        ),
+        "skill_branch_builder": skill_branch_builder_config(
+            model=DEFAULT_MODEL,
+            reasoning="max",
+            max_steps=BRANCH_BUILDER_MAX_STEPS,
+            llm_client=llm_client,
+            rag_engine=rag_engine,
+            tf_client=tf_client,
+            reports=reports,
+            skills=skills,
+            assessment=assessment,
+            learner_state=learner_state,
+            session_id=session_id,
+            emit=emit,
+            tinyfish_api_key=tinyfish_api_key,
+            tool_emit=tool_emit,
+        ),
     }
 
     registry.register(
@@ -366,6 +382,88 @@ def skill_planner_config(
         system_prompt=system_prompt_override or load_agent_prompt("skill_planner"),
         tools=registry,
         subagents=subagents,
+    )
+
+
+def skill_branch_builder_config(
+    model: str,
+    reasoning: str,
+    max_steps: int,
+    llm_client,
+    rag_engine,
+    tf_client,
+    reports,
+    skills,
+    assessment,
+    learner_state,
+    session_id,
+    emit: Emit,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    system_prompt_override: str | None = None,
+    tinyfish_api_key: str = "",
+    tool_emit=None,
+) -> AgentConfig:
+    """Build the per-domain Skill Branch Builder subagent config.
+
+    Scoped to ONE domain (unlike the level-0 skill_planner which owns the
+    full tree). Tools: SkillTreeSave, SeedMastery, UpdateMastery,
+    DeploySubagent (web_researcher only - no self-recursion; 2-level
+    fractal MVP), and RagSearch (when RAG is ready).
+
+    Its report is internal (goes to the level-0 planner, not the user),
+    mirroring the skill_planner's internal flag.
+    """
+    from cognits.agent.tool_deploy import DeploySubagent
+    from cognits.agent.tool_mastery import SeedMastery, UpdateMastery
+    from cognits.agent.tool_skill import SkillTreeSave
+
+    registry = Registry()
+    if rag_engine is not None:
+        registry.register(RagSearch(rag_engine, reports_repo=reports))
+    registry.register(
+        SkillTreeSave(skills=skills, assessment=assessment, session_id=session_id, emit=tool_emit)
+    )
+    registry.register(UpdateMastery(learner_state=learner_state))
+    registry.register(SeedMastery(learner_state=learner_state, skills=skills))
+
+    researcher_max_steps = RESEARCHER_MAX_STEPS
+    subagents = {
+        "web_researcher": AgentConfig(
+            name="web_researcher",
+            model=DEFAULT_MODEL,
+            reasoning="max",
+            max_steps=researcher_max_steps,
+            system_prompt=load_agent_prompt("web_researcher"),
+            tools=new_researcher_tools(tf_client, rag_engine, reports=reports),
+        )
+    }
+
+    registry.register(
+        DeploySubagent(
+            llm_client=llm_client,
+            reports=reports,
+            subagents=subagents,
+            session_id=session_id,
+            emit=emit,
+            rag_engine=rag_engine,
+            tinyfish_api_key=tinyfish_api_key,
+        )
+    )
+
+    return AgentConfig(
+        name="skill_branch_builder",
+        model=model,
+        reasoning=reasoning,
+        max_steps=max_steps,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        system_prompt=system_prompt_override or load_agent_prompt("skill_branch_builder"),
+        tools=registry,
+        subagents=subagents,
+        internal=True,
     )
 
 
@@ -492,7 +590,7 @@ def evaluator_config(
         registry.register(RagSearch(rag_engine, reports_repo=reports))
     registry.register(UpdateMastery(learner_state=learner_state))
     registry.register(
-        SkillTreeSave(skills=skills, assessment=assessment, session_id=session_id)
+        SkillTreeSave(skills=skills, assessment=assessment, session_id=session_id, rag_engine=rag_engine)
     )
 
     researcher_max_steps = RESEARCHER_MAX_STEPS

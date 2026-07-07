@@ -22,7 +22,7 @@ def test_error_is_exception():
 
 def test_max_concurrent_deploys():
     from cognits.constants import MAX_CONCURRENT_DEPLOYS
-    assert MAX_CONCURRENT_DEPLOYS == 4
+    assert MAX_CONCURRENT_DEPLOYS == 16
 
 
 def test_tinyfish_concurrency():

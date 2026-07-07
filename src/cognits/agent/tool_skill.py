@@ -36,11 +36,13 @@ class SkillTreeSave(Tool):
         assessment: AssessmentItemRepository,
         session_id: Callable[[], str] | None = None,
         emit=None,
+        rag_engine=None,
     ):
         self.skills = skills
         self.assessment = assessment
         self.session_id = session_id
         self.emit = emit
+        self.rag_engine = rag_engine
 
     name = "skill_tree_save"
     description = (
@@ -55,7 +57,7 @@ class SkillTreeSave(Tool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["start_build", "propose_targets", "upsert_skill", "add_edge", "finish_build", "save_assessment_items", "list_assessment_items", "validate_tree"],
+                "enum": ["start_build", "propose_targets", "upsert_skill", "add_edge", "finish_build", "save_assessment_items", "list_assessment_items", "validate_tree", "find_duplicate_skills", "merge_skills"],
                 "description": "Which tree mutation to perform.",
             },
             "trigger": {
@@ -151,6 +153,23 @@ class SkillTreeSave(Tool):
                 "type": "string",
                 "description": "propose_targets: human-readable atomicity criterion for this domain.",
             },
+            "threshold": {
+                "type": "number",
+                "description": "find_duplicate_skills: cosine similarity threshold for duplicates (0.0-1.0, default 0.85).",
+            },
+            "domain_scope": {
+                "type": "string",
+                "description": "find_duplicate_skills: restrict check to this domain (omit to check ALL domains).",
+            },
+            "keep_skill_id": {
+                "type": "string",
+                "description": "merge_skills: id of the skill to keep (all merge targets are merged into this one).",
+            },
+            "merge_skill_ids": {
+                "type": "array",
+                "description": "merge_skills: list of skill ids to merge INTO keep_skill_id.",
+                "items": {"type": "string"},
+            },
         },
         "required": ["action"],
     }
@@ -178,6 +197,10 @@ class SkillTreeSave(Tool):
             return await self._list_assessment_items(args)
         if action == "validate_tree":
             return await self._validate_tree(args)
+        if action == "find_duplicate_skills":
+            return await self._find_duplicate_skills(args)
+        if action == "merge_skills":
+            return await self._merge_skills(args)
         return tool_error(f"unknown action: {action}")
 
     async def _start_build(self, args: dict) -> str:
@@ -961,6 +984,132 @@ class SkillTreeSave(Tool):
             response["low_quality_skill_ids"] = result["low_quality_skill_ids"]
 
         return json.dumps(response, ensure_ascii=False)
+
+    async def _find_duplicate_skills(self, args: dict) -> str:
+        threshold = float(args.get("threshold", 0.85))
+        domain_scope = args.get("domain_scope")
+
+        active = await asyncio.to_thread(self.skills.list_active, domain_scope)
+        if len(active) < 2:
+            return json.dumps(
+                {"duplicates": [], "method": "none", "checked": len(active)},
+                ensure_ascii=False,
+            )
+
+        # Semantic dedup via RagEngine embeddings.
+        if (
+            self.rag_engine is not None
+            and self.rag_engine.ready.is_set()
+            and not self.rag_engine.error
+        ):
+            texts = [f"{s.name} — {s.description}" for s in active]
+            try:
+                embeddings = await self.rag_engine.embed(texts)
+            except Exception:
+                pass  # fall through to keyword fallback
+            else:
+                ids = [s.id for s in active]
+                names = [s.name for s in active]
+                domains = [s.domain for s in active]
+                n = len(active)
+                pairs = []
+                for i in range(n):
+                    ei = embeddings[i]
+                    for j in range(i + 1, n):
+                        dot = sum(a * b for a, b in zip(ei, embeddings[j]))
+                        if dot >= threshold:
+                            pairs.append({
+                                "skill_id_a": ids[i],
+                                "name_a": names[i],
+                                "domain_a": domains[i],
+                                "skill_id_b": ids[j],
+                                "name_b": names[j],
+                                "domain_b": domains[j],
+                                "cosine": round(dot, 2),
+                            })
+                pairs.sort(key=lambda p: p["cosine"], reverse=True)
+                return json.dumps(
+                    {"duplicates": pairs, "method": "semantic", "checked": n},
+                    ensure_ascii=False,
+                )
+
+        # Keyword fallback: exact-name match + FTS5 overlap.
+        pairs: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+
+        # Group by name (case-insensitive) — exact-name duplicates.
+        by_name: dict[str, list] = {}
+        for s in active:
+            key = s.name.strip().lower()
+            by_name.setdefault(key, []).append(s)
+        for name_group in by_name.values():
+            if len(name_group) > 1:
+                for i in range(len(name_group)):
+                    for j in range(i + 1, len(name_group)):
+                        a, b = name_group[i], name_group[j]
+                        pk = (min(a.id, b.id), max(a.id, b.id))
+                        if pk not in seen:
+                            seen.add(pk)
+                            pairs.append({
+                                "skill_id_a": a.id,
+                                "name_a": a.name,
+                                "domain_a": a.domain,
+                                "skill_id_b": b.id,
+                                "name_b": b.name,
+                                "domain_b": b.domain,
+                                "cosine": 1.0,
+                            })
+
+        # Broader FTS5 search for each skill name.
+        for s in active:
+            try:
+                results = await asyncio.to_thread(self.skills.search_fts, s.name, 5)
+            except Exception:
+                continue
+            for r in results:
+                if r.id == s.id:
+                    continue
+                pk = (min(s.id, r.id), max(s.id, r.id))
+                if pk in seen:
+                    continue
+                words_a = set((s.name + " " + s.description).lower().split())
+                words_b = set((r.name + " " + r.description).lower().split())
+                if not words_a or not words_b:
+                    continue
+                jaccard = len(words_a & words_b) / len(words_a | words_b)
+                if jaccard >= 0.5:
+                    seen.add(pk)
+                    pairs.append({
+                        "skill_id_a": s.id,
+                        "name_a": s.name,
+                        "domain_a": s.domain,
+                        "skill_id_b": r.id,
+                        "name_b": r.name,
+                        "domain_b": r.domain,
+                        "cosine": round(jaccard, 2),
+                    })
+
+        pairs.sort(key=lambda p: p["cosine"], reverse=True)
+        return json.dumps(
+            {"duplicates": pairs, "method": "keyword_fallback", "checked": len(active)},
+            ensure_ascii=False,
+        )
+
+    async def _merge_skills(self, args: dict) -> str:
+        keep_id = args.get("keep_skill_id")
+        merge_ids = args.get("merge_skill_ids")
+        if not keep_id or not isinstance(merge_ids, list) or len(merge_ids) == 0:
+            return tool_error(
+                "merge_skills requires 'keep_skill_id' and "
+                "'merge_skill_ids' (non-empty array)"
+            )
+        try:
+            result = await asyncio.to_thread(
+                self.skills.merge_skills, keep_id, merge_ids
+            )
+        except Exception as e:
+            return tool_error(str(e))
+        return json.dumps(result, ensure_ascii=False)
 
 
 def _kahn_cycle_check(edges: list[tuple[str, str]]) -> tuple[bool, list[str]]:

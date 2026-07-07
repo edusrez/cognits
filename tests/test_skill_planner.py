@@ -206,11 +206,13 @@ def test_skill_planner_run_end_to_end_scripted(store):
 def test_deploy_subagent_enum_includes_skill_planner():
     from cognits.agent.tool_deploy import DeploySubagent
     assert "skill_planner" in DeploySubagent.schema["properties"]["type"]["enum"]
+    assert "skill_branch_builder" in DeploySubagent.schema["properties"]["type"]["enum"]
 
 
 def test_subagent_labels_includes_skill_planner_and_web_researcher():
     from cognits.constants import AGENT_LABELS
     assert AGENT_LABELS.get("skill_planner") == "Skill Planner"
+    assert AGENT_LABELS.get("skill_branch_builder") == "Branch Builder"
     assert AGENT_LABELS.get("web_researcher") == "Web Researcher"
     assert AGENT_LABELS.get("directory_reader") == "Directory Reader"
 
@@ -1650,3 +1652,318 @@ def test_validate_tree_adaptive_theory_domain(store):
     assert size_gap is not None, "Expected size_target gap"
     depth_gap = next((g for g in data["gaps"] if g["criterion"] == "depth_target"), None)
     assert depth_gap is not None, "Expected depth_target gap"
+
+
+# --- branch builder tests ---------------------------------------------
+
+
+def test_skill_branch_builder_config_builds(store):
+    """skill_branch_builder_config(...) returns a proper AgentConfig with
+    the right tools: skill_tree_save, seed_mastery, update_mastery,
+    deploy_subagent — and NO self-recursion."""
+    skills, learner_state, db, assessment = store
+    from cognits.agent.subagents import skill_branch_builder_config
+
+    class FakeLLM:
+        async def aclose(self): pass
+        async def chat_completion_stream(self, *a, **kw): pass
+
+    class FakeTF:
+        async def aclose(self): pass
+
+    cfg = skill_branch_builder_config(
+        model="deepseek-v4-pro",
+        reasoning="max",
+        max_steps=200,
+        llm_client=FakeLLM(),
+        rag_engine=None,
+        tf_client=FakeTF(),
+        reports=skills, skills=skills, assessment=assessment,
+        learner_state=learner_state,
+        session_id=lambda: "s_test",
+        emit=lambda ev: None,
+        tinyfish_api_key="fake_key",
+        system_prompt_override="test prompt",
+    )
+    assert cfg.name == "skill_branch_builder"
+    assert cfg.internal is True
+    assert cfg.model == "deepseek-v4-pro"
+    assert cfg.reasoning == "max"
+    assert cfg.max_steps == 200
+    tool_names = set(cfg.tools._tools.keys())
+    assert "skill_tree_save" in tool_names
+    assert "update_mastery" in tool_names
+    assert "seed_mastery" in tool_names
+    assert "deploy_subagent" in tool_names
+    assert "web_researcher" in cfg.subagents
+
+
+def test_skill_planner_deploy_can_deploy_branch_builder(store):
+    """skill_planner_config DeploySubagent's subagents dict includes
+    'skill_branch_builder' and 'web_researcher'."""
+    skills, learner_state, db, assessment = store
+    from cognits.agent.subagents import skill_planner_config
+
+    class FakeLLM:
+        async def aclose(self): pass
+        async def chat_completion_stream(self, *a, **kw): pass
+
+    class FakeTF:
+        async def aclose(self): pass
+
+    cfg = skill_planner_config(
+        model="deepseek-v4-pro",
+        reasoning="max",
+        max_steps=999,
+        llm_client=FakeLLM(),
+        rag_engine=None,
+        tf_client=FakeTF(),
+        reports=skills, skills=skills, assessment=assessment,
+        learner_state=learner_state,
+        session_id=lambda: "s_test",
+        emit=lambda ev: None,
+        tinyfish_api_key="fake_key",
+        system_prompt_override="test prompt",
+    )
+    assert "web_researcher" in cfg.subagents
+    assert "skill_branch_builder" in cfg.subagents
+    bb = cfg.subagents["skill_branch_builder"]
+    assert bb.name == "skill_branch_builder"
+    assert bb.internal is True
+
+
+def test_branch_builder_no_self_recursion(store):
+    """The branch_builder's DeploySubagent subagents dict does NOT contain
+    'skill_branch_builder' (only web_researcher) so recursion is bounded."""
+    skills, learner_state, db, assessment = store
+    from cognits.agent.subagents import skill_branch_builder_config
+
+    class FakeLLM:
+        async def aclose(self): pass
+        async def chat_completion_stream(self, *a, **kw): pass
+
+    class FakeTF:
+        async def aclose(self): pass
+
+    cfg = skill_branch_builder_config(
+        model="deepseek-v4-pro",
+        reasoning="max",
+        max_steps=200,
+        llm_client=FakeLLM(),
+        rag_engine=None,
+        tf_client=FakeTF(),
+        reports=skills, skills=skills, assessment=assessment,
+        learner_state=learner_state,
+        session_id=lambda: "s_test",
+        emit=lambda ev: None,
+        tinyfish_api_key="fake_key",
+        system_prompt_override="test prompt",
+    )
+    assert "skill_branch_builder" not in cfg.subagents
+    assert "web_researcher" in cfg.subagents
+
+
+# --- semantic dedup: find_duplicate_skills -----------------------------
+
+import threading
+
+
+class _MockRagEngine:
+    def __init__(self, vectors_by_text):
+        self.ready = threading.Event()
+        self.ready.set()
+        self.error = None
+        self._vectors = vectors_by_text
+
+    async def embed(self, texts):
+        return [self._vectors[t] for t in texts]
+
+
+def test_find_duplicate_skills_semantic(store):
+    """2 skills with similar names → mock embed returns similar vectors → dup detected."""
+    skills, learner_state, db, assessment = store
+    mock_rag = _MockRagEngine({
+        "Python Loops — Iteration with for and while": [0.7, 0.72, 0.0, 0.0],
+        "Python Loop Structures — For and While loop constructs in Python": [0.68, 0.71, 0.0, 0.0],
+    })
+    tool = SkillTreeSave(
+        skills=skills, assessment=assessment, rag_engine=mock_rag,
+    )
+
+    sid1 = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "python", "name": "Python Loops",
+        "description": "Iteration with for and while",
+    }))))["skill_id"]
+    sid2 = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "python", "name": "Python Loop Structures",
+        "description": "For and While loop constructs in Python",
+    }))))["skill_id"]
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "find_duplicate_skills", "threshold": 0.85})))
+    data = json.loads(result)
+    assert data["method"] == "semantic"
+    assert data["checked"] == 2
+    assert len(data["duplicates"]) == 1
+    dup = data["duplicates"][0]
+    assert set([dup["skill_id_a"], dup["skill_id_b"]]) == {sid1, sid2}
+    assert dup["cosine"] >= 0.85
+
+
+def test_find_duplicate_skills_keyword_fallback(store):
+    """rag_engine=None → FTS5 keyword fallback finds exact-name duplicates."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment, rag_engine=None)
+
+    sid1 = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "python", "name": "Variables",
+        "description": "Assignment and mutability",
+    }))))["skill_id"]
+    sid2 = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "python", "name": "variables",
+        "description": "Assignment and mutability",
+    }))))["skill_id"]
+
+    result = asyncio.run(tool.execute(json.dumps({"action": "find_duplicate_skills", "threshold": 0.85})))
+    data = json.loads(result)
+    assert data["method"] == "keyword_fallback"
+    assert data["checked"] == 2
+    assert len(data["duplicates"]) == 1
+    dup = data["duplicates"][0]
+    assert set([dup["skill_id_a"], dup["skill_id_b"]]) == {sid1, sid2}
+    assert dup["cosine"] == 1.0
+
+
+# --- merge_skills tests -------------------------------------------------
+
+def test_merge_skills_remaps_edges(store):
+    """Skill A (keep) + skill B (merge), edge B→C exists → after merge, A→C exists, B deleted."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment)
+
+    aid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "A",
+    }))))["skill_id"]
+    bid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "B",
+    }))))["skill_id"]
+    cid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "C",
+    }))))["skill_id"]
+    did = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "D",
+    }))))["skill_id"]
+
+    # Edge B→C (B requires C)
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": bid, "prereq_id": cid,
+        "edge_type": "prereq",
+    })))
+    # Edge D→B (D requires B)
+    asyncio.run(tool.execute(json.dumps({
+        "action": "add_edge", "skill_id": did, "prereq_id": bid,
+        "edge_type": "prereq",
+    })))
+
+    # Merge B into A
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "merge_skills",
+        "keep_skill_id": aid,
+        "merge_skill_ids": [bid],
+    })))
+    data = json.loads(result)
+    assert data["merged"] == 1
+    # B→C (skill_id remapped) + D→B (prereq_id remapped) = 2 edges
+    assert data["edges_remapped"] == 2
+
+    # B should be deleted
+    assert skills.get(bid) is None
+
+    # A should have edge A→C
+    prereqs = skills.get_prerequisites(aid)
+    assert len(prereqs) == 1
+    assert prereqs[0].prereq_id == cid
+
+    # D should have edge D→A
+    prereqs_d = skills.get_prerequisites(did)
+    assert len(prereqs_d) == 1
+    assert prereqs_d[0].prereq_id == aid
+
+
+def test_merge_skills_moves_items(store):
+    """Skill B has 2 items → after merge into A, A has them."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment)
+
+    aid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "A",
+    }))))["skill_id"]
+    bid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "B",
+    }))))["skill_id"]
+
+    # Give skill B 2 items
+    asyncio.run(tool.execute(json.dumps({
+        "action": "save_assessment_items",
+        "skill_id": bid,
+        "items": [
+            {"question": "What is B1?", "expected_answer": "Ans1", "rubric": "R1",
+             "question_type": "open", "blooms_level": "remember",
+             "difficulty": 0.5, "generation_model": "test"},
+            {"question": "What is B2?", "expected_answer": "Ans2", "rubric": "R2",
+             "question_type": "open", "blooms_level": "understand",
+             "difficulty": 0.5, "generation_model": "test"},
+        ],
+    })))
+
+    # Merge B into A
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "merge_skills",
+        "keep_skill_id": aid,
+        "merge_skill_ids": [bid],
+    })))
+    data = json.loads(result)
+    assert data["items_moved"] == 2
+
+    # A should have the 2 items
+    items = asyncio.run(asyncio.to_thread(assessment.list_for_skill, aid, True))
+    assert len(items) == 2
+
+
+def test_merge_skills_keeps_higher_mastery(store):
+    """Skill A p=0.5, skill B p=0.85 → after merge (B into A), A has p=0.85."""
+    skills, learner_state, db, assessment = store
+    tool = SkillTreeSave(skills=skills, assessment=assessment)
+
+    aid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "A",
+    }))))["skill_id"]
+    bid = json.loads(asyncio.run(tool.execute(json.dumps({
+        "action": "upsert_skill", "domain": "d", "name": "B",
+    }))))["skill_id"]
+
+    # Set learner states
+    la = LearnerState(skill_id=aid, alpha=3.0, beta=3.0, p_mastery=0.50,
+                      reps=5, lapses=1, status_enum="developing")
+    lb = LearnerState(skill_id=bid, alpha=17.0, beta=3.0, p_mastery=0.85,
+                      reps=20, lapses=0, status_enum="proficient")
+    asyncio.run(asyncio.to_thread(learner_state.upsert, la))
+    asyncio.run(asyncio.to_thread(learner_state.upsert, lb))
+
+    # Merge B into A
+    result = asyncio.run(tool.execute(json.dumps({
+        "action": "merge_skills",
+        "keep_skill_id": aid,
+        "merge_skill_ids": [bid],
+    })))
+    data = json.loads(result)
+    assert data["merged"] == 1
+
+    # A should have the higher p_mastery from B (0.85)
+    ls = asyncio.run(asyncio.to_thread(learner_state.get, aid))
+    assert ls is not None
+    assert ls.p_mastery == 0.85
+    assert ls.status_enum == "proficient"
+    assert ls.reps == 20
+
+    # B's learner state should be gone
+    assert asyncio.run(asyncio.to_thread(learner_state.get, bid)) is None

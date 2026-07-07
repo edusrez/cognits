@@ -105,3 +105,33 @@ def test_start_background_sets_ready_on_error(monkeypatch):
         assert "simulated load failure" in eng.error
 
     asyncio.run(run())
+
+
+# --- public embed() API --------------------------------------------------
+
+def test_rag_engine_embed_public(engine, monkeypatch):
+    """embed() calls _worker_embed via _run, raises RagNotReady if not ready."""
+    import threading
+    from cognits.rag.engine import RagNotReady
+
+    # Not ready yet → raises
+    async def _not_ready():
+        with pytest.raises(RagNotReady, match="not ready"):
+            await engine.embed(["some text"])
+
+    asyncio.run(_not_ready())
+
+    # Mark ready so embed() proceeds to _run.
+    engine.ready.set()
+
+    # Mock _worker_embed to return fake vectors without a real worker.
+    fake_vectors = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+    monkeypatch.setattr(engine, "_worker_embed", lambda texts: fake_vectors)
+
+    async def _embed():
+        result = await engine.embed(["hello", "world"])
+        assert result == fake_vectors
+        assert len(result) == 2
+        assert len(result[0]) == 3
+
+    asyncio.run(_embed())

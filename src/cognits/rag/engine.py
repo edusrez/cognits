@@ -234,6 +234,14 @@ class RagEngine:
 
     # --- API equivalente a rag/client.go ---
 
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed a batch of texts using BGE-M3.
+
+        Returns L2-normalized vectors (cosine = dot product)."""
+        if not self.ready.is_set() or self.error:
+            raise RagNotReady("RAG engine not ready for embedding")
+        return await self._run(self._worker_embed, texts)
+
     async def search(self, query: str, max_results: int = 10) -> list[dict]:
         self._require_ready()
         if max_results <= 0:
