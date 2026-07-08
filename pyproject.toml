@@ -1,6 +1,6 @@
 [project]
 name = "cognits"
-version = "0.0.8.dev0"
+version = "0.0.8"
 description = "Cognits — Context-Oriented Guidance and Neural Intelligent Tutoring System. Multi-agent AI personal tutor."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
