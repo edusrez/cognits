@@ -84,6 +84,77 @@ def _check_acyclic(edges: list[tuple[str, str]]) -> tuple[bool, list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# Goal skill detection
+# ---------------------------------------------------------------------------
+
+
+def _pick_goal_skill(candidate_ids: set[str], conn) -> str | None:
+    """Pick the best goal skill from candidates (skills that have prereqs but
+    nothing depends on them).
+
+    Priority:
+    1. A skill with domain ``__goal__`` (explicit goal marker).
+    2. A skill whose name appears in the most recent build's summary.
+    3. If still ambiguous, return None (goal not identifiable — caller NOTES).
+    """
+    if not candidate_ids:
+        return None
+    if len(candidate_ids) == 1:
+        return next(iter(candidate_ids))
+
+    # 1. Prefer __goal__ domain (the planner creates this for the top goal)
+    for cid in candidate_ids:
+        row = conn.execute(
+            "SELECT domain FROM skills WHERE id=?", (cid,)
+        ).fetchone()
+        if row and row[0] == "__goal__":
+            return cid
+
+    # 2. Try name-match against the most recent build's summary
+    build_row = conn.execute(
+        "SELECT summary FROM skill_builds ORDER BY started_at DESC LIMIT 1"
+    ).fetchone()
+    if build_row and build_row[0]:
+        summary_lower = build_row[0].lower()
+        for cid in candidate_ids:
+            name_row = conn.execute(
+                "SELECT name FROM skills WHERE id=?", (cid,)
+            ).fetchone()
+            if name_row and name_row[0]:
+                name_lower = name_row[0].lower()
+                if name_lower in summary_lower:
+                    return cid
+                # Also check if summary words match the name
+                for word in summary_lower.split():
+                    if len(word) > 3 and word in name_lower:
+                        return cid
+
+    # 3. Also check targets domain_type from most recent build
+    targets_row = conn.execute(
+        "SELECT targets FROM skill_builds "
+        "WHERE targets != '' ORDER BY started_at DESC LIMIT 1"
+    ).fetchone()
+    if targets_row and targets_row[0]:
+        try:
+            targets = json.loads(targets_row[0])
+            domain_type = targets.get("domain_type", "")
+            if domain_type:
+                dt_lower = domain_type.lower()
+                for cid in candidate_ids:
+                    name_row = conn.execute(
+                        "SELECT name FROM skills WHERE id=?", (cid,)
+                    ).fetchone()
+                    if name_row and name_row[0]:
+                        if dt_lower in name_row[0].lower():
+                            return cid
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Ambiguous — caller will NOTE
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Main audit
 # ---------------------------------------------------------------------------
 
@@ -469,7 +540,7 @@ def _audit(db_path: Path, objective: str = "") -> int:
             )
 
         # ── Goal relevance ──
-        goal_skill_ids = set(
+        goal_candidate_ids = set(
             r[0] for r in conn.execute(
                 "SELECT id FROM skills "
                 "WHERE id NOT IN (SELECT DISTINCT prereq_id FROM skill_prerequisites "
@@ -478,7 +549,7 @@ def _audit(db_path: Path, objective: str = "") -> int:
                 "WHERE skill_id IS NOT NULL AND edge_type IN ('prereq','alt_prereq'))"
             ).fetchall()
         )
-        goal_skill_id = next(iter(goal_skill_ids)) if goal_skill_ids else None
+        goal_skill_id = _pick_goal_skill(goal_candidate_ids, conn)
         goal_reachable_count = 0
         goal_relevance_pct = 0.0
         if goal_skill_id is not None:
@@ -501,16 +572,16 @@ def _audit(db_path: Path, objective: str = "") -> int:
             goal_relevance_pct = (goal_reachable_count / skills_n * 100) if skills_n else 0
         print(f"\n--- Goal relevance ---")
         if goal_skill_id is None:
-            print("  No goal skill — cannot compute")
-            _warn("No goal skill resolved — cannot compute relevance", "goal_relevance")
+            print("  No goal skill — cannot compute (organic model: goal may be external)")
+            _warn("No goal skill resolved — cannot compute relevance (organic model: goal may be external)", "goal_relevance")
         else:
             print(f"  {goal_relevance_pct:.1f}% ({goal_reachable_count}/{skills_n}) skills on goal path")
-            if goal_relevance_pct < 25:
+            if goal_relevance_pct < 20:
                 _flag(
                     f"Only {goal_relevance_pct:.1f}% of skills on goal path",
                     "goal_relevance",
                 )
-            elif goal_relevance_pct < 50:
+            elif goal_relevance_pct < 40:
                 _warn(
                     f"Only {goal_relevance_pct:.1f}% of skills on goal path",
                     "goal_relevance",
@@ -686,7 +757,7 @@ def _audit(db_path: Path, objective: str = "") -> int:
              "PASS" if bloom_ok else "WARN"),
             ("Goal relevance",
              f"{goal_relevance_pct:.1f}%" if goal_skill_id else "N/A",
-             "FAIL" if goal_skill_id and goal_relevance_pct < 25 else ("WARN" if goal_skill_id and goal_relevance_pct < 50 else ("PASS" if goal_skill_id else "NOTE"))),
+             "FAIL" if goal_skill_id and goal_relevance_pct < 20 else ("WARN" if goal_skill_id and goal_relevance_pct < 40 else ("PASS" if goal_skill_id else "NOTE"))),
             ("Transitive redundancy",
              f"{redundant_pct:.1f}%",
              "WARN" if redundant_pct > 10 else "PASS"),

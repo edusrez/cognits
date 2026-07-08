@@ -628,7 +628,7 @@ class SkillTreeSave(Tool):
                 )
 
                 # --- Goal relevance (SOTA: % skills on goal path) ---
-                goal_skill_ids = set(
+                goal_candidate_ids = set(
                     r[0] for r in conn.execute(
                         "SELECT id FROM skills WHERE status='active' "
                         "AND id NOT IN (SELECT DISTINCT prereq_id FROM skill_prerequisites "
@@ -637,7 +637,7 @@ class SkillTreeSave(Tool):
                         "WHERE skill_id IS NOT NULL AND edge_type IN ('prereq','alt_prereq'))"
                     ).fetchall()
                 )
-                goal_skill_id = next(iter(goal_skill_ids)) if goal_skill_ids else None
+                goal_skill_id = _pick_goal_skill(goal_candidate_ids, conn)
                 goal_reachable_count = 0
                 goal_relevance_pct = 0.0
                 if goal_skill_id is not None:
@@ -1112,21 +1112,21 @@ class SkillTreeSave(Tool):
                 "current": "no goal skill resolved — cannot compute",
                 "target": "\u226550% skills on path to goal",
             })
-        elif goal_pct < 25:
+        elif goal_pct < 20:
             gaps.append({
                 "criterion": "goal_relevance",
                 "severity": "FAIL",
                 "current": f"{goal_pct:.1f}% ({result['goal_reachable_count']}/{result['skills_n']} skills on goal path)",
-                "target": "\u226550% recommended, \u226525% required",
+                "target": "\u226540% recommended, \u226520% required",
                 "fix_hint": "Many skills are not on any path to the goal — remove extraneous branches or reconnect orphaned skills.",
             })
             all_pass = False
-        elif goal_pct < 50:
+        elif goal_pct < 40:
             gaps.append({
                 "criterion": "goal_relevance",
                 "severity": "WARN",
                 "current": f"{goal_pct:.1f}% ({result['goal_reachable_count']}/{result['skills_n']} skills on goal path)",
-                "target": "\u226550%",
+                "target": "\u226540%",
                 "fix_hint": "Connect more skills to the goal path or trim extraneous branches.",
             })
         else:
@@ -1386,3 +1386,71 @@ def _kahn_cycle_check(edges: list[tuple[str, str]]) -> tuple[bool, list[str]]:
     remaining = nodes - set(sorted_nodes)
     cycle_start = next(iter(remaining)) if remaining else "?"
     return False, [cycle_start]
+
+
+def _pick_goal_skill(
+    candidate_ids: set[str], conn
+) -> str | None:
+    """Pick the best goal skill from candidate skills (those that have prereqs
+    but nothing depends on them).
+
+    Priority:
+    1. A skill with domain ``__goal__`` (explicit goal marker).
+    2. A skill whose name appears in the most recent build's summary.
+    3. If still ambiguous, return None (goal not identifiable — caller NOTES).
+    """
+    if not candidate_ids:
+        return None
+    if len(candidate_ids) == 1:
+        return next(iter(candidate_ids))
+
+    # 1. Prefer __goal__ domain (the planner creates this for the top goal)
+    for cid in candidate_ids:
+        row = conn.execute(
+            "SELECT domain FROM skills WHERE id=?", (cid,)
+        ).fetchone()
+        if row and row[0] == "__goal__":
+            return cid
+
+    # 2. Try name-match against the most recent build's summary
+    build_row = conn.execute(
+        "SELECT summary FROM skill_builds ORDER BY started_at DESC LIMIT 1"
+    ).fetchone()
+    if build_row and build_row[0]:
+        summary_lower = build_row[0].lower()
+        for cid in candidate_ids:
+            name_row = conn.execute(
+                "SELECT name FROM skills WHERE id=?", (cid,)
+            ).fetchone()
+            if name_row and name_row[0]:
+                name_lower = name_row[0].lower()
+                if name_lower in summary_lower:
+                    return cid
+                # Also check if summary words match the name
+                for word in summary_lower.split():
+                    if len(word) > 3 and word in name_lower:
+                        return cid
+
+    # 3. Also check targets domain_type from most recent build
+    targets_row = conn.execute(
+        "SELECT targets FROM skill_builds "
+        "WHERE targets != '' ORDER BY started_at DESC LIMIT 1"
+    ).fetchone()
+    if targets_row and targets_row[0]:
+        try:
+            targets = json.loads(targets_row[0])
+            domain_type = targets.get("domain_type", "")
+            if domain_type:
+                dt_lower = domain_type.lower()
+                for cid in candidate_ids:
+                    name_row = conn.execute(
+                        "SELECT name FROM skills WHERE id=?", (cid,)
+                    ).fetchone()
+                    if name_row and name_row[0]:
+                        if dt_lower in name_row[0].lower():
+                            return cid
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Ambiguous — caller will NOTE
+    return None

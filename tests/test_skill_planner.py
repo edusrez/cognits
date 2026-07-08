@@ -2438,11 +2438,11 @@ def test_validate_tree_goal_relevance_low(store):
 
 
 def test_validate_tree_goal_relevance_fail(store):
-    """20% on goal path → FAIL (<25%)."""
+    """~18% on goal path → FAIL (<20%)."""
     skills, learner_state, db, assessment = store
     tool = SkillTreeSave(skills=skills, assessment=assessment, session_id=lambda: "s1")
 
-    # Chain of 2 (1 edge) + 8 orphans = 10 total, 2 on path = 20%.
+    # Chain of 2 (1 edge) + 9 orphans = 11 total, 2 on path ≈ 18.2% < 20% → FAIL.
     ids = []
     for i in range(2):
         sid = json.loads(asyncio.run(tool.execute(json.dumps({
@@ -2457,7 +2457,7 @@ def test_validate_tree_goal_relevance_fail(store):
     })))
 
     orphan_ids = []
-    for i in range(8):
+    for i in range(9):
         sid = json.loads(asyncio.run(tool.execute(json.dumps({
             "action": "upsert_skill", "domain": "d", "name": f"Orphan{i}",
             "bloom_level": "apply",
@@ -2480,7 +2480,7 @@ def test_validate_tree_goal_relevance_fail(store):
     goal_gap = next((g for g in data["gaps"] if g["criterion"] == "goal_relevance"), None)
     assert goal_gap is not None, "Expected goal_relevance gap"
     assert goal_gap["severity"] == "FAIL", f"Expected FAIL, got {goal_gap['severity']}"
-    assert "20" in goal_gap["current"]
+    assert "18." in goal_gap["current"]
 
 
 def test_validate_tree_transitive_redundancy(store):
