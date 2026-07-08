@@ -85,6 +85,13 @@ export interface CreateLearningSessionEvent {
   skill_id: string;
 }
 
+export interface StudyPlanUpdatedEvent {
+  plan_id: string;
+  goal: string;
+  skill_ids: string[];
+  item_count: number;
+}
+
 export interface DoneEvent {
   // Empty object {} for snapshot, null for live
 }
@@ -131,6 +138,7 @@ export type SSEEvent =
   | { type: "ui_action"; data: UiActionEvent }
   | { type: "setup_complete"; data: SetupCompleteEvent }
   | { type: "create_learning_session"; data: CreateLearningSessionEvent }
+  | { type: "study_plan_updated"; data: StudyPlanUpdatedEvent }
   | { type: "token"; data: string };
 
 // --- Shared types ---

@@ -99,8 +99,9 @@ def test_score_decaying_dominates():
 
 
 def test_score_user_priority_overrides():
+    """Priority still tips the scale but no longer short-circuits (multiplier 3.0)."""
     s = _skill("X")
-    score_prio = P.score_skill(s, _state(s.id), goal_dist=10, user_priorities={s.id})
+    score_prio = P.score_skill(s, _state(s.id), goal_dist=1, user_priorities={s.id})
     score_noprio = P.score_skill(s, _state(s.id), goal_dist=0, user_priorities=None)
     assert score_prio > score_noprio
 

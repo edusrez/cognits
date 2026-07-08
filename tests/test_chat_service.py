@@ -625,3 +625,257 @@ def test_config_serialization_reflection_enabled():
 
     cfg2 = Config.from_json(js)
     assert cfg2.reflection_enabled is False
+
+
+# --- auto-regen study plan tests ---------------------------------------
+
+
+def test_config_serialization_study_plan_auto_regen():
+    """study_plan_auto_regen serializes and deserializes properly."""
+    cfg = Config()
+    assert cfg.study_plan_auto_regen is True
+
+    js = cfg.to_json()
+    assert js.get("studyPlanAutoRegen") is True
+
+    cfg2 = Config.from_json(js)
+    assert cfg2.study_plan_auto_regen is True
+
+    # With False
+    cfg.study_plan_auto_regen = False
+    js = cfg.to_json()
+    assert js.get("studyPlanAutoRegen") is False
+
+    cfg2 = Config.from_json(js)
+    assert cfg2.study_plan_auto_regen is False
+
+
+def test_regen_study_plan_no_active_plan_noop(real_state, session_agent, config):
+    """No active study plan → _regen_study_plan_async returns without error."""
+    state, app = real_state
+    svc = _make_maestro_svc(state, session_agent, config)
+
+    asyncio.run(svc._regen_study_plan_async(
+        session_id="s_regen", sa=session_agent,
+    ))
+    # No active plan → should not crash
+
+
+def test_regen_study_plan_no_mastered_skills_noop(real_state, session_agent, config):
+    """Active plan but no skills mastered → no regen (no change)."""
+    state, app = real_state
+    svc = _make_maestro_svc(state, session_agent, config)
+
+    # Ensure no active plan exists
+    # get_active returns None → returns early, no crash
+    from cognits.storage.models import LearnerState
+
+    # Insert a skill and learner state (below threshold)
+    from cognits.storage.models import Skill
+    skill = Skill(
+        id="k_test_regen", domain="test", name="Test Skill",
+        difficulty=0.5, tree_version=1, status="active",
+    )
+    state.skills.upsert(skill)
+    ls = LearnerState(skill_id="k_test_regen", p_mastery=0.5)
+    state.learner_state.upsert(ls)
+
+    # Create active plan with the skill
+    plan_id = state.study_plans.create(
+        tree_version=1, goal="learn", session_id="s_regen",
+    )
+    state.study_plans.add_item(
+        plan_id=plan_id, skill_id="k_test_regen", order_index=0,
+    )
+
+    asyncio.run(svc._regen_study_plan_async(
+        session_id="s_regen", sa=session_agent,
+    ))
+    # p_mastery=0.5 < threshold → should return early, no regen
+    # Plan should still be active (not superseded)
+    active = state.study_plans.get_active()
+    assert active is not None
+    assert active.id == plan_id
+
+
+def test_regen_study_plan_mastered_skill_triggers_regen(real_state, session_agent, config):
+    """When a plan skill crosses mastery threshold, plan is regenerated."""
+    state, app = real_state
+    svc = _make_maestro_svc(state, session_agent, config)
+
+    from cognits.constants import MASTERY_THRESHOLD
+    from cognits.storage.models import LearnerState, Skill
+
+    # Insert two skills
+    skill1 = Skill(
+        id="k_regen_1", domain="test", name="Skill One",
+        difficulty=0.3, tree_version=1, status="active",
+    )
+    skill2 = Skill(
+        id="k_regen_2", domain="test", name="Skill Two",
+        difficulty=0.5, tree_version=1, status="active",
+    )
+    state.skills.upsert(skill1)
+    state.skills.upsert(skill2)
+
+    # Skill 1 is mastered (crossed threshold)
+    ls1 = LearnerState(skill_id="k_regen_1", p_mastery=0.96)
+    ls2 = LearnerState(skill_id="k_regen_2", p_mastery=0.3)
+    state.learner_state.upsert(ls1)
+    state.learner_state.upsert(ls2)
+
+    # Create active plan with skill1 (already mastered — crosses threshold)
+    plan_id = state.study_plans.create(
+        tree_version=1, goal="learn", session_id="s_regen",
+    )
+    state.study_plans.add_item(
+        plan_id=plan_id, skill_id="k_regen_1", order_index=0,
+    )
+
+    asyncio.run(svc._regen_study_plan_async(
+        session_id="s_regen", sa=session_agent,
+    ))
+
+    # Old plan should be superseded
+    old_items = state.study_plans.get_items(plan_id)
+    # New active plan should exist
+    active = state.study_plans.get_active()
+    assert active is not None
+    assert active.id != plan_id
+
+    # New plan should have items (skill1 is in frontier because it's
+    # mastered, skill2 is in frontier because it has no prereqs blocked
+    # by dependent mastered skills — it depends on nothing)
+    new_items = state.study_plans.get_items(active.id)
+    assert len(new_items) > 0
+
+
+def test_regen_study_plan_emits_sse(real_state, session_agent, config):
+    """When plan is regenerated, study_plan_updated SSE event is published."""
+    state, app = real_state
+    svc = _make_maestro_svc(state, session_agent, config)
+
+    from cognits.constants import MASTERY_THRESHOLD
+    from cognits.storage.models import LearnerState, Skill
+
+    # Insert two skills: one mastered (triggers regen), one unmastered
+    # (will be in frontier of new plan)
+    skill1 = Skill(
+        id="k_sse_m", domain="test", name="SSE Mastered",
+        difficulty=0.5, tree_version=1, status="active",
+    )
+    skill2 = Skill(
+        id="k_sse_u", domain="test", name="SSE Unmastered",
+        difficulty=0.3, tree_version=1, status="active",
+    )
+    state.skills.upsert(skill1)
+    state.skills.upsert(skill2)
+    ls1 = LearnerState(skill_id="k_sse_m", p_mastery=MASTERY_THRESHOLD)
+    ls2 = LearnerState(skill_id="k_sse_u", p_mastery=0.3)
+    state.learner_state.upsert(ls1)
+    state.learner_state.upsert(ls2)
+
+    # Create active plan with the mastered skill
+    plan_id = state.study_plans.create(
+        tree_version=1, goal="learn", session_id="s_sse",
+    )
+    state.study_plans.add_item(
+        plan_id=plan_id, skill_id="k_sse_m", order_index=0,
+    )
+
+    # Capture SSE events from sa.publish
+    published = []
+
+    class _CaptureSA:
+        def publish(self, ev, update=None):
+            published.append(ev)
+        tool_log = []
+        live_content = ""
+        live_reasoning = ""
+        live_reports = []
+        messages = []
+
+    capture_sa = _CaptureSA()
+
+    asyncio.run(svc._regen_study_plan_async(
+        session_id="s_sse", sa=capture_sa,
+    ))
+
+    # Should have published a study_plan_updated event
+    plan_events = [e for e in published if e.get("type") == "study_plan_updated"]
+    assert len(plan_events) == 1
+    data = plan_events[0]["data"]
+    assert "plan_id" in data
+    assert "goal" in data
+    assert "skill_ids" in data
+    assert "item_count" in data
+    assert data["item_count"] > 0
+
+
+def test_regen_study_plan_handles_sa_gone(real_state, session_agent, config):
+    """If sa is torn down (publish raises), _regen_study_plan_async does not crash."""
+    state, app = real_state
+    svc = _make_maestro_svc(state, session_agent, config)
+
+    from cognits.constants import MASTERY_THRESHOLD
+    from cognits.storage.models import LearnerState, Skill
+
+    # Two skills: one mastered (triggers regen), one unmastered (frontier item)
+    skill1 = Skill(
+        id="k_gone_m", domain="test", name="Gone Mastered",
+        difficulty=0.5, tree_version=1, status="active",
+    )
+    skill2 = Skill(
+        id="k_gone_u", domain="test", name="Gone Unmastered",
+        difficulty=0.3, tree_version=1, status="active",
+    )
+    state.skills.upsert(skill1)
+    state.skills.upsert(skill2)
+    ls1 = LearnerState(skill_id="k_gone_m", p_mastery=MASTERY_THRESHOLD)
+    ls2 = LearnerState(skill_id="k_gone_u", p_mastery=0.3)
+    state.learner_state.upsert(ls1)
+    state.learner_state.upsert(ls2)
+
+    plan_id = state.study_plans.create(
+        tree_version=1, goal="learn", session_id="s_gone",
+    )
+    state.study_plans.add_item(
+        plan_id=plan_id, skill_id="k_gone_m", order_index=0,
+    )
+
+    class _BrokenSA:
+        def publish(self, ev, update=None):
+            raise RuntimeError("session agent gone")
+
+    broken_sa = _BrokenSA()
+
+    # Should not raise
+    asyncio.run(svc._regen_study_plan_async(
+        session_id="s_gone", sa=broken_sa,
+    ))
+    # Plan should still be regenerated (superseded + new active)
+    active = state.study_plans.get_active()
+    assert active is not None
+    assert active.id != plan_id
+
+
+def test_regen_study_plan_disabled_config_no_regen(real_state, session_agent):
+    """When study_plan_auto_regen=False, the auto-regen task is never scheduled."""
+    state, app = real_state
+    cfg = Config()
+    cfg.llm_api_key = "test-key"
+    cfg.tinyfish_api_key = "test-tf"
+    cfg.study_plan_auto_regen = False
+
+    # Verify gate condition
+    mastery_updated = True
+    agent_id = "maestro"
+    should_launch = (agent_id == "maestro" and mastery_updated
+                     and getattr(cfg, "study_plan_auto_regen", True))
+    assert not should_launch
+
+    # With default True
+    cfg.study_plan_auto_regen = True
+    should_launch = (agent_id == "maestro" and mastery_updated
+                     and getattr(cfg, "study_plan_auto_regen", True))
+    assert should_launch

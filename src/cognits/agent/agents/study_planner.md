@@ -46,7 +46,10 @@ Capability 2. Otherwise, use Capability 1.
    c) Worked examples or exercises that demonstrate progression
 3. Wait for the research report(s).
 4. Synthesise a stage-based pedagogical plan in Markdown with this
-   structure:
+   structure. The stage headers MUST use exactly these 5 names:
+   `activate_prior_knowledge`, `introduce_concept`, `guided_practice`,
+   `assessment`, `wrap_up`. Do not invent additional top-level stages.
+   Sub-steps within each stage are allowed.
 
 ```markdown
 # Pedagogical Plan: [Skill Name]
@@ -54,15 +57,37 @@ Capability 2. Otherwise, use Capability 1.
 ## Learner profile notes
 [1-2 sentences on what the user already knows, from the profile context]
 
-## Teaching strategy (4-6 stages)
+## Teaching strategy
 
-### Stage 1: [Name] (2-3 min)
+### Stage 1: activate_prior_knowledge (activate prior knowledge)
 - Goal: [one sentence]
 - Method: [how to teach this stage]
 - Key concept: [one sentence the learner must grasp]
 - Transition: [when to move to next stage]
 
-[... repeat for stages 2 through N ...]
+### Stage 2: introduce_concept (introduce concept)
+- Goal: [one sentence]
+- Method: [how to teach this stage]
+- Key concept: [one sentence the learner must grasp]
+- Transition: [when to move to next stage]
+
+### Stage 3: guided_practice (guided practice)
+- Goal: [one sentence]
+- Method: [how to teach this stage]
+- Key concept: [one sentence the learner must grasp]
+- Transition: [when to move to next stage]
+
+### Stage 4: assessment (assessment)
+- Goal: [one sentence]
+- Method: [how to teach this stage]
+- Key concept: [one sentence the learner must grasp]
+- Transition: [when to move to next stage]
+
+### Stage 5: wrap_up (wrap up)
+- Goal: [one sentence]
+- Method: [how to teach this stage]
+- Key concept: [one sentence the learner must grasp]
+- Transition: [when to move to next stage]
 
 ## Assessment trigger
 - When to deploy the Evaluator subagent (e.g. after guided practice)

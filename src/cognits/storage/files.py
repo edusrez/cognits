@@ -185,6 +185,7 @@ class Config:
     max_steps: int = 0
     display_thinking: bool = True
     reflection_enabled: bool = True
+    study_plan_auto_regen: bool = True
 
     def to_json(self) -> dict:
         return {
@@ -216,6 +217,7 @@ class Config:
             "maxSteps": self.max_steps,
             "displayThinking": self.display_thinking,
             "reflectionEnabled": self.reflection_enabled,
+            "studyPlanAutoRegen": self.study_plan_auto_regen,
         }
 
     @classmethod
@@ -252,6 +254,7 @@ class Config:
             max_steps=int(d.get("maxSteps", 0) or 0),
             display_thinking=bool(d.get("displayThinking", True)),
             reflection_enabled=bool(d.get("reflectionEnabled", True)),
+            study_plan_auto_regen=bool(d.get("studyPlanAutoRegen", True)),
         )
 
 

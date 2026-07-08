@@ -197,6 +197,7 @@ class ChatService:
 
             # --- pedagogy engine (maestro only, external stage management) ---
             pedagogy_engine = None
+            previous_p_mastery = None
             if self.agent_id == "maestro" and self.skill_id:
                 from cognits.learner.pedagogy_engine import PedagogyEngine
                 try:
@@ -206,6 +207,7 @@ class ChatService:
                 engine = PedagogyEngine()
                 if ls is not None and ls.scaffolding_level > 0:
                     engine.load_from_scaffolding_level(ls.scaffolding_level)
+                previous_p_mastery = ls.p_mastery if ls is not None else None
                 self.system_prompt += "\n\n" + engine.prompt_context()
                 pedagogy_engine = engine
 
@@ -242,9 +244,14 @@ class ChatService:
                     self.llm_messages.append(Message(role="system", content=pending))
 
             try:
+                mastery_updated = {"val": False}
+
                 def _orchestrator_emit(ev: dict) -> None:
                     if ev.get("type") == "usage" and isinstance(ev.get("data"), dict):
                         ev["data"]["source"] = "orchestrator"
+                    if ev.get("type") == "tool_end" and isinstance(ev.get("data"), dict):
+                        if ev["data"].get("tool") == "update_mastery":
+                            mastery_updated["val"] = True
                     process_event(ev)
 
                 await ag.run(self.llm_messages, _orchestrator_emit)
@@ -274,9 +281,11 @@ class ChatService:
                 except Exception:
                     ls = None
                 p_mastery = ls.p_mastery if ls is not None else 0.0
+                did_advance = False
                 if pedagogy_engine.should_advance(p_mastery):
                     new_stage = pedagogy_engine.advance()
                     if new_stage is not None:
+                        did_advance = True
                         if ls is not None:
                             ls.scaffolding_level = pedagogy_engine.to_scaffolding_level()
                             try:
@@ -290,6 +299,34 @@ class ChatService:
                                 "stage": new_stage.value,
                             },
                         })
+
+                # --- retreat on mastery drop (regress one stage) ---
+                if not did_advance and previous_p_mastery is not None:
+                    from cognits.learner.pedagogy_engine import RETREAT_MASTERY_DROP
+                    drop = previous_p_mastery - p_mastery
+                    if drop >= RETREAT_MASTERY_DROP:
+                        new_stage = pedagogy_engine.retreat()
+                        if new_stage is not None:
+                            if ls is not None:
+                                ls.scaffolding_level = pedagogy_engine.to_scaffolding_level()
+                                try:
+                                    await asyncio.to_thread(st.learner_state.upsert, ls)
+                                except Exception as e3:
+                                    log.error("chat: pedagogy retreat upsert (session %s): %s", sid, e3)
+                            sa.publish({
+                                "type": "ui_action",
+                                "data": {
+                                    "action": "pedagogy_retreat",
+                                    "stage": new_stage,
+                                },
+                            })
+
+            # --- auto-regen study plan after mastery update (maestro only) ---
+            if (self.agent_id == "maestro" and mastery_updated["val"]
+                    and getattr(cfg, "study_plan_auto_regen", True)):
+                _sid = sid
+                _sa = sa
+                asyncio.create_task(self._regen_study_plan_async(_sid, _sa))
 
         finally:
             asyncio.get_running_loop().create_task(tracer.flush())
@@ -761,5 +798,98 @@ class ChatService:
         self.st.pending_critiques[sid] = feedback
         log.info("reflect_async (session %s): flagged %d violation(s) for next turn",
                  sid, len(violations) if isinstance(violations, list) else 0)
+
+    async def _regen_study_plan_async(self, session_id, sa):
+        """Fire-and-forget: regenerate study plan after mastery updates.
+
+        Non-blocking — runs after the turn is delivered. If any skill
+        in the active plan has crossed MASTERY_THRESHOLD, regenerate
+        the plan and emit a study_plan_updated SSE event.
+
+        Mirrors _reflect_async pattern — catches all exceptions,
+        never touches SessionAgent in finally.
+        """
+        try:
+            st = self.st
+            plans = st.study_plans
+            if plans is None:
+                return
+
+            active = await asyncio.to_thread(plans.get_active)
+            if active is None:
+                return
+
+            items = await asyncio.to_thread(plans.get_items, active.id)
+            if not items:
+                return
+
+            skills = await asyncio.to_thread(st.skills.list_active)
+            tree_data = await asyncio.to_thread(st.skills.get_tree)
+            edges_data = tree_data.get("edges", [])
+            from cognits.storage.models import SkillPrereq
+            edges = [SkillPrereq(**e) for e in edges_data]
+
+            states: dict = {}
+            for s in skills:  # all skills (not just plan items), so compute_frontier sees all mastered prereqs
+                state = await asyncio.to_thread(st.learner_state.get, s.id)
+                if state is not None:
+                    states[s.id] = state
+
+            if not states:
+                return
+
+            from cognits.learner.planner import generate_plan
+            from cognits.constants import MASTERY_THRESHOLD
+
+            # Check if any skill crossed the mastery threshold
+            any_mastered = any(
+                s.p_mastery >= MASTERY_THRESHOLD for s in states.values()
+            )
+            if not any_mastered:
+                return
+
+            # Generate new plan
+            new_items = await asyncio.to_thread(
+                generate_plan,
+                skills, edges, states,
+                active.goal or "",
+                priorities=None,
+                max_items=len(items),
+            )
+            if not new_items:
+                return
+
+            # Supersede old plan + create new
+            await asyncio.to_thread(plans.supersede, active.id)
+
+            new_plan_id = await asyncio.to_thread(
+                plans.create,
+                active.tree_version,
+                active.goal or "",
+                session_id,
+            )
+            await asyncio.to_thread(plans.replace_items, new_plan_id, new_items)
+
+            # Emit SSE if sa is alive (mirrors _reflect_async defensiveness)
+            try:
+                plan_summary = {
+                    "plan_id": new_plan_id,
+                    "goal": active.goal,
+                    "skill_ids": [item.skill_id for item in new_items],
+                    "item_count": len(new_items),
+                }
+                sa.publish({
+                    "type": "study_plan_updated",
+                    "data": plan_summary,
+                })
+            except Exception:
+                pass  # sa may be torn down by now
+
+            log.info("regen_study_plan (session %s): regenerated plan %s with %d items",
+                     session_id, new_plan_id, len(new_items))
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log.warning("regen_study_plan_async (session %s): %s", session_id, e)
 
 

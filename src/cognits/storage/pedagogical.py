@@ -2,7 +2,24 @@
 
 from __future__ import annotations
 
+import logging
+import re
+
 from cognits.storage.database import Database
+
+logger = logging.getLogger(__name__)
+
+# Regex to extract stage names from "### Stage N: name" headers
+_STAGE_HEADER_RE = re.compile(r"^###\s+Stage\s+\d+:\s*(\S+)", re.MULTILINE)
+
+# Canonical stage names (must match pedagogy_engine.Stage enum values)
+_CANONICAL_STAGES = {
+    "activate_prior_knowledge",
+    "introduce_concept",
+    "guided_practice",
+    "assessment",
+    "wrap_up",
+}
 
 
 class PedagogicalPlanRepository:
@@ -10,6 +27,7 @@ class PedagogicalPlanRepository:
         self.db = db
 
     def save(self, skill_id: str, content: str) -> None:
+        _warn_non_canonical_stages(content)
         with self.db.lock:
             self.db.conn.execute(
                 """INSERT INTO pedagogical_plans
@@ -26,3 +44,16 @@ class PedagogicalPlanRepository:
                 (skill_id,),
             ).fetchone()
         return row[0] if row else None
+
+
+def _warn_non_canonical_stages(content: str) -> None:
+    """Log a warning if the Markdown contains non-canonical stage names."""
+    for match in _STAGE_HEADER_RE.finditer(content):
+        name = match.group(1)
+        if name not in _CANONICAL_STAGES:
+            logger.warning(
+                "pedagogical plan has non-canonical stage: '%s' "
+                "— expected one of %s",
+                name,
+                sorted(_CANONICAL_STAGES),
+            )

@@ -13,10 +13,14 @@ learning with evolving goals.
 
 from __future__ import annotations
 
+import difflib
+import logging
 from collections import deque
 from datetime import datetime, timezone
 
 from cognits.storage.models import LearnerState, Skill, SkillPrereq, StudyPlanItem
+
+_logger = logging.getLogger(__name__)
 
 # --- constants --------------------------------------------------------
 
@@ -50,7 +54,10 @@ BLOOM_RANK: dict[str, int] = {
     "create": 6,
 }
 
-USER_PRIORITY_MULTIPLIER: float = 8.0  # explicit user request
+# 3.0 gives explicit priorities ~3x weight of a quick-win vs ~8x
+# which made other dimensions noise.
+USER_PRIORITY_MULTIPLIER: float = 3.0  # explicit user request
+ZPD_BONUS: float = 1.5  # Vygotsky zone of proximal development (0.4–0.69 p_mastery)
 SOFT_PREREQ_BONUS: float = 1.0      # all soft prereqs mastered → small boost
 MULTI_PATH_BONUS: float = 0.5       # alt_prereq groups satisfied → reduced entropy
 
@@ -72,13 +79,32 @@ def _now() -> datetime:
 
 def _proficient_threshold(skill_id: str, dependent_count: dict[str, int]) -> float:
     """Adaptive threshold: foundational skills (many dependents) need higher
-    confidence. Leaf skills with no dependents can use a lower bar."""
+    confidence. Leaf skills with no dependents can use a lower bar.
+    
+    Smoothly scales: 0 deps→0.75, 1 dep→0.79, 5 deps→0.95 (capped)."""
     dc = dependent_count.get(skill_id, 0)
-    if dc > 3:
-        return 0.90
-    elif dc == 0:
-        return 0.75
-    return MASTERY_PROFICIENT_P  # 0.80
+    return 0.75 + min(0.20, dc * 0.04)
+
+
+def _estimate_duration(difficulty: float, bloom_level: str) -> int:
+    """Estimate study time from difficulty and Bloom level.
+    
+    Base: 15 + max(0.0, min(1.0, difficulty)) * 45 → 15–60 min.
+    Bloom multiplier: remember/understand=0.7, apply=1.0,
+    analyze/evaluate=1.3, create=1.5.
+    Rounds to nearest 5 minutes."""
+    base = 15 + max(0.0, min(1.0, difficulty)) * 45
+    _bloom_word = (bloom_level or "").strip().lower().split()[0] if bloom_level else ""
+    bloom_rank = BLOOM_RANK.get(_bloom_word, 3)  # default 3 (apply)
+    if bloom_rank <= 2:
+        bloom_mult = 0.7
+    elif bloom_rank == 3:
+        bloom_mult = 1.0
+    elif bloom_rank <= 5:
+        bloom_mult = 1.3
+    else:
+        bloom_mult = 1.5
+    return round(base * bloom_mult / 5) * 5
 
 
 # --- frontier ---------------------------------------------------------
@@ -101,8 +127,8 @@ def compute_frontier(
     the frontier — they only influence scoring.
 
     Uses adaptive proficiency thresholds: skills with many downstream
-    dependents require higher confidence (0.90), leaf skills with none
-    can use a lower bar (0.75), default is 0.80."""
+    dependents require higher confidence (smoothly scaled: 0 deps→0.75,
+    5 deps→0.95, capped at 0.95)."""
     # Count how many skills depend on each skill (as hard prereq).
     dependent_count: dict[str, int] = {}
     for e in edges:
@@ -170,14 +196,40 @@ def compute_goal_distances(
     """BFS backward from the goal skill through ``prereq`` and ``alt_prereq``
     edges. Returns ``{skill_id: distance}`` where distance is the number of
     prerequisite hops to reach the goal. Skills not reaching the goal
-    (disconnected subgraph) are absent from the dict."""
-    # Resolve goal name → id (name matching is case-insensitive).
+    (disconnected subgraph) are absent from the dict.
+
+    Goal resolution is a cascade:
+    1. Exact match (lowercased, stripped).
+    2. Substring match (query in name OR name in query).
+    3. difflib.get_close_matches (Levenshtein distance).
+    4. No match → returns {} with a warning log."""
+    goal_name_stripped = goal_name.strip().lower()
+    names = [s.name.strip().lower() for s in skills]
+
+    # 1. Exact match.
     goal_id: str | None = None
     for s in skills:
-        if s.name.strip().lower() == goal_name.strip().lower():
+        if s.name.strip().lower() == goal_name_stripped:
             goal_id = s.id
             break
+
+    # 2. Substring match: query is substring of name, or name is substring of query.
+    if goal_id is None and goal_name_stripped:
+        for s in skills:
+            name_lower = s.name.strip().lower()
+            if goal_name_stripped in name_lower or name_lower in goal_name_stripped:
+                goal_id = s.id
+                break
+
+    # 3. difflib.get_close_matches (cutoff=0.6, n=1).
+    if goal_id is None and goal_name_stripped:
+        matches = difflib.get_close_matches(goal_name_stripped, names, n=1, cutoff=0.6)
+        if matches:
+            idx = names.index(matches[0])
+            goal_id = skills[idx].id
+
     if goal_id is None:
+        _logger.warning("goal '%s' matched no skill (fuzzy failed)", goal_name)
         return {}
 
     # Build adjacency from skill_id -> its direct prerequisites (hard + alt).
@@ -244,6 +296,11 @@ def score_skill(
     # 6. User explicit priorities.
     if user_priorities and skill.id in user_priorities:
         s += USER_PRIORITY_MULTIPLIER
+
+    # 7. ZPD bonus: skills in the learner's growth zone (0.4-0.69).
+    #    Clean separation: ZPD (0.4-0.69) — growth zone; quick_win (0.70-0.95) — close to mastery; no overlap.
+    if state is not None and 0.4 <= state.p_mastery < 0.70:
+        s += ZPD_BONUS
 
     return s
 
@@ -326,6 +383,7 @@ def generate_plan(
                 skill_id=sid,
                 mode="socratic",
                 order_index=idx,
+                estimated_duration_min=_estimate_duration(skill.difficulty, skill.bloom_level),
             )
         )
     return items
@@ -393,10 +451,14 @@ def diff_plans(
         added_scored.append((sid, sc))
 
     added_scored.sort(key=lambda x: x[1], reverse=True)
-    added = [
-        StudyPlanItem(skill_id=sid, order_index=len(preserved) + i)
-        for i, (sid, _) in enumerate(added_scored)
-    ]
+    added: list[StudyPlanItem] = []
+    for i, (sid, _) in enumerate(added_scored):
+        sk = next((s for s in skills if s.id == sid), None)
+        added.append(StudyPlanItem(
+            skill_id=sid,
+            order_index=len(preserved) + i,
+            estimated_duration_min=_estimate_duration(sk.difficulty, sk.bloom_level) if sk else None,
+        ))
 
     return {
         "preserved": [i.to_json() for i in preserved],

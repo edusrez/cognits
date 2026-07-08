@@ -233,3 +233,123 @@ def test_multi_path_bonus_only_when_alt_satisfied():
     assert s1.id in item_ids    # root, no prereqs -> in frontier
     assert a.id in item_ids     # root, no prereqs -> in frontier
     assert s2.id not in item_ids  # blocked: alt_prereq group unsatisfied
+
+
+# --- T8: fuzzy goal match ----------------------------------------------
+
+def test_fuzzy_goal_substring():
+    """Goal 'twin-stick' matches 'Twin-Stick Controls: Decoupled Move and Aim' via substring."""
+    a = _skill("Twin-Stick Controls: Decoupled Move and Aim")
+    b = _skill("B")
+    e = _prereq(b.id, a.id, "prereq")
+    dists = P.compute_goal_distances([e], "twin-stick", [a, b])
+    # a is the goal match (distance 0); b depends on a via prereq, so b is NOT
+    # reachable backward from a (BFS starts at the goal, goes to its prereqs).
+    assert a.id in dists
+    assert dists[a.id] == 0
+
+
+def test_fuzzy_goal_levenshtein():
+    """Goal 'dogenkeep' matches 'Dungeon Keeper' via difflib (Levenshtein distance ≤2)."""
+    dk = _skill("Dungeon Keeper")
+    dists = P.compute_goal_distances([], "dogenkeep", [dk])
+    # dk is the goal itself (no edges → only the goal skill appears with distance 0)
+    assert dk.id in dists
+
+
+def test_fuzzy_goal_no_match():
+    """Goal 'xyzzy' matches nothing → returns {} and logs a warning."""
+    a = _skill("A")
+    dists = P.compute_goal_distances([], "xyzzy", [a])
+    assert dists == {}
+
+
+# --- T9: estimated_duration_min ----------------------------------------
+
+def test_estimate_duration():
+    """_estimate_duration produces expected ranges for different difficulty/Bloom combos."""
+    # difficulty 0, remember (rank 1) → base=15, mult=0.7 → 10.5→10
+    assert P._estimate_duration(0.0, "remember") == 10
+    # difficulty 1, apply (rank 3) → base=60, mult=1.0 → 60.0→60
+    assert P._estimate_duration(1.0, "apply") == 60
+    # difficulty 0.5, create (rank 6) → base=37.5, mult=1.5 → 56.25→55
+    assert P._estimate_duration(0.5, "create") == 55
+    # difficulty 0.3, understand (rank 2) → base=28.5, mult=0.7 → 19.95→20
+    assert P._estimate_duration(0.3, "understand") == 20
+    # difficulty 0.8, evaluate (rank 5) → base=51, mult=1.3 → 66.3→65
+    assert P._estimate_duration(0.8, "evaluate") == 65
+    # all results are multiples of 5
+    for d in [0.0, 0.25, 0.5, 0.75, 1.0]:
+        for bl in ["remember", "understand", "apply", "analyze", "evaluate", "create"]:
+            dur = P._estimate_duration(d, bl)
+            assert dur % 5 == 0, f"duration {dur} not multiple of 5 for d={d}, bl={bl}"
+            assert 5 <= dur <= 90, f"duration {dur} out of range for d={d}, bl={bl}"
+
+
+def test_plan_items_have_duration():
+    """generate_plan produces items with estimated_duration_min > 0."""
+    a = _skill("A", difficulty=0.5)
+    a.bloom_level = "apply"
+    b = _skill("B", difficulty=0.8)
+    b.bloom_level = "create"
+    c = _skill("C", difficulty=0.2)
+    c.bloom_level = "remember"
+    states = {a.id: _state(a.id, p=0.3), b.id: _state(b.id, p=0.3), c.id: _state(c.id, p=0.3)}
+    items = P.generate_plan([a, b, c], [], states, goal="A", max_items=10)
+    for item in items:
+        assert item.estimated_duration_min is not None, f"item {item.skill_id} has no duration"
+        assert item.estimated_duration_min > 0, f"item {item.skill_id} duration is {item.estimated_duration_min}"
+    # Verify diff_plans added items also have duration
+    old_items = [P.StudyPlanItem(skill_id=a.id, order_index=0)]
+    diff = P.diff_plans(old_items, "A", "B", [a, b, c], [], states)
+    added_json = diff["added"]
+    for item_json in added_json:
+        assert "estimatedDurationMin" in item_json
+        assert item_json["estimatedDurationMin"] is not None
+        assert item_json["estimatedDurationMin"] > 0
+
+
+# --- T11: scoring weights + adaptive threshold + ZPD -------------------
+
+def test_proficient_threshold_smooth():
+    """Smooth threshold: 0 deps→0.75, 1 dep→0.79, 5 deps→0.95, 10 deps→0.95 (capped)."""
+    assert P._proficient_threshold("any", {}) == 0.75
+    assert P._proficient_threshold("any", {"any": 1}) == 0.79
+    assert P._proficient_threshold("any", {"any": 5}) == 0.95
+    assert P._proficient_threshold("any", {"any": 10}) == 0.95  # capped
+
+
+def test_zpd_bonus():
+    """Skill with p_mastery=0.5 scores higher than same skill with p=0.3 or p=0.8
+    (ZPD bonus 1.5 is active in 0.4-0.69, no overlap with quick-win at 0.70+)."""
+    sk = _skill("ZPD_skill", difficulty=0.5)
+    # Three states: below ZPD, in ZPD, above ZPD (with weak quick-win)
+    st_low = _state(sk.id, p=0.3)
+    st_zpd = _state(sk.id, p=0.5)
+    st_high = _state(sk.id, p=0.8)
+    score_low = P.score_skill(sk, st_low, goal_dist=0)
+    score_zpd = P.score_skill(sk, st_zpd, goal_dist=0)
+    score_high = P.score_skill(sk, st_high, goal_dist=0)
+    # ZPD gets the +1.5 bonus that others don't.
+    assert score_zpd > score_low, f"ZPD (0.5) should score higher than low (0.3): {score_zpd:.4f} vs {score_low:.4f}"
+    assert score_zpd > score_high, f"ZPD (0.5) should score higher than high (0.8): {score_zpd:.4f} vs {score_high:.4f}"
+    # Verify boundary: 0.4 gets bonus, 0.399 doesn't; 0.69 gets bonus, 0.70 gets no ZPD (only quick-win which is 0 at boundary)
+    st_edge_low_in = _state(sk.id, p=0.4)
+    st_edge_low_out = _state(sk.id, p=0.399)
+    st_edge_high_in = _state(sk.id, p=0.69)
+    st_edge_high_out = _state(sk.id, p=0.70)
+    assert P.score_skill(sk, st_edge_low_in, goal_dist=0) > P.score_skill(sk, st_edge_low_out, goal_dist=0)
+    assert P.score_skill(sk, st_edge_high_in, goal_dist=0) > P.score_skill(sk, st_edge_high_out, goal_dist=0)
+
+
+def test_reduced_priority_multiplier():
+    """User priority still boosts but doesn't dominate: multiplier is 3.0 not 8.0."""
+    assert P.USER_PRIORITY_MULTIPLIER == 3.0
+    sk = _skill("P_skill", difficulty=0.5)
+    st = _state(sk.id, p=0.3)
+    score_no_priority = P.score_skill(sk, st, goal_dist=0)
+    score_with_priority = P.score_skill(sk, st, goal_dist=0, user_priorities={sk.id})
+    diff = score_with_priority - score_no_priority
+    assert diff == P.USER_PRIORITY_MULTIPLIER
+    # The boost shouldn't dominate all scoring dimensions.
+    assert diff < score_no_priority + 8.0  # old multiplier would have been >8
