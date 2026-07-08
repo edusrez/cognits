@@ -103,15 +103,7 @@ def register(app: FastAPI, st) -> None:
                 skill_map[s.id] = s
             skills = list(skill_map.values())
 
-            edges = [
-                SkillPrereq(
-                    skill_id=e["skillId"],
-                    prereq_id=e["prereqId"],
-                    edge_type=e.get("edgeType", "prereq"),
-                    group_id=e.get("groupId", ""),
-                )
-                for e in edges_raw
-            ]
+            edges = [SkillPrereq.from_json(e) for e in edges_raw]
 
             # Load learner states, defaulting missing skills to not_seen.
             all_states = await asyncio.to_thread(st.learner_state.get_all)

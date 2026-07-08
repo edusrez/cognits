@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 from cognits.constants import MASTERY_THRESHOLD
 from cognits.learner import planner
+from cognits.storage.models import SkillPrereq
 from cognits.tools import Tool, tool_error
 
 
@@ -44,28 +45,40 @@ def classify_item(
     skill_id: str,
     states: dict[str, object],
     now: datetime,
+    target_retention: float = 0.9,
 ) -> str:
     """Classify a study plan item as 'new', 'review', or 'skip'.
 
-    Reuses the SAME logic as GetCurrentStudyPlan._classify:
-      - Seeded-known (high mastery, never studied): skip.
-      - FSRS next_review due: review.
-      - Studied but not due for review: new.
-      - Never studied: new.
-
-    ``states`` maps skill_id -> LearnerState (must have p_mastery, next_review,
-    reps, last_review attributes).
+    Uses FSRS retrievability (R) when stability and last_review are
+    available (SOTA preferred path). Falls back to next_review date
+    comparison for legacy skills without stability.
     """
     st = states.get(skill_id)
     if st is None:
         return "new"
 
-    # Seeded-known skill: high mastery, never actually studied
-    # (no last_review from seed_mastery). Skip from plan entirely.
+    # Seeded-known: high mastery, never studied.
     if st.p_mastery and st.p_mastery >= MASTERY_THRESHOLD and not st.last_review:
         return "skip"
 
-    # FSRS-based: is the skill due for review?
+    # R-based classification (preferred): compute current retrievability.
+    if st.stability is not None and st.last_review:
+        try:
+            last_dt = _parse_iso(st.last_review)
+            if last_dt:
+                elapsed_days = max(0.0, (now - last_dt).total_seconds() / 86400.0)
+                from cognits.learner.fsrs import retrievability
+                r = retrievability(elapsed_days, st.stability)
+                if r < target_retention:
+                    return "review"
+                # R is healthy — the skill is not due for review.
+                if st.reps and st.reps > 0:
+                    return "new"
+                return "new"
+        except Exception:
+            pass
+
+    # Fallback: next_review date check (legacy, for skills without stability).
     if st.next_review:
         try:
             next_dt = _parse_iso(st.next_review)
@@ -74,7 +87,6 @@ def classify_item(
         except Exception:
             pass
 
-    # Studied but not due for review → proceed forward.
     if st.reps and st.reps > 0 and st.last_review:
         return "new"
 
@@ -149,20 +161,14 @@ class PlanStudy(Tool):
             # Load tree data.
             all_skills = self.skills.list_active()
             tree = self.skills.get_tree()
-            edges = [type(all_skills[0]).__new__(type(all_skills[0])) for _ in tree["edges"]]
-            # ^ dummy — get_tree returns dicts, but the planner needs
-            # SkillPrereq objects. We build them from the DB instead.
-            edge_rows = []
-            for s in all_skills:
-                prereqs = self.skills.get_prerequisites(s.id)
-                edge_rows.extend(prereqs)
+            edges = [SkillPrereq.from_json(e) for e in tree.get("edges", [])]
 
             states = self.learner_state.get_all()
 
             # Run deterministic planner.
             items = planner.generate_plan(
                 skills=all_skills,
-                edges=edge_rows,
+                edges=edges,
                 states=states,
                 goal=goal,
                 priorities=priorities if priorities else None,
@@ -191,7 +197,7 @@ class PlanStudy(Tool):
             saved_items = self.plans.get_items(plan_id)
 
             # Compute frontier size for the response.
-            frontier = planner.compute_frontier(all_skills, edge_rows, states)
+            frontier = planner.compute_frontier(all_skills, edges, states)
 
             return plan_id, saved_items, tree_version, len(frontier)
 

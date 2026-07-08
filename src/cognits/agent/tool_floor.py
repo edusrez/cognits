@@ -184,10 +184,58 @@ class CheckBranchFloor(Tool):
                 not_mastered.append(pr.prereq_id)
                 continue
 
+            # B2: Load BKT state for hybrid auto-gates.
+            prereq_state = None
+            if self.learner_state is not None:
+                try:
+                    prereq_state = await asyncio.to_thread(self.learner_state.get, prereq_skill.id)
+                except Exception:
+                    pass
+
+            # Auto-mastered: BKT says mastered with high confidence -> skip LLM.
+            if (prereq_state is not None
+                    and prereq_state.p_mastery >= 0.95
+                    and (prereq_state.alpha + prereq_state.beta) >= 12
+                    and prereq_state.reps >= 3):
+                prereqs_checked.append({
+                    "skill_id": pr.prereq_id,
+                    "name": prereq_skill.name,
+                    "mastery": "mastered",
+                    "confidence": 100,
+                })
+                log.info("floor: auto-mastered %s via BKT (p=%.2f, conf=%.1f, reps=%d)",
+                         prereq_skill.id, prereq_state.p_mastery,
+                         prereq_state.alpha + prereq_state.beta, prereq_state.reps)
+                continue
+
+            # Auto-not-mastered: no evidence at all -> skip LLM.
+            if (prereq_state is None
+                    or (prereq_state.reps == 0 and prereq_state.status_enum == "not_seen")):
+                prereqs_checked.append({
+                    "skill_id": pr.prereq_id,
+                    "name": prereq_skill.name,
+                    "mastery": "not_mastered",
+                    "confidence": 100,
+                })
+                not_mastered.append(pr.prereq_id)
+                log.info("floor: auto-not-mastered %s (no evidence)", prereq_skill.id)
+                continue
+
+            # LLM path: pass BKT state for informed judgment.
+            bkt_str = ""
+            if prereq_state is not None:
+                bkt_str = (f" | bkt_state: p_mastery={prereq_state.p_mastery:.2f}, "
+                           f"confidence={prereq_state.alpha + prereq_state.beta:.1f}, "
+                           f"reps={prereq_state.reps}, "
+                           f"stability={prereq_state.stability or 'N/A'}, "
+                           f"retrievability={prereq_state.retrievability or 'N/A'}, "
+                           f"status={prereq_state.status_enum}")
+
             query = (
                 f"{prereq_skill.id} | {prereq_skill.name} | "
                 f"{prereq_skill.description or 'no description'} | "
-                f"profile: {profile_str} | "
+                f"profile: {profile_str}"
+                f"{bkt_str} | "
                 f"chat_history: {history_summary}"
             )
 

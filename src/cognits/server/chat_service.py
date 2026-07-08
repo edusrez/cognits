@@ -391,6 +391,46 @@ class ChatService:
                 self.system_prompt += "\n\n" + engine.prompt_context()
                 pedagogy_engine = engine
 
+                # B3: Inject status_enum for the current skill (maestro uses status_enum, not raw p_mastery)
+                if ls is not None:
+                    self.system_prompt += "\n\n## Learner State\n"
+                    self.system_prompt += f"Current skill mastery level: **{ls.status_enum}**\n"
+                    self.system_prompt += f"p_mastery: {ls.p_mastery:.2f} (confidence: {ls.alpha + ls.beta:.1f})\n"
+                    if ls.stability is not None:
+                        self.system_prompt += f"Memory stability: {ls.stability:.1f} days\n"
+
+                # M6: Preventative retreat check — if R < 0.80 and skill is decaying, warn the maestro
+                if ls is not None:
+                    if (ls.stability is not None and ls.last_review
+                            and ls.status_enum in ("proficient", "mastered")):
+                        try:
+                            from cognits.learner.fsrs import retrievability
+                            from cognits.constants import RETREAT_PREVENTATIVE_R
+                            from datetime import datetime as dt, timezone as tz
+                            last_parsed = dt.fromisoformat(ls.last_review.rstrip().replace("Z", "+00:00"))
+                            if last_parsed.tzinfo is None:
+                                last_parsed = last_parsed.replace(tzinfo=tz.utc)
+                            now_parsed = dt.now(tz.utc)
+                            elapsed = max(0.0, (now_parsed - last_parsed).total_seconds() / 86400.0)
+                            r = retrievability(elapsed, ls.stability)
+                            if r < RETREAT_PREVENTATIVE_R:
+                                skill_name = "this skill"
+                                try:
+                                    sk = await asyncio.to_thread(st.skills.get, self.skill_id)
+                                    if sk:
+                                        skill_name = sk.name
+                                except Exception:
+                                    pass
+                                self.system_prompt += (
+                                    f"\n\n## ⚠️ Retention Warning\n"
+                                    f"NOTE: The learner's retention of '{skill_name}' has "
+                                    f"dropped to {r:.0%} (threshold: {RETREAT_PREVENTATIVE_R:.0%}). "
+                                    f"Consider a brief review/reactivation before proceeding "
+                                    f"with new content. This is advisory — use your judgment."
+                                )
+                        except Exception as e:
+                            log.debug("chat: preemptive R check failed: %s", e)
+
             # --- study plan injection (orchestrator only, push not pull) ---
             if self.agent_id == "orchestrator":
                 try:
@@ -402,36 +442,41 @@ class ChatService:
                 except Exception as e:
                     log.warning("orchestrator: plan injection failed: %s", e)
 
-            # --- system-enforced floor verification (maestro only) ---
+            # --- system-enforced floor verification (maestro only, FIRST TURN ONLY) ---
             if self.agent_id == "maestro" and self.skill_id:
-                try:
-                    from cognits.agent.tool_floor import CheckBranchFloor
-                    floor_tool = CheckBranchFloor(
-                        skills=st.skills,
-                        learner_state=st.learner_state,
-                        messages=st.messages,
-                        llm_client=llm_client,
-                        rag_engine=st.rag_or_none,
-                        tf_client=tf_client,
-                        reports=st.reports,
-                        assessment=st.assessment,
-                        session_id=lambda: sid,
-                        emit=process_event,
-                        tinyfish_api_key=cfg.tinyfish_api_key,
-                    )
-                    floor_result_raw = await floor_tool.execute(
-                        json.dumps({"skill_id": self.skill_id})
-                    )
-                    floor_data = json.loads(floor_result_raw)
-                    if not floor_data.get("error"):
-                        floor_confirmed = floor_data.get("floor_confirmed", True)
-                        expanded = floor_data.get("expanded_skills", [])
-                        pruned = floor_data.get("pruned_skills", [])
-                        if expanded or pruned or not floor_confirmed:
-                            floor_text = _format_floor_report(floor_data)
-                            self.system_prompt += "\n\n" + floor_text
-                except Exception as e:
-                    log.warning("maestro: floor verification failed: %s", e)
+                existing_user_msgs = len([
+                    m for m in self.sa.messages
+                    if getattr(m, "role", None) in ("user", "hidden_user")
+                ])
+                if existing_user_msgs <= 1:
+                    try:
+                        from cognits.agent.tool_floor import CheckBranchFloor
+                        floor_tool = CheckBranchFloor(
+                            skills=st.skills,
+                            learner_state=st.learner_state,
+                            messages=st.messages,
+                            llm_client=llm_client,
+                            rag_engine=st.rag_or_none,
+                            tf_client=tf_client,
+                            reports=st.reports,
+                            assessment=st.assessment,
+                            session_id=lambda: sid,
+                            emit=process_event,
+                            tinyfish_api_key=cfg.tinyfish_api_key,
+                        )
+                        floor_result_raw = await floor_tool.execute(
+                            json.dumps({"skill_id": self.skill_id})
+                        )
+                        floor_data = json.loads(floor_result_raw)
+                        if not floor_data.get("error"):
+                            floor_confirmed = floor_data.get("floor_confirmed", True)
+                            expanded = floor_data.get("expanded_skills", [])
+                            pruned = floor_data.get("pruned_skills", [])
+                            if expanded or pruned or not floor_confirmed:
+                                floor_text = _format_floor_report(floor_data)
+                                self.system_prompt += "\n\n" + floor_text
+                    except Exception as e:
+                        log.warning("maestro: floor verification failed: %s", e)
 
             max_steps = cfg.max_steps or ORCHESTRATOR_MAX_STEPS
             ag = Agent(
@@ -542,6 +587,73 @@ class ChatService:
                                     "stage": new_stage,
                                 },
                             })
+
+            # B5: Transition plan item status (maestro only, after mastery update)
+            if self.agent_id == "maestro" and self.skill_id and mastery_updated["val"]:
+                try:
+                    plans = st.study_plans
+                    if plans is not None:
+                        active = await asyncio.to_thread(plans.get_active)
+                        if active is not None:
+                            items = await asyncio.to_thread(plans.get_items, active.id)
+                            from cognits.constants import MASTERY_THRESHOLD
+                            ls_now = await asyncio.to_thread(st.learner_state.get, self.skill_id)
+                            for item in items:
+                                if item.skill_id == self.skill_id:
+                                    if (ls_now is not None
+                                            and ls_now.p_mastery is not None
+                                            and ls_now.p_mastery >= MASTERY_THRESHOLD):
+                                        await asyncio.to_thread(
+                                            plans.update_item, item.id, status="done"
+                                        )
+                                    elif (item.status == "pending" and ls_now is not None
+                                          and ls_now.reps is not None and ls_now.reps > 0):
+                                        await asyncio.to_thread(
+                                            plans.update_item, item.id, status="in_progress"
+                                        )
+                                    break
+                except Exception as e:
+                    log.warning("chat: plan item transition (session %s): %s", sid, e)
+
+            # B6: Record actual_duration_min when item completes
+            if self.agent_id == "maestro" and self.skill_id:
+                try:
+                    plans = st.study_plans
+                    if plans is not None:
+                        active = await asyncio.to_thread(plans.get_active)
+                        if active is not None:
+                            items = await asyncio.to_thread(plans.get_items, active.id)
+                            duration = None
+                            msgs = self.sa.messages
+                            user_ts = None
+                            last_ts = None
+                            for m in msgs:
+                                ts = getattr(m, "created_at", None)
+                                if user_ts is None and getattr(m, "role", None) in ("user", "hidden_user"):
+                                    user_ts = ts
+                                if ts:
+                                    last_ts = ts
+                            if user_ts and last_ts and user_ts != last_ts:
+                                from datetime import datetime as dt, timezone as tz
+                                try:
+                                    start = dt.fromisoformat(user_ts.rstrip().replace("Z", "+00:00"))
+                                    end = dt.fromisoformat(last_ts.rstrip().replace("Z", "+00:00"))
+                                    if start.tzinfo is None:
+                                        start = start.replace(tzinfo=tz.utc)
+                                    if end.tzinfo is None:
+                                        end = end.replace(tzinfo=tz.utc)
+                                    duration = max(1, int((end - start).total_seconds() / 60))
+                                except Exception:
+                                    pass
+                            if duration is not None:
+                                for item in items:
+                                    if item.skill_id == self.skill_id:
+                                        await asyncio.to_thread(
+                                            plans.update_item, item.id, actual_duration_min=duration
+                                        )
+                                        break
+                except Exception as e:
+                    log.warning("chat: actual_duration (session %s): %s", sid, e)
 
             # --- auto-regen study plan after mastery update (maestro only) ---
             if (self.agent_id == "maestro" and mastery_updated["val"]
@@ -1092,7 +1204,7 @@ class ChatService:
             tree_data = await asyncio.to_thread(st.skills.get_tree)
             edges_data = tree_data.get("edges", [])
             from cognits.storage.models import SkillPrereq
-            edges = [SkillPrereq(**e) for e in edges_data]
+            edges = [SkillPrereq.from_json(e) for e in edges_data]
 
             states: dict = {}
             for s in skills:  # all skills (not just plan items), so compute_frontier sees all mastered prereqs

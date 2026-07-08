@@ -59,11 +59,11 @@ def test_build_skills_summary_marks_mastered(store):
     s = Skill(id=new_skill_id(), domain="d", name="MasteredSkill", source="test")
     skills.upsert(s)
     from cognits.storage.models import LearnerState
-    learner_state.upsert(LearnerState(skill_id=s.id, p_mastery=0.96, status_enum="mastered"))
+    learner_state.upsert(LearnerState(skill_id=s.id, p_mastery=0.99, status_enum="mastered"))
     tree = skills.get_tree()
     summary = _build_skills_summary(learner_state, tree)
     assert "mastered" in summary
-    assert "p=0.96" in summary
+    assert "p=0.99" in summary
 
 
 # --- CreateLearningSession tool --------------------------------------

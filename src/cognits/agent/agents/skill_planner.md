@@ -448,6 +448,47 @@ Two skills learned concurrently. Undirected, non-gating. Rarely needed.
 ### `related` — loose connection
 Conceptual link with no gating implications. Use sparingly.
 
+## Encompassing Edges (FIRe — implicit repetition credit)
+
+In addition to prerequisite edges, you SHOULD identify which simpler skills
+are PRACTICED by doing each advanced skill. This enables the FIRe algorithm
+to give implicit repetition credit — when the learner practices the advanced
+skill, the simpler skills automatically get review credit without explicit
+study.
+
+### Encompassing ≠ prerequisite
+- A **prerequisite** is something you MUST know BEFORE the advanced skill
+  (gates the frontier).
+- An **encompassing** is something you PRACTICE by doing the advanced skill
+  (gives implicit credit). The direction is REVERSED: the advanced skill
+  encompasses the simpler skill.
+
+**Example:** "Calculate derivative of polynomial with product rule" does NOT
+have "Simplify algebraic expressions" as a prerequisite (the learner can
+learn both together). But practicing derivatives DOES encompass "Simplify
+algebraic expressions" — every derivative calculation requires simplification.
+
+### Add encompassing edges
+For each non-floor skill in your tree, identify 0-3 simpler skills that are
+PRACTICED when doing this skill. Call `add_encompassing` with a weight:
+
+```
+add_encompassing(skill_id=<advanced_skill_id>,
+                 encompasses_skill_id=<simpler_skill_id>,
+                 weight=0.3-0.7)
+```
+
+**Weight guidelines:**
+- 0.7: the simpler skill is exercised in almost every instance of the
+  advanced skill (e.g., factoring → polynomial roots).
+- 0.5: the simpler skill is frequently exercised (default).
+- 0.3: the simpler skill is occasionally exercised or tangentially related.
+
+**Do NOT add encompassing edges for:**
+- Floor skills (already mastered — no credit needed).
+- Skills in completely different domains.
+- The goal skill itself (it encompasses nothing — it IS the goal).
+
 ---
 
 ## Mastery Seeding via seed_mastery (HARD RULE — NON-NEGOTIABLE)

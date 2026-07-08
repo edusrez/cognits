@@ -171,6 +171,18 @@ class SkillPrereq:
             "createdAt": self.created_at,
         }
 
+    @classmethod
+    def from_json(cls, d: dict) -> "SkillPrereq":
+        return cls(
+            skill_id=d.get("skillId") or d.get("skill_id") or "",
+            prereq_id=d.get("prereqId") or d.get("prereq_id") or "",
+            edge_type=d.get("edgeType") or d.get("edge_type") or "prereq",
+            proof_query=d.get("proofQuery") or d.get("proof_query") or "",
+            build_id=d.get("buildId") or d.get("build_id") or "",
+            group_id=d.get("groupId") or d.get("group_id") or "",
+            created_at=d.get("createdAt") or d.get("created_at") or "",
+        )
+
 
 @dataclass
 class SkillBuild:
@@ -200,6 +212,31 @@ class SkillBuild:
             "status": self.status,
             "summary": self.summary,
         }
+
+
+@dataclass
+class SkillEncompassing:
+    skill_id: str = ""
+    encompasses_skill_id: str = ""
+    weight: float = 0.5
+    created_at: str = ""
+
+    def to_json(self) -> dict:
+        return {
+            "skillId": self.skill_id,
+            "encompassesSkillId": self.encompasses_skill_id,
+            "weight": self.weight,
+            "createdAt": self.created_at,
+        }
+
+    @classmethod
+    def from_json(cls, d: dict) -> "SkillEncompassing":
+        return cls(
+            skill_id=d.get("skillId") or d.get("skill_id") or "",
+            encompasses_skill_id=d.get("encompassesSkillId") or d.get("encompasses_skill_id") or "",
+            weight=float(d.get("weight", 0.5)),
+            created_at=d.get("createdAt") or d.get("created_at") or "",
+        )
 
 
 @dataclass

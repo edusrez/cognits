@@ -34,6 +34,7 @@ from cognits.constants import (
     MASTERY_PROFICIENT_CONFIDENCE,
     MASTERY_PROFICIENT_P,
     MASTERY_THRESHOLD as MASTERED_P,
+    STABILITY_MASTERED_MIN_DAYS,
 )
 
 # --- BKT prior / soft-evidence constants -------------------------------
@@ -54,6 +55,7 @@ PROFICIENT_CONFIDENCE = MASTERY_PROFICIENT_CONFIDENCE   # α + β below this    
 MASTERED_CONFIDENCE = MASTERY_MASTERED_CONFIDENCE     # α + β below this       -> proficient
 MASTERED_RETENTION = MASTERY_MASTERED_RETENTION    # post-review R below this -> not mastered
 DECAY_OVERDUE_FACTOR = MASTERY_DECAY_OVERDUE_FACTOR   # elapsed > next_review * 1.5 -> decaying
+
 
 
 def _clamp01(x: float) -> float:
@@ -141,6 +143,10 @@ def mastery_level(
         r_now = fsrs.retrievability(elapsed, state.stability)
     if p < MASTERED_P or conf < MASTERED_CONFIDENCE or r_now < MASTERED_RETENTION:
         return "proficient"
+    # M7: Stability gate — memory must be durable (not just-learned).
+    # A skill with high p_mastery but low stability is "proficient", not "mastered".
+    if state.stability is not None and state.stability < STABILITY_MASTERED_MIN_DAYS:
+        return "proficient"
     return "mastered"
 
 
@@ -214,4 +220,42 @@ def record_review(
     state.last_review = now_dt.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     state.updated_at = state.last_review
 
+    return state
+
+
+def apply_implicit_credit(
+    state: LearnerState,
+    encompassing_weight: float,
+    target_retention: float = 0.9,
+    cap_fraction: float = 0.5,
+) -> LearnerState:
+    """Apply implicit repetition credit from FIRe (approximation).
+
+    Only applies if R < target_retention (skill is decaying).
+    Caps the credit at cap_fraction of the current review interval.
+    Does NOT increment reps, lapses, or set last_review (not a real review).
+    Only delays next_review.
+    """
+    if state.stability is None or state.next_review is None or state.last_review is None:
+        return state
+
+    last_dt = fsrs._parse_iso(state.last_review)
+    next_dt = fsrs._parse_iso(state.next_review)
+    if last_dt is None or next_dt is None:
+        return state
+
+    current_interval = (next_dt - last_dt).total_seconds() / 86400.0
+    if current_interval <= 0:
+        return state
+
+    elapsed = current_interval  # at next_review time, elapsed = interval
+    r = fsrs.retrievability(elapsed, state.stability)
+    if r >= target_retention:
+        return state  # skill is healthy at next_review, no credit needed
+
+    # Delay next_review by cap_fraction * current_interval * weight
+    credit_days = current_interval * cap_fraction * encompassing_weight
+    new_next = next_dt + datetime.timedelta(days=credit_days)
+    state.next_review = new_next.isoformat()
+    # Do NOT touch stability, difficulty, reps, lapses, alpha, beta, p_mastery
     return state

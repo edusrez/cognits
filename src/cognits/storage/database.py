@@ -146,6 +146,18 @@ BASE_SCHEMA = """
     CREATE INDEX IF NOT EXISTS idx_prereqs_group
         ON skill_prerequisites(group_id) WHERE group_id IS NOT NULL;
 
+    CREATE TABLE IF NOT EXISTS skill_encompassings (
+        skill_id TEXT NOT NULL,
+        encompasses_skill_id TEXT NOT NULL,
+        weight REAL NOT NULL DEFAULT 0.5,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (skill_id, encompasses_skill_id),
+        FOREIGN KEY (skill_id) REFERENCES skills(id),
+        FOREIGN KEY (encompasses_skill_id) REFERENCES skills(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_encompassings_skill ON skill_encompassings(skill_id);
+    CREATE INDEX IF NOT EXISTS idx_encompassings_encompassed ON skill_encompassings(encompasses_skill_id);
+
     CREATE TABLE IF NOT EXISTS skill_builds (
         id TEXT PRIMARY KEY,
         session_id TEXT,
@@ -477,6 +489,26 @@ class Database:
                     "ALTER TABLE learner_state ADD COLUMN"
                     " scaffolding_level INTEGER NOT NULL DEFAULT 1"
                 )
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS skill_encompassings (
+                    skill_id TEXT NOT NULL,
+                    encompasses_skill_id TEXT NOT NULL,
+                    weight REAL NOT NULL DEFAULT 0.5,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    PRIMARY KEY (skill_id, encompasses_skill_id),
+                    FOREIGN KEY (skill_id) REFERENCES skills(id),
+                    FOREIGN KEY (encompasses_skill_id) REFERENCES skills(id)
+                )
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_encompassings_skill
+                ON skill_encompassings(skill_id)
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_encompassings_encompassed
+                ON skill_encompassings(encompasses_skill_id)
+            """)
 
         if version < SCHEMA_VERSION:
             cur.execute("INSERT INTO reports_fts(reports_fts) VALUES('rebuild')")

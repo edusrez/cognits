@@ -7,6 +7,7 @@ from cognits.storage.models import (
     EDGE_TYPES,
     Skill,
     SkillBuild,
+    SkillEncompassing,
     SkillPrereq,
     build_fts5_query,
     new_build_id,
@@ -225,6 +226,52 @@ class SkillRepository:
                 (skill_id,),
             ).fetchall()
         return [SkillPrereq(*r) for r in rows]
+
+    def add_encompassing(self, skill_id: str, encompasses_skill_id: str, weight: float = 0.5) -> None:
+        with self.db.lock:
+            self.db.conn.execute(
+                "INSERT INTO skill_encompassings (skill_id, encompasses_skill_id, weight) "
+                "VALUES (?, ?, ?) ON CONFLICT(skill_id, encompasses_skill_id) DO UPDATE "
+                "SET weight = excluded.weight, created_at = datetime('now')",
+                (skill_id, encompasses_skill_id, weight),
+            )
+
+    def get_encompassings(self, skill_id: str) -> list:
+        """Get skills that this skill encompasses (advanced -> simpler)."""
+        with self.db.lock:
+            rows = self.db.conn.execute(
+                "SELECT skill_id, encompasses_skill_id, weight, created_at "
+                "FROM skill_encompassings WHERE skill_id = ?",
+                (skill_id,),
+            ).fetchall()
+        return [SkillEncompassing(
+            skill_id=r[0],
+            encompasses_skill_id=r[1],
+            weight=r[2],
+            created_at=r[3],
+        ) for r in rows]
+
+    def get_encompassing_parents(self, skill_id: str) -> list:
+        """Get skills that encompass this skill (reverse: simpler -> advanced)."""
+        with self.db.lock:
+            rows = self.db.conn.execute(
+                "SELECT skill_id, encompasses_skill_id, weight, created_at "
+                "FROM skill_encompassings WHERE encompasses_skill_id = ?",
+                (skill_id,),
+            ).fetchall()
+        return [SkillEncompassing(
+            skill_id=r[0],
+            encompasses_skill_id=r[1],
+            weight=r[2],
+            created_at=r[3],
+        ) for r in rows]
+
+    def delete_encompassing(self, skill_id: str, encompasses_skill_id: str) -> None:
+        with self.db.lock:
+            self.db.conn.execute(
+                "DELETE FROM skill_encompassings WHERE skill_id = ? AND encompasses_skill_id = ?",
+                (skill_id, encompasses_skill_id),
+            )
 
     def get_tree(self) -> dict:
         with self.db.lock:

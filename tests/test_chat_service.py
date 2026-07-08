@@ -719,7 +719,7 @@ def test_regen_study_plan_mastered_skill_triggers_regen(real_state, session_agen
     state.skills.upsert(skill2)
 
     # Skill 1 is mastered (crossed threshold)
-    ls1 = LearnerState(skill_id="k_regen_1", p_mastery=0.96)
+    ls1 = LearnerState(skill_id="k_regen_1", p_mastery=0.99)
     ls2 = LearnerState(skill_id="k_regen_2", p_mastery=0.3)
     state.learner_state.upsert(ls1)
     state.learner_state.upsert(ls2)

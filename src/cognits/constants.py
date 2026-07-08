@@ -123,7 +123,7 @@ RAG_WARM_TIMEOUT_S = 300
 RAG_WORKER_RLIMIT_GB = 3
 
 # --- Learner model ---
-MASTERY_THRESHOLD = 0.95
+MASTERY_THRESHOLD = 0.98
 
 # BKT parameters
 BKT_PRIOR_ALPHA = 1.0
@@ -144,6 +144,9 @@ MASTERY_DECAY_OVERDUE_FACTOR = 1.5
 # Skill defaults
 DEFAULT_SKILL_DIFFICULTY = 0.5
 SEEDING_CORRECTNESS = 0.85
+PROFICIENT_HIGH_P = 0.95  # upper bound for "proficient" level (was the old mastered threshold)
+STABILITY_MASTERED_MIN_DAYS = 21.0  # days of stability required for "mastered" status
+RETREAT_PREVENTATIVE_R = 0.80  # retrievability threshold for advisory review signal
 
 # --- Tool caps ---
 REPORT_TITLE_MAX_CHARS = 80

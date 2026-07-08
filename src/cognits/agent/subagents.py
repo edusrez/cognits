@@ -356,7 +356,7 @@ def skill_planner_config(
     registry.register(
         SkillTreeSave(skills=skills, assessment=assessment, session_id=session_id, emit=tool_emit, rag_engine=rag_engine)
     )
-    registry.register(UpdateMastery(learner_state=learner_state))
+    registry.register(UpdateMastery(learner_state=learner_state, skills=skills))
     registry.register(SeedMastery(learner_state=learner_state, skills=skills))
 
     researcher_max_steps = RESEARCHER_MAX_STEPS  # DEFAULT_RESEARCHER_MAX_STEPS in routes_chat
@@ -453,7 +453,7 @@ def skill_branch_builder_config(
     registry.register(
         SkillTreeSave(skills=skills, assessment=assessment, session_id=session_id, emit=tool_emit)
     )
-    registry.register(UpdateMastery(learner_state=learner_state))
+    registry.register(UpdateMastery(learner_state=learner_state, skills=skills))
     registry.register(SeedMastery(learner_state=learner_state, skills=skills))
 
     researcher_max_steps = RESEARCHER_MAX_STEPS
@@ -616,7 +616,7 @@ def evaluator_config(
     registry = Registry()
     if rag_engine is not None:
         registry.register(RagSearch(rag_engine, reports_repo=reports))
-    registry.register(UpdateMastery(learner_state=learner_state))
+    registry.register(UpdateMastery(learner_state=learner_state, skills=skills))
     registry.register(
         SkillTreeSave(skills=skills, assessment=assessment, session_id=session_id, rag_engine=rag_engine)
     )

@@ -130,13 +130,13 @@ def test_assess_advances_at_060_not_080():
 
 def test_wrap_up_still_requires_095():
     """At assessment with p_mastery 0.90 → should_advance returns False
-    (needs 0.95 to wrap up). At 0.96 → True."""
+    (needs 0.98 to wrap up). At 0.99 → True."""
     engine = PedagogyEngine()
     engine.stage = Stage.ASSESS
     engine.interactions = 1  # min for ASSESS
     assert engine.should_advance(0.90) is False
     engine.interactions = 1
-    assert engine.should_advance(0.96) is True
+    assert engine.should_advance(0.99) is True
 
 
 def test_retreat_triggers_on_mastery_drop(learner_state):

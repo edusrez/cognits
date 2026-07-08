@@ -2724,15 +2724,16 @@ def floor_store(tmp_path):
     from cognits.storage.learner_state import LearnerStateRepository
     from cognits.storage.messages import MessageRepository
     from cognits.storage.assessment import AssessmentItemRepository
+    from cognits.storage.reports import ReportRepository
 
     db = Database(tmp_path / "floor_test.db")
-    yield SkillRepository(db), LearnerStateRepository(db), MessageRepository(db), db, AssessmentItemRepository(db)
+    yield SkillRepository(db), LearnerStateRepository(db), MessageRepository(db), db, AssessmentItemRepository(db), ReportRepository(db)
     db.shutdown()
 
 
 def test_check_branch_floor_no_prereqs(floor_store):
     """Branch root with no prereqs → floor_confirmed: true immediately."""
-    skills, learner_state, messages, db, assessment = floor_store
+    skills, learner_state, messages, db, assessment, reports_repo = floor_store
     from cognits.agent.tool_floor import CheckBranchFloor
     from cognits.storage.models import Skill, new_skill_id
 
@@ -2754,7 +2755,7 @@ def test_check_branch_floor_no_prereqs(floor_store):
         llm_client=FakeLLM(),
         rag_engine=None,
         tf_client=FakeTF(),
-        reports=skills,
+        reports=reports_repo,
         assessment=assessment,
         session_id=lambda: "s_test",
     )
@@ -2770,9 +2771,9 @@ def test_check_branch_floor_no_prereqs(floor_store):
 def test_check_branch_floor_confirmed(floor_store):
     """Branch root with 2 prereqs, mock mastery_judge returns 'mastered'
     for both → floor_confirmed: true, expanded_skills: []."""
-    skills, learner_state, messages, db, assessment = floor_store
+    skills, learner_state, messages, db, assessment, reports_repo = floor_store
     from cognits.agent.tool_floor import CheckBranchFloor
-    from cognits.storage.models import Skill, new_skill_id
+    from cognits.storage.models import Skill, new_skill_id, LearnerState
 
     # Create 3 skills: root + 2 prereqs.
     root = Skill(id=new_skill_id(), domain="test", name="Root", source="test")
@@ -2782,6 +2783,11 @@ def test_check_branch_floor_confirmed(floor_store):
         skills.upsert(s)
     skills.add_edge(root.id, prereq_a.id, "prereq")
     skills.add_edge(root.id, prereq_b.id, "prereq")
+
+    # B2 auto-mastered gates: need LearnerState with p>=0.95, conf>=12, reps>=3.
+    for sid in (prereq_a.id, prereq_b.id):
+        learner_state.upsert(LearnerState(
+            skill_id=sid, p_mastery=0.99, alpha=11, beta=1, reps=3))
 
     class FakeLLM:
         async def aclose(self): pass
@@ -2797,7 +2803,7 @@ def test_check_branch_floor_confirmed(floor_store):
         llm_client=FakeLLM(),
         rag_engine=None,
         tf_client=FakeTF(),
-        reports=skills,
+        reports=reports_repo,
         assessment=assessment,
         session_id=lambda: "s_test",
     )
@@ -2820,9 +2826,9 @@ def test_check_branch_floor_confirmed(floor_store):
 def test_check_branch_floor_expands(floor_store):
     """Mock mastery_judge to return 'not_mastered' for 1 prereq
     → floor_confirmed: false, expanded_skills non-empty."""
-    skills, learner_state, messages, db, assessment = floor_store
+    skills, learner_state, messages, db, assessment, reports_repo = floor_store
     from cognits.agent.tool_floor import CheckBranchFloor
-    from cognits.storage.models import Skill, new_skill_id
+    from cognits.storage.models import Skill, new_skill_id, LearnerState
 
     root = Skill(id=new_skill_id(), domain="test", name="Root", source="test")
     prereq_a = Skill(id=new_skill_id(), domain="test", name="PrereqA", description="desc a", source="test")
@@ -2831,6 +2837,12 @@ def test_check_branch_floor_expands(floor_store):
         skills.upsert(s)
     skills.add_edge(root.id, prereq_a.id, "prereq")
     skills.add_edge(root.id, prereq_b.id, "prereq")
+
+    # B2 auto-mastered for prereq_a; intermediate for prereq_b (LLM path).
+    learner_state.upsert(LearnerState(
+        skill_id=prereq_a.id, p_mastery=0.99, alpha=11, beta=1, reps=3))
+    learner_state.upsert(LearnerState(
+        skill_id=prereq_b.id, p_mastery=0.3, alpha=2, beta=4, reps=1))
 
     class FakeLLM:
         async def aclose(self): pass
@@ -2846,7 +2858,7 @@ def test_check_branch_floor_expands(floor_store):
         llm_client=FakeLLM(),
         rag_engine=None,
         tf_client=FakeTF(),
-        reports=skills,
+        reports=reports_repo,
         assessment=assessment,
         session_id=lambda: "s_test",
     )
@@ -2896,7 +2908,7 @@ def test_check_branch_floor_expands(floor_store):
 def test_check_branch_floor_in_maestro_registry(floor_store):
     """Construct teacher_config with messages → check_branch_floor is
     in the tool registry."""
-    skills, learner_state, messages, db, assessment = floor_store
+    skills, learner_state, messages, db, assessment, reports_repo = floor_store
     from cognits.agent.subagents import teacher_config
 
     class FakeLLM:
@@ -2913,7 +2925,7 @@ def test_check_branch_floor_in_maestro_registry(floor_store):
         llm_client=FakeLLM(),
         rag_engine=None,
         tf_client=FakeTF(),
-        reports=skills,
+        reports=reports_repo,
         skills=skills,
         assessment=assessment,
         learner_state=learner_state,
@@ -2931,7 +2943,7 @@ def test_check_branch_floor_in_maestro_registry(floor_store):
 
 def test_check_branch_floor_missing_skill_id(floor_store):
     """Pass an unknown skill_id → returns JSON error."""
-    skills, learner_state, messages, db, assessment = floor_store
+    skills, learner_state, messages, db, assessment, reports_repo = floor_store
     from cognits.agent.tool_floor import CheckBranchFloor
 
     class FakeLLM:
@@ -2948,7 +2960,7 @@ def test_check_branch_floor_missing_skill_id(floor_store):
         llm_client=FakeLLM(),
         rag_engine=None,
         tf_client=FakeTF(),
-        reports=skills,
+        reports=reports_repo,
         assessment=assessment,
         session_id=lambda: "s_test",
     )
@@ -2982,9 +2994,9 @@ def test_check_branch_floor_prunes_mastered_subtree(floor_store):
     """A prereq judged mastered (confidence 85) with a sub-tree (2 deeper
     skills) → the sub-tree is pruned (delete_skill), the mastered prereq
     kept as a leaf. pruned_skills lists the 2 removed, pruned_count: 2."""
-    skills, learner_state, messages, db, assessment = floor_store
+    skills, learner_state, messages, db, assessment, reports_repo = floor_store
     from cognits.agent.tool_floor import CheckBranchFloor
-    from cognits.storage.models import Skill, new_skill_id
+    from cognits.storage.models import Skill, new_skill_id, LearnerState
 
     # Build: Root → PrereqA (mastered) → SubA1 → SubA2, plus PrereqB (mastered, no sub-tree)
     root = Skill(id=new_skill_id(), domain="test", name="Root", source="test")
@@ -3001,6 +3013,11 @@ def test_check_branch_floor_prunes_mastered_subtree(floor_store):
     skills.add_edge(prereq_a.id, sub_a1.id, "prereq")
     skills.add_edge(sub_a1.id, sub_a2.id, "prereq")
 
+    # B2 auto-mastered gates for both prereqs.
+    for sid in (prereq_a.id, prereq_b.id):
+        learner_state.upsert(LearnerState(
+            skill_id=sid, p_mastery=0.99, alpha=11, beta=1, reps=3))
+
     class FakeLLM:
         async def aclose(self): pass
         async def chat_completion_stream(self, *a, **kw): pass
@@ -3015,7 +3032,7 @@ def test_check_branch_floor_prunes_mastered_subtree(floor_store):
         llm_client=FakeLLM(),
         rag_engine=None,
         tf_client=FakeTF(),
-        reports=skills,
+        reports=reports_repo,
         assessment=assessment,
         session_id=lambda: "s_test",
     )
@@ -3058,7 +3075,7 @@ def test_check_branch_floor_prunes_mastered_subtree(floor_store):
 
 def test_check_branch_floor_no_prune_if_not_mastered(floor_store):
     """A prereq not_mastered → no pruning (only expansion, not shrink)."""
-    skills, learner_state, messages, db, assessment = floor_store
+    skills, learner_state, messages, db, assessment, reports_repo = floor_store
     from cognits.agent.tool_floor import CheckBranchFloor
     from cognits.storage.models import Skill, new_skill_id
 
@@ -3084,7 +3101,7 @@ def test_check_branch_floor_no_prune_if_not_mastered(floor_store):
         llm_client=FakeLLM(),
         rag_engine=None,
         tf_client=FakeTF(),
-        reports=skills,
+        reports=reports_repo,
         assessment=assessment,
         session_id=lambda: "s_test",
     )
@@ -3132,7 +3149,7 @@ def test_refocus_tree_tool_definition():
 
 def test_refocus_tree_in_maestro_registry(floor_store):
     """teacher_config has refocus_tree in the tool registry."""
-    skills, learner_state, messages, db, assessment = floor_store
+    skills, learner_state, messages, db, assessment, reports_repo = floor_store
     from cognits.agent.subagents import teacher_config
 
     class FakeLLM:
@@ -3149,7 +3166,7 @@ def test_refocus_tree_in_maestro_registry(floor_store):
         llm_client=FakeLLM(),
         rag_engine=None,
         tf_client=FakeTF(),
-        reports=skills,
+        reports=reports_repo,
         skills=skills,
         assessment=assessment,
         learner_state=learner_state,
@@ -3169,7 +3186,7 @@ def test_refocus_tree_in_maestro_registry(floor_store):
 def test_refocus_tree_executes(floor_store):
     """Mock the DeploySubagent (skill_planner) → refocus_tree returns
     {refocused: true, new_goal, summary}."""
-    skills, learner_state, messages, db, assessment = floor_store
+    skills, learner_state, messages, db, assessment, reports_repo = floor_store
     from cognits.agent.tool_refocus import RefocusTree
 
     class FakeLLM:
@@ -3186,7 +3203,7 @@ def test_refocus_tree_executes(floor_store):
         llm_client=FakeLLM(),
         rag_engine=None,
         tf_client=FakeTF(),
-        reports=skills,
+        reports=reports_repo,
         session_id=lambda: "s_test",
         emit=None,
         tinyfish_api_key="fake_key",
@@ -3220,7 +3237,7 @@ def test_refocus_tree_executes(floor_store):
 def test_refocus_tree_with_focus(floor_store):
     """refocus_tree with optional focus field passes it through to the
     skill_planner query."""
-    skills, learner_state, messages, db, assessment = floor_store
+    skills, learner_state, messages, db, assessment, reports_repo = floor_store
     from cognits.agent.tool_refocus import RefocusTree
 
     class FakeLLM:
@@ -3237,7 +3254,7 @@ def test_refocus_tree_with_focus(floor_store):
         llm_client=FakeLLM(),
         rag_engine=None,
         tf_client=FakeTF(),
-        reports=skills,
+        reports=reports_repo,
         session_id=lambda: "s_test",
         emit=None,
         tinyfish_api_key="fake_key",
