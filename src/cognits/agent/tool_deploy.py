@@ -111,7 +111,7 @@ class DeploySubagent(Tool):
     schema = {
         "type": "object",
         "properties": {
-            "type": {"type": "string", "enum": ["web_researcher", "directory_reader", "documentalist", "session_analyzer", "skill_branch_builder", "skill_planner", "study_planner", "evaluator"]},
+            "type": {"type": "string", "enum": ["web_researcher", "directory_reader", "documentalist", "session_analyzer", "skill_branch_builder", "skill_planner", "study_planner", "evaluator", "mastery_judge"]},
             "query": {"type": "string", "description": "Task description for the subagent"},
             "thoroughness": {
                 "type": "string",

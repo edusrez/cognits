@@ -108,6 +108,7 @@ FAVICON_URL_TEMPLATE = "https://icons.duckduckgo.com/ip3/{domain}.ico"
 
 # --- Agent subagent defaults ---
 EVALUATOR_MAX_STEPS = 100
+MASTERY_JUDGE_MAX_STEPS = 50
 STUDY_PLANNER_DEFAULT_STEPS = 10
 DOCUMENTALIST_MAX_STEPS = 50
 REFLECTION_REVISION_MAX_STEPS = 10
@@ -163,7 +164,7 @@ COMPACTION_PRESERVE_TURNS = 3     # keep last N user/assistant turns
 REFLECTION_MAX_ITERATIONS = 2
 
 # --- Internal subagents (reports not surfaced in chat) ---
-INTERNAL_SUBAGENTS: frozenset = frozenset({"evaluator", "session_analyzer", "session_namer"})
+INTERNAL_SUBAGENTS: frozenset = frozenset({"evaluator", "mastery_judge", "session_analyzer", "session_namer"})
 
 # --- Tool progress phrases ---
 TOOL_PHRASES: dict[str, str] = {
@@ -197,6 +198,7 @@ AGENT_LABELS: dict[str, str] = {
     "skill_planner": "Skill Planner",
     "study_planner": "Study Planner",
     "evaluator": "Evaluator",
+    "mastery_judge": "Mastery Judge",
     "teacher": "Teacher",
     "maestro": "Tutor",
     "system_support": "Support",

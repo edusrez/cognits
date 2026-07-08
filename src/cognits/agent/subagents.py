@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from cognits.agent.agent import AgentConfig, Emit
 from cognits.agent.agent_loader import load_agent_prompt
-from cognits.constants import DEFAULT_FLASH_MODEL, DEFAULT_MODEL, DOCUMENTALIST_MAX_STEPS, EVALUATOR_MAX_STEPS, FAVICON_URL_TEMPLATE, RESEARCHER_MAX_STEPS, BRANCH_BUILDER_MAX_STEPS
+from cognits.constants import DEFAULT_FLASH_MODEL, DEFAULT_MODEL, DOCUMENTALIST_MAX_STEPS, EVALUATOR_MAX_STEPS, FAVICON_URL_TEMPLATE, RESEARCHER_MAX_STEPS, BRANCH_BUILDER_MAX_STEPS, MASTERY_JUDGE_MAX_STEPS
 from cognits.agent.tool_rag import RagSearch
 from cognits.llm.deepseek import DeepSeekClient
 from cognits.tinyfish import TinyfishClient, TinyfishError
@@ -108,6 +108,34 @@ def session_analyzer_config(
         temperature=temperature,
         top_p=top_p,
         system_prompt=load_agent_prompt("session_analyzer"),
+        tools=None,
+        internal=True,
+    )
+
+
+def mastery_judge_config(
+    model: str = DEFAULT_MODEL,
+    reasoning: str = "max",
+    max_steps: int = MASTERY_JUDGE_MAX_STEPS,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+) -> AgentConfig:
+    """Build the mastery_judge subagent config.
+
+    Single-turn estimator that judges whether a learner has mastered a
+    specific skill based on their profile + chat history. Uses NO tools.
+    Internal subagent (no chat cards, like evaluator).
+    """
+    return AgentConfig(
+        name="mastery_judge",
+        model=model,
+        reasoning=reasoning,
+        max_steps=max_steps,
+        max_tokens=max_tokens,
+        temperature=temperature if temperature is not None else 0.0,
+        top_p=top_p,
+        system_prompt=load_agent_prompt("mastery_judge"),
         tools=None,
         internal=True,
     )
@@ -648,9 +676,10 @@ def teacher_config(
     skills,
     assessment,
     learner_state,
-    pedagogy,
-    session_id,
-    emit: Emit,
+    messages=None,
+    pedagogy=None,
+    session_id=None,
+    emit: Emit = None,
     max_tokens: int | None = None,
     temperature: float | None = None,
     top_p: float | None = None,
@@ -661,8 +690,10 @@ def teacher_config(
     """Build the Teacher (Maestro) subagent config.
 
     Deployed as the main agent of a learning session (agent_id = 'maestro').
-    Tools: DeploySubagent with documentalist + evaluator subagents."""
+    Tools: DeploySubagent with documentalist + evaluator subagents,
+    plus CheckBranchFloor for per-branch floor discovery."""
     from cognits.agent.tool_deploy import DeploySubagent
+    from cognits.agent.tool_floor import CheckBranchFloor
 
     doc_cfg: dict | None = None
     if tf_client is not None:
@@ -696,6 +727,24 @@ def teacher_config(
             suspended_subagents=suspended_subagents,
         )
     )
+
+    # Wire CheckBranchFloor when messages repo is available.
+    if messages is not None:
+        registry.register(
+            CheckBranchFloor(
+                skills=skills,
+                learner_state=learner_state,
+                messages=messages,
+                llm_client=llm_client,
+                rag_engine=rag_engine,
+                tf_client=tf_client,
+                reports=reports,
+                assessment=assessment,
+                session_id=session_id,
+                emit=emit,
+                tinyfish_api_key=tinyfish_api_key,
+            )
+        )
 
     return AgentConfig(
         name="maestro",

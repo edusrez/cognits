@@ -5,6 +5,7 @@ from cognits.agent.agent_loader import load_agent_prompt
 DIRECTORY_READER_SYSTEM_PROMPT = load_agent_prompt("directory_reader")
 DOCUMENTALIST_SYSTEM_PROMPT = load_agent_prompt("documentalist")
 EVALUATOR_SYSTEM_PROMPT = load_agent_prompt("evaluator")
+MASTERY_JUDGE_SYSTEM_PROMPT = load_agent_prompt("mastery_judge")
 RESEARCHER_SYSTEM_PROMPT = load_agent_prompt("web_researcher")
 SESSION_NAMER_SYSTEM_PROMPT = load_agent_prompt("session_namer")
 SESSION_ANALYZER_SYSTEM_PROMPT = load_agent_prompt("session_analyzer")
@@ -59,6 +60,10 @@ DEFAULT_AGENTS = [
     {
         "id": "maestro",
         "systemPrompt": TEACHER_SYSTEM_PROMPT,
+    },
+    {
+        "id": "mastery_judge",
+        "systemPrompt": MASTERY_JUDGE_SYSTEM_PROMPT,
     },
     {
         "id": "system_support",

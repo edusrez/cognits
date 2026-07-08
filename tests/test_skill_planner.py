@@ -2265,3 +2265,298 @@ def test_validate_tree_keeps_other_checks(store):
     # skills_needing_items should list bid
     assert "skills_needing_items" in data
     assert bid in data["skills_needing_items"]
+
+
+# ------------------------------------------------------------------
+# Fase B — Living Tree: mastery_judge + check_branch_floor tests
+# ------------------------------------------------------------------
+
+
+def test_mastery_judge_config():
+    """Construct mastery_judge_config — internal=True, no tools, max_steps=50."""
+    from cognits.agent.subagents import mastery_judge_config
+
+    cfg = mastery_judge_config()
+    assert cfg.name == "mastery_judge"
+    assert cfg.internal is True
+    assert cfg.tools is None
+    assert cfg.max_steps == 50
+
+
+def test_deploy_enum_includes_mastery_judge():
+    """The deploy_subagent schema enum includes 'mastery_judge'."""
+    from cognits.agent.tool_deploy import DeploySubagent
+
+    assert "mastery_judge" in DeploySubagent.schema["properties"]["type"]["enum"]
+
+
+def test_subagent_labels_includes_mastery_judge():
+    from cognits.constants import AGENT_LABELS
+
+    assert AGENT_LABELS.get("mastery_judge") == "Mastery Judge"
+
+
+def test_mastery_judge_in_default_agents():
+    from cognits.agent.prompts import DEFAULT_AGENTS
+
+    ids = [a["id"] for a in DEFAULT_AGENTS]
+    assert "mastery_judge" in ids
+
+
+# --- CheckBranchFloor tool-level tests --------------------------------
+
+
+@pytest.fixture
+def floor_store(tmp_path):
+    from cognits.storage.database import Database
+    from cognits.storage.skills import SkillRepository
+    from cognits.storage.learner_state import LearnerStateRepository
+    from cognits.storage.messages import MessageRepository
+    from cognits.storage.assessment import AssessmentItemRepository
+
+    db = Database(tmp_path / "floor_test.db")
+    yield SkillRepository(db), LearnerStateRepository(db), MessageRepository(db), db, AssessmentItemRepository(db)
+    db.shutdown()
+
+
+def test_check_branch_floor_no_prereqs(floor_store):
+    """Branch root with no prereqs → floor_confirmed: true immediately."""
+    skills, learner_state, messages, db, assessment = floor_store
+    from cognits.agent.tool_floor import CheckBranchFloor
+    from cognits.storage.models import Skill, new_skill_id
+
+    # Create a skill with no prereqs.
+    s = Skill(id=new_skill_id(), domain="test", name="RootSkill", source="test")
+    skills.upsert(s)
+
+    class FakeLLM:
+        async def aclose(self): pass
+        async def chat_completion_stream(self, *a, **kw): pass
+
+    class FakeTF:
+        async def aclose(self): pass
+
+    tool = CheckBranchFloor(
+        skills=skills,
+        learner_state=learner_state,
+        messages=messages,
+        llm_client=FakeLLM(),
+        rag_engine=None,
+        tf_client=FakeTF(),
+        reports=skills,
+        assessment=assessment,
+        session_id=lambda: "s_test",
+    )
+
+    result = asyncio.run(tool.execute(json.dumps({"skill_id": s.id})))
+    data = json.loads(result)
+    assert data["floor_confirmed"] is True
+    assert data["prereqs_checked"] == []
+    assert data["expanded_skills"] == []
+    assert data["expanded_count"] == 0
+
+
+def test_check_branch_floor_confirmed(floor_store):
+    """Branch root with 2 prereqs, mock mastery_judge returns 'mastered'
+    for both → floor_confirmed: true, expanded_skills: []."""
+    skills, learner_state, messages, db, assessment = floor_store
+    from cognits.agent.tool_floor import CheckBranchFloor
+    from cognits.storage.models import Skill, new_skill_id
+
+    # Create 3 skills: root + 2 prereqs.
+    root = Skill(id=new_skill_id(), domain="test", name="Root", source="test")
+    prereq_a = Skill(id=new_skill_id(), domain="test", name="PrereqA", description="Prereq A desc", source="test")
+    prereq_b = Skill(id=new_skill_id(), domain="test", name="PrereqB", description="Prereq B desc", source="test")
+    for s in (root, prereq_a, prereq_b):
+        skills.upsert(s)
+    skills.add_edge(root.id, prereq_a.id, "prereq")
+    skills.add_edge(root.id, prereq_b.id, "prereq")
+
+    class FakeLLM:
+        async def aclose(self): pass
+        async def chat_completion_stream(self, *a, **kw): pass
+
+    class FakeTF:
+        async def aclose(self): pass
+
+    tool = CheckBranchFloor(
+        skills=skills,
+        learner_state=learner_state,
+        messages=messages,
+        llm_client=FakeLLM(),
+        rag_engine=None,
+        tf_client=FakeTF(),
+        reports=skills,
+        assessment=assessment,
+        session_id=lambda: "s_test",
+    )
+
+    # Override _deploy_mastery_judge to return Mastered for all.
+    async def mock_deploy_mj(query):
+        return {"mastery": "mastered", "confidence": 90, "reasoning": "profile says so"}
+
+    tool._deploy_mastery_judge = mock_deploy_mj
+
+    result = asyncio.run(tool.execute(json.dumps({"skill_id": root.id})))
+    data = json.loads(result)
+    assert data["floor_confirmed"] is True
+    assert len(data["prereqs_checked"]) == 2
+    assert all(pc["mastery"] == "mastered" for pc in data["prereqs_checked"])
+    assert data["expanded_skills"] == []
+    assert data["expanded_count"] == 0
+
+
+def test_check_branch_floor_expands(floor_store):
+    """Mock mastery_judge to return 'not_mastered' for 1 prereq
+    → floor_confirmed: false, expanded_skills non-empty."""
+    skills, learner_state, messages, db, assessment = floor_store
+    from cognits.agent.tool_floor import CheckBranchFloor
+    from cognits.storage.models import Skill, new_skill_id
+
+    root = Skill(id=new_skill_id(), domain="test", name="Root", source="test")
+    prereq_a = Skill(id=new_skill_id(), domain="test", name="PrereqA", description="desc a", source="test")
+    prereq_b = Skill(id=new_skill_id(), domain="test", name="PrereqB", description="desc b", source="test")
+    for s in (root, prereq_a, prereq_b):
+        skills.upsert(s)
+    skills.add_edge(root.id, prereq_a.id, "prereq")
+    skills.add_edge(root.id, prereq_b.id, "prereq")
+
+    class FakeLLM:
+        async def aclose(self): pass
+        async def chat_completion_stream(self, *a, **kw): pass
+
+    class FakeTF:
+        async def aclose(self): pass
+
+    tool = CheckBranchFloor(
+        skills=skills,
+        learner_state=learner_state,
+        messages=messages,
+        llm_client=FakeLLM(),
+        rag_engine=None,
+        tf_client=FakeTF(),
+        reports=skills,
+        assessment=assessment,
+        session_id=lambda: "s_test",
+    )
+
+    call_count = {"mj": 0}
+
+    async def mock_deploy_mj(query):
+        call_count["mj"] += 1
+        if "PrereqB" in query:
+            return {"mastery": "not_mastered", "confidence": 100, "reasoning": "no evidence"}
+        return {"mastery": "mastered", "confidence": 90, "reasoning": "profile says so"}
+
+    tool._deploy_mastery_judge = mock_deploy_mj
+
+    # Override _deploy.execute to simulate a branch_builder that adds a new skill.
+    async def mock_deploy_exec(raw_args):
+        parsed = json.loads(raw_args)
+        sub_type = parsed.get("type", "")
+        if sub_type == "skill_branch_builder":
+            # Simulate adding a new skill under the prereq_b branch.
+            new_sid = new_skill_id()
+            new_skill = Skill(
+                id=new_sid, domain="test", name="PrereqB_Sub",
+                description="sub skill", source="test",
+                parent_skill_id=prereq_b.id,
+            )
+            await asyncio.to_thread(skills.upsert, new_skill)
+            return json.dumps({"reportId": "r_test", "title": "branch built", "content": "expanded", "summary": "ok"})
+        return json.dumps({"error": "unknown subagent type"})
+
+    tool._deploy.execute = mock_deploy_exec
+
+    result = asyncio.run(tool.execute(json.dumps({"skill_id": root.id})))
+    data = json.loads(result)
+    assert data["floor_confirmed"] is False
+    assert len(data["prereqs_checked"]) == 2
+    # One mastered, one not_mastered.
+    mastered = [pc for pc in data["prereqs_checked"] if pc["mastery"] == "mastered"]
+    not_mastered = [pc for pc in data["prereqs_checked"] if pc["mastery"] == "not_mastered"]
+    assert len(mastered) == 1
+    assert len(not_mastered) == 1
+    assert not_mastered[0]["name"] == "PrereqB"
+    assert data["expanded_count"] >= 1
+    assert len(data["expanded_skills"]) >= 1
+
+
+def test_check_branch_floor_in_maestro_registry(floor_store):
+    """Construct teacher_config with messages → check_branch_floor is
+    in the tool registry."""
+    skills, learner_state, messages, db, assessment = floor_store
+    from cognits.agent.subagents import teacher_config
+
+    class FakeLLM:
+        async def aclose(self): pass
+        async def chat_completion_stream(self, *a, **kw): pass
+
+    class FakeTF:
+        async def aclose(self): pass
+
+    cfg = teacher_config(
+        model="deepseek-v4-pro",
+        reasoning="enabled",
+        max_steps=100,
+        llm_client=FakeLLM(),
+        rag_engine=None,
+        tf_client=FakeTF(),
+        reports=skills,
+        skills=skills,
+        assessment=assessment,
+        learner_state=learner_state,
+        messages=messages,
+        pedagogy=None,
+        session_id=lambda: "s_test",
+        emit=lambda ev: None,
+        tinyfish_api_key="fake_key",
+    )
+    assert cfg.name == "maestro"
+    tool_names = set(cfg.tools._tools.keys())
+    assert "check_branch_floor" in tool_names
+    assert "deploy_subagent" in tool_names
+
+
+def test_check_branch_floor_missing_skill_id(floor_store):
+    """Pass an unknown skill_id → returns JSON error."""
+    skills, learner_state, messages, db, assessment = floor_store
+    from cognits.agent.tool_floor import CheckBranchFloor
+
+    class FakeLLM:
+        async def aclose(self): pass
+        async def chat_completion_stream(self, *a, **kw): pass
+
+    class FakeTF:
+        async def aclose(self): pass
+
+    tool = CheckBranchFloor(
+        skills=skills,
+        learner_state=learner_state,
+        messages=messages,
+        llm_client=FakeLLM(),
+        rag_engine=None,
+        tf_client=FakeTF(),
+        reports=skills,
+        assessment=assessment,
+        session_id=lambda: "s_test",
+    )
+
+    result = asyncio.run(tool.execute(json.dumps({"skill_id": "k_nonexistent"})))
+    data = json.loads(result)
+    assert "error" in data
+
+
+def test_mastery_judge_in_internal_subagents():
+    from cognits.constants import INTERNAL_SUBAGENTS
+
+    assert "mastery_judge" in INTERNAL_SUBAGENTS
+
+
+def test_mastery_judge_prompt_loads(store):
+    """The mastery_judge persona loads via agent_loader."""
+    from cognits.agent.agent_loader import load_agent_prompt
+
+    prompt = load_agent_prompt("mastery_judge")
+    assert "mastery_judge" in prompt.lower()
+    assert "JSON" in prompt
