@@ -363,20 +363,15 @@ def _audit(db_path: Path, objective: str = "") -> int:
         root_pct = (len(roots) / skills_n * 100) if skills_n else 0
         ratio = edges_n / skills_n if skills_n else 0
         print(f"\n--- Connectivity ---")
-        print(f"  Edges/skill ratio: {ratio:.2f} (target 1.5-2.0)")
+        print(f"  Edges/skill ratio: {ratio:.2f} (target ≥0.8, no hard upper limit per SOTA)")
         print(f"  Roots: {len(roots)}/{skills_n} ({root_pct:.1f}%)")
-        if ratio < 1.5:
+        if ratio < 0.8:
             _warn(
-                f"Edges/skill ratio {ratio:.2f} below 1.5 (sparse tree)",
-                "edges_ratio",
-            )
-        elif ratio > 2.0:
-            _warn(
-                f"Edges/skill ratio {ratio:.2f} above 2.0 (may be over-connected)",
+                f"Edges/skill ratio {ratio:.2f} below 0.8 (very sparse tree)",
                 "edges_ratio",
             )
         else:
-            _ok(f"Edges/skill ratio {ratio:.2f} in [1.5, 2.0]", "edges_ratio")
+            _ok(f"Edges/skill ratio {ratio:.2f} ≥ 0.8", "edges_ratio")
 
         print(f"  Roots (floor breadth): {len(roots)}/{skills_n} ({root_pct:.1f}%) \u2014 "
               f"roots = learner's floor; broad floor = many roots, correct for top-down goal-directed generation")
@@ -431,6 +426,164 @@ def _audit(db_path: Path, objective: str = "") -> int:
         else:
             print(f"  CYCLE: {cycle_nodes}")
             _flag(f"Cycle detected involving: {cycle_nodes}", "cycles")
+
+        # ---------------------------------------------------------------
+        # SOTA quality checks (bottleneck, bloom coverage, goal relevance,
+        # transitive redundancy, naming specificity)
+        # ---------------------------------------------------------------
+
+        # ── Bottleneck detection ──
+        bottleneck_rows = conn.execute(
+            "SELECT prereq_id, COUNT(*) as cnt FROM skill_prerequisites "
+            "WHERE skill_id IS NOT NULL AND edge_type IN ('prereq','alt_prereq') "
+            "GROUP BY prereq_id HAVING cnt > 8"
+        ).fetchall()
+        bottleneck_names: list[str] = []
+        for pid, cnt in bottleneck_rows:
+            name_row = conn.execute(
+                "SELECT name FROM skills WHERE id=?", (pid,)
+            ).fetchone()
+            name = name_row[0] if name_row else "?"
+            bottleneck_names.append(f"'{name}' ({cnt} incoming)")
+        has_bottleneck = len(bottleneck_names) > 0
+        print(f"\n--- Bottleneck check ---")
+        if has_bottleneck:
+            print(f"  BOTTLENECK: {', '.join(bottleneck_names)}")
+            _warn(f"Bottleneck skills: {', '.join(bottleneck_names)}", "bottleneck")
+        else:
+            print("  No bottlenecks (all ≤ 8 incoming)")
+            _ok("No bottleneck skills (>8 incoming prereqs)", "bottleneck")
+
+        # ── Bloom coverage ──
+        # Reuse bloom_lookup from earlier Bloom distribution section.
+        bloom_levels_present = sum(1 for n in bloom_lookup.values() if n > 0)
+        bloom_ok = bloom_levels_present >= 4
+        print(f"\n--- Bloom coverage ---")
+        print(f"  {bloom_levels_present}/6 Bloom levels represented")
+        if bloom_ok:
+            _ok(f"{bloom_levels_present}/6 Bloom levels represented", "bloom_coverage")
+        else:
+            _warn(
+                f"Only {bloom_levels_present}/6 Bloom levels represented (diversity low)",
+                "bloom_coverage",
+            )
+
+        # ── Goal relevance ──
+        goal_skill_ids = set(
+            r[0] for r in conn.execute(
+                "SELECT id FROM skills "
+                "WHERE id NOT IN (SELECT DISTINCT prereq_id FROM skill_prerequisites "
+                "WHERE skill_id IS NOT NULL AND edge_type IN ('prereq','alt_prereq')) "
+                "AND id IN (SELECT DISTINCT skill_id FROM skill_prerequisites "
+                "WHERE skill_id IS NOT NULL AND edge_type IN ('prereq','alt_prereq'))"
+            ).fetchall()
+        )
+        goal_skill_id = next(iter(goal_skill_ids)) if goal_skill_ids else None
+        goal_reachable_count = 0
+        goal_relevance_pct = 0.0
+        if goal_skill_id is not None:
+            fwd_adj: dict[str, list[str]] = {}
+            for r in conn.execute(
+                "SELECT skill_id, prereq_id FROM skill_prerequisites "
+                "WHERE skill_id IS NOT NULL AND edge_type IN ('prereq','alt_prereq')"
+            ).fetchall():
+                fwd_adj.setdefault(r[0], []).append(r[1])
+            visited = set()
+            queue = [goal_skill_id]
+            visited.add(goal_skill_id)
+            while queue:
+                node = queue.pop(0)
+                for prereq in fwd_adj.get(node, []):
+                    if prereq not in visited:
+                        visited.add(prereq)
+                        queue.append(prereq)
+            goal_reachable_count = len(visited)
+            goal_relevance_pct = (goal_reachable_count / skills_n * 100) if skills_n else 0
+        print(f"\n--- Goal relevance ---")
+        if goal_skill_id is None:
+            print("  No goal skill — cannot compute")
+            _warn("No goal skill resolved — cannot compute relevance", "goal_relevance")
+        else:
+            print(f"  {goal_relevance_pct:.1f}% ({goal_reachable_count}/{skills_n}) skills on goal path")
+            if goal_relevance_pct < 25:
+                _flag(
+                    f"Only {goal_relevance_pct:.1f}% of skills on goal path",
+                    "goal_relevance",
+                )
+            elif goal_relevance_pct < 50:
+                _warn(
+                    f"Only {goal_relevance_pct:.1f}% of skills on goal path",
+                    "goal_relevance",
+                )
+            else:
+                _ok(
+                    f"{goal_relevance_pct:.1f}% of skills on goal path",
+                    "goal_relevance",
+                )
+
+        # ── Transitive redundancy ──
+        trans_adj: dict[str, set[str]] = {}
+        all_edges: list[tuple[str, str]] = []
+        for r in conn.execute(
+            "SELECT skill_id, prereq_id FROM skill_prerequisites "
+            "WHERE skill_id IS NOT NULL AND edge_type IN ('prereq','alt_prereq')"
+        ).fetchall():
+            sid, pid = r[0], r[1]
+            trans_adj.setdefault(sid, set()).add(pid)
+            all_edges.append((sid, pid))
+        redundant_count = 0
+        for sid, pid in all_edges:
+            other_prereqs = trans_adj.get(sid, set()) - {pid}
+            found = False
+            for k in other_prereqs:
+                visited_bfs: set[str] = set()
+                queue_bfs = [k]
+                visited_bfs.add(k)
+                while queue_bfs and not found:
+                    node = queue_bfs.pop(0)
+                    if node == pid:
+                        found = True
+                        break
+                    for neighbor in trans_adj.get(node, set()):
+                        if neighbor not in visited_bfs:
+                            visited_bfs.add(neighbor)
+                            queue_bfs.append(neighbor)
+                if found:
+                    break
+            if found:
+                redundant_count += 1
+        redundant_pct = (redundant_count / len(all_edges) * 100) if all_edges else 0
+        print(f"\n--- Transitive redundancy ---")
+        print(f"  {redundant_pct:.1f}% redundant edges ({redundant_count}/{edges_n})")
+        if redundant_pct > 10:
+            _warn(
+                f"{redundant_pct:.1f}% redundant edges (>10%)",
+                "transitive_redundancy",
+            )
+        else:
+            _ok(
+                f"{redundant_pct:.1f}% redundant edges (≤10%)",
+                "transitive_redundancy",
+            )
+
+        # ── Naming specificity ──
+        generic_count = 0
+        for r in conn.execute("SELECT name FROM skills").fetchall():
+            if len(r[0].split()) <= 2:
+                generic_count += 1
+        generic_name_pct = (generic_count / skills_n * 100) if skills_n else 0
+        print(f"\n--- Naming specificity ---")
+        print(f"  {generic_name_pct:.1f}% skills with ≤2-word names ({generic_count}/{skills_n})")
+        if generic_name_pct > 20:
+            _warn(
+                f"{generic_name_pct:.1f}% of skill names are too generic (≤2 words)",
+                "naming_specificity",
+            )
+        else:
+            _ok(
+                f"{generic_name_pct:.1f}% generic names (≤20%)",
+                "naming_specificity",
+            )
 
         # ---------------------------------------------------------------
         # Reports
@@ -515,7 +668,7 @@ def _audit(db_path: Path, objective: str = "") -> int:
              "PASS" if frontier_ok else "FAIL"),
             ("Edges/skill ratio",
              f"{ratio:.2f}",
-             "PASS" if 1.5 <= ratio <= 2.0 else "WARN"),
+             "PASS" if ratio >= 0.8 else "WARN"),
             ("Roots (floor breadth)",
              f"{len(roots)} ({root_pct:.1f}%)",
              "NOTE"),
@@ -525,6 +678,21 @@ def _audit(db_path: Path, objective: str = "") -> int:
             ("Acyclic",
              "acyclic" if acyclic else "CYCLE",
              "PASS" if acyclic else "FAIL"),
+            ("Bottleneck (>8 incoming)",
+             "found" if has_bottleneck else "none",
+             "WARN" if has_bottleneck else "PASS"),
+            ("Bloom coverage (≥4/6)",
+             f"{bloom_levels_present}/6",
+             "PASS" if bloom_ok else "WARN"),
+            ("Goal relevance",
+             f"{goal_relevance_pct:.1f}%" if goal_skill_id else "N/A",
+             "FAIL" if goal_skill_id and goal_relevance_pct < 25 else ("WARN" if goal_skill_id and goal_relevance_pct < 50 else ("PASS" if goal_skill_id else "NOTE"))),
+            ("Transitive redundancy",
+             f"{redundant_pct:.1f}%",
+             "WARN" if redundant_pct > 10 else "PASS"),
+            ("Naming specificity",
+             f"{generic_name_pct:.1f}% generic",
+             "WARN" if generic_name_pct > 20 else "PASS"),
             ("Report chunks",
              f"{chunks_n}",
              "PASS" if chunks_n > 0 else "WARN"),

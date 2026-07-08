@@ -607,6 +607,100 @@ class SkillTreeSave(Tool):
                     except (json.JSONDecodeError, TypeError):
                         pass
 
+                # --- Bottleneck check (SOTA: fan-out limits) ---
+                bottleneck_rows = conn.execute(
+                    "SELECT prereq_id, COUNT(*) as cnt FROM skill_prerequisites "
+                    "WHERE skill_id IS NOT NULL AND edge_type IN ('prereq','alt_prereq') "
+                    "GROUP BY prereq_id HAVING cnt > 8"
+                ).fetchall()
+                bottleneck_skills: list[dict] = []
+                for pid, cnt in bottleneck_rows:
+                    name_row = conn.execute(
+                        "SELECT name FROM skills WHERE id=?", (pid,)
+                    ).fetchone()
+                    name = name_row[0] if name_row else "?"
+                    bottleneck_skills.append({"skill_id": pid, "name": name, "incoming_edges": cnt})
+
+                # --- Bloom coverage (SOTA: all 6 levels represented) ---
+                bloom_levels_present = sum(
+                    1 for n in (remember_n, understand_n, apply_n, analyze_n, evaluate_n, create_n)
+                    if n > 0
+                )
+
+                # --- Goal relevance (SOTA: % skills on goal path) ---
+                goal_skill_ids = set(
+                    r[0] for r in conn.execute(
+                        "SELECT id FROM skills WHERE status='active' "
+                        "AND id NOT IN (SELECT DISTINCT prereq_id FROM skill_prerequisites "
+                        "WHERE skill_id IS NOT NULL AND edge_type IN ('prereq','alt_prereq')) "
+                        "AND id IN (SELECT DISTINCT skill_id FROM skill_prerequisites "
+                        "WHERE skill_id IS NOT NULL AND edge_type IN ('prereq','alt_prereq'))"
+                    ).fetchall()
+                )
+                goal_skill_id = next(iter(goal_skill_ids)) if goal_skill_ids else None
+                goal_reachable_count = 0
+                goal_relevance_pct = 0.0
+                if goal_skill_id is not None:
+                    fwd_adj: dict[str, list[str]] = {}
+                    for r in conn.execute(
+                        "SELECT skill_id, prereq_id FROM skill_prerequisites "
+                        "WHERE skill_id IS NOT NULL AND edge_type IN ('prereq','alt_prereq')"
+                    ).fetchall():
+                        fwd_adj.setdefault(r[0], []).append(r[1])
+                    visited = set()
+                    queue = [goal_skill_id]
+                    visited.add(goal_skill_id)
+                    while queue:
+                        node = queue.pop(0)
+                        for prereq in fwd_adj.get(node, []):
+                            if prereq not in visited:
+                                visited.add(prereq)
+                                queue.append(prereq)
+                    goal_reachable_count = len(visited)
+                    goal_relevance_pct = (goal_reachable_count / skills_n * 100) if skills_n else 0
+
+                # --- Transitive redundancy (SOTA: no redundant edges) ---
+                trans_adj: dict[str, set[str]] = {}
+                all_edges: list[tuple[str, str]] = []
+                for r in conn.execute(
+                    "SELECT skill_id, prereq_id FROM skill_prerequisites "
+                    "WHERE skill_id IS NOT NULL AND edge_type IN ('prereq','alt_prereq')"
+                ).fetchall():
+                    sid, pid = r[0], r[1]
+                    trans_adj.setdefault(sid, set()).add(pid)
+                    all_edges.append((sid, pid))
+                redundant_count = 0
+                for sid, pid in all_edges:
+                    other_prereqs = trans_adj.get(sid, set()) - {pid}
+                    found = False
+                    for k in other_prereqs:
+                        visited_bfs: set[str] = set()
+                        queue_bfs = [k]
+                        visited_bfs.add(k)
+                        while queue_bfs and not found:
+                            node = queue_bfs.pop(0)
+                            if node == pid:
+                                found = True
+                                break
+                            for neighbor in trans_adj.get(node, set()):
+                                if neighbor not in visited_bfs:
+                                    visited_bfs.add(neighbor)
+                                    queue_bfs.append(neighbor)
+                        if found:
+                            break
+                    if found:
+                        redundant_count += 1
+                redundant_pct = (redundant_count / len(all_edges) * 100) if all_edges else 0
+
+                # --- Naming specificity (SOTA: too-generic names) ---
+                generic_count = 0
+                for r in conn.execute(
+                    "SELECT name FROM skills WHERE status='active'"
+                ).fetchall():
+                    if len(r[0].split()) <= 2:
+                        generic_count += 1
+                generic_name_pct = (generic_count / skills_n * 100) if skills_n else 0
+
             return {
                 "skills_n": skills_n,
                 "edges_n": edges_n,
@@ -633,6 +727,15 @@ class SkillTreeSave(Tool):
                 "low_quality_skill_ids": list(low_quality_skill_ids_set),
                 "targets": targets,
                 "max_depth": max_depth_val,
+                "bottleneck_skills": bottleneck_skills,
+                "bloom_levels_present": bloom_levels_present,
+                "goal_skill_id": goal_skill_id,
+                "goal_reachable_count": goal_reachable_count,
+                "goal_relevance_pct": goal_relevance_pct,
+                "redundant_edges": redundant_count,
+                "redundant_pct": redundant_pct,
+                "generic_name_count": generic_count,
+                "generic_name_pct": generic_name_pct,
             }
 
         result = await asyncio.to_thread(_audit)
@@ -850,40 +953,31 @@ class SkillTreeSave(Tool):
                 "target": "100%",
             })
 
-        # connectivity (orphans + density)
+        # connectivity (orphans + density) — density softened per SOTA: no hard target
         orphan_count = len(result["orphan_ids"])
         if orphan_count > 0:
             gaps.append({
                 "criterion": "connectivity_orphans",
                 "severity": "FAIL",
                 "current": f"{orphan_count} orphans, {result['ratio']:.2f} ed/skill",
-                "target": "0 orphans, \u22651.2 ed/skill min (\u22651.5 ideal)",
+                "target": "0 orphans",
                 "fix_hint": "Add a prereq edge (add_edge) to each orphan skill in orphan_skills \u2014 connect it to a logical prerequisite",
             })
             all_pass = False
-        elif result["ratio"] < 1.2:
-            gaps.append({
-                "criterion": "connectivity_density",
-                "severity": "FAIL",
-                "current": f"{result['ratio']:.2f} ed/skill",
-                "target": "\u22651.2 ed/skill min (\u22651.5 ideal)",
-                "fix_hint": f"Add more prereq edges \u2014 skills should have 2+ prerequisites where logical (convergent structure). Current ratio {result['ratio']:.2f}.",
-            })
-            all_pass = False
-        elif result["ratio"] < 1.5:
+        elif result["ratio"] < 0.8:
             gaps.append({
                 "criterion": "connectivity_density",
                 "severity": "WARN",
                 "current": f"{result['ratio']:.2f} ed/skill",
-                "target": "\u22651.2 ed/skill min (\u22651.5 ideal)",
-                "fix_hint": "Add more prerequisite edges to increase connectivity",
+                "target": "\u22650.8 ed/skill (very sparse only)",
+                "fix_hint": f"Add more prereq edges \u2014 skills should have 2+ prerequisites where logical (convergent structure). Current ratio {result['ratio']:.2f}.",
             })
         else:
             gaps.append({
                 "criterion": "connectivity_density",
                 "severity": "PASS",
                 "current": f"0 orphans, {result['ratio']:.2f} ed/skill",
-                "target": "0 orphans, \u22651.2 ed/skill min (\u22651.5 ideal)",
+                "target": "\u22650.8 ed/skill",
             })
 
         # acyclic
@@ -967,6 +1061,118 @@ class SkillTreeSave(Tool):
                 "severity": "PASS",
                 "current": f"{seeded} seeded skills, max={max_seeded:.2f}" if seeded > 0 else "no seeded skills",
                 "target": "at least one seeded skill \u22650.75 when seeding is used",
+            })
+
+        # bottleneck (SOTA: fan-out limits, Math Academy ~5 avg)
+        bottleneck = result["bottleneck_skills"]
+        if bottleneck:
+            names = ", ".join(
+                f"'{b['name']}' ({b['incoming_edges']} incoming)" for b in bottleneck
+            )
+            gaps.append({
+                "criterion": "bottleneck",
+                "severity": "WARN",
+                "current": names,
+                "target": "\u22648 incoming prereq edges per skill",
+                "fix_hint": "Skills with >8 incoming prereqs are chokepoints. Split or redistribute prereq edges.",
+            })
+        else:
+            gaps.append({
+                "criterion": "bottleneck",
+                "severity": "PASS",
+                "current": "no bottlenecks",
+                "target": "\u22648 incoming prereq edges per skill",
+            })
+
+        # bloom_coverage (SOTA: all 6 levels represented)
+        bloom_covered = result["bloom_levels_present"]
+        if bloom_covered < 4:
+            gaps.append({
+                "criterion": "bloom_coverage",
+                "severity": "WARN",
+                "current": f"only {bloom_covered}/6 Bloom levels represented",
+                "target": "\u22654 of 6 Bloom levels represented",
+                "fix_hint": "Add skills at underrepresented Bloom levels to improve cognitive diversity.",
+            })
+        else:
+            gaps.append({
+                "criterion": "bloom_coverage",
+                "severity": "PASS",
+                "current": f"{bloom_covered}/6 Bloom levels represented",
+                "target": "\u22654 of 6 Bloom levels represented",
+            })
+
+        # goal_relevance (SOTA: % skills on goal path)
+        goal_id = result["goal_skill_id"]
+        goal_pct = result["goal_relevance_pct"]
+        if goal_id is None:
+            gaps.append({
+                "criterion": "goal_relevance",
+                "severity": "NOTE",
+                "current": "no goal skill resolved — cannot compute",
+                "target": "\u226550% skills on path to goal",
+            })
+        elif goal_pct < 25:
+            gaps.append({
+                "criterion": "goal_relevance",
+                "severity": "FAIL",
+                "current": f"{goal_pct:.1f}% ({result['goal_reachable_count']}/{result['skills_n']} skills on goal path)",
+                "target": "\u226550% recommended, \u226525% required",
+                "fix_hint": "Many skills are not on any path to the goal — remove extraneous branches or reconnect orphaned skills.",
+            })
+            all_pass = False
+        elif goal_pct < 50:
+            gaps.append({
+                "criterion": "goal_relevance",
+                "severity": "WARN",
+                "current": f"{goal_pct:.1f}% ({result['goal_reachable_count']}/{result['skills_n']} skills on goal path)",
+                "target": "\u226550%",
+                "fix_hint": "Connect more skills to the goal path or trim extraneous branches.",
+            })
+        else:
+            gaps.append({
+                "criterion": "goal_relevance",
+                "severity": "PASS",
+                "current": f"{goal_pct:.1f}% ({result['goal_reachable_count']}/{result['skills_n']} skills on goal path)",
+                "target": "\u226550%",
+            })
+
+        # transitive_redundancy (SOTA: no redundant edges)
+        red = result["redundant_edges"]
+        red_pct = result["redundant_pct"]
+        if red_pct > 10:
+            gaps.append({
+                "criterion": "transitive_redundancy",
+                "severity": "WARN",
+                "current": f"{red_pct:.1f}% redundant edges ({red}/{result['edges_n']})",
+                "target": "\u226410% redundant edges",
+                "fix_hint": "Remove direct edges where a transitive path already exists (A\u2192B\u2192C makes A\u2192C redundant).",
+            })
+        else:
+            gaps.append({
+                "criterion": "transitive_redundancy",
+                "severity": "PASS",
+                "current": f"{red_pct:.1f}% redundant edges ({red}/{result['edges_n']})",
+                "target": "\u226410% redundant edges",
+            })
+
+        # naming_specificity (SOTA: too-generic names)
+        gn = result["generic_name_count"]
+        gn_pct = result["generic_name_pct"]
+        if gn_pct > 20:
+            gaps.append({
+                "criterion": "naming_specificity",
+                "severity": "WARN",
+                "current": f"{gn_pct:.1f}% ({gn}/{result['skills_n']}) skill names \u22642 words",
+                "target": "\u226420%",
+                "fix_hint": "Replace generic 1-2 word names (e.g. 'Variables') with more specific ones (e.g. 'GDScript Variable Scope Rules').",
+            })
+        else:
+            gaps.append({
+                "criterion": "naming_specificity",
+                "severity": "PASS",
+                "current": f"{gn_pct:.1f}% ({gn}/{result['skills_n']}) skill names \u22642 words",
+                "target": "\u226420%",
             })
 
         # Summary
