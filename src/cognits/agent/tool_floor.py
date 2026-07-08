@@ -153,6 +153,8 @@ class CheckBranchFloor(Tool):
                     "floor_confirmed": True,
                     "expanded_skills": [],
                     "expanded_count": 0,
+                    "pruned_skills": [],
+                    "pruned_count": 0,
                 },
                 ensure_ascii=False,
             )
@@ -236,6 +238,28 @@ class CheckBranchFloor(Tool):
                 if s:
                     expanded_skills.append({"skill_id": s.id, "name": s.name, "domain": s.domain})
 
+        # 7. SHRINK: prune over-decomposed sub-trees for mastered prereqs.
+        # If a prereq is mastered (confidence>=70) AND has its own prereqs
+        # (a sub-tree decomposition), the learner doesn't need those deeper
+        # decompositions — the mastered prereq becomes a floor leaf.
+        pruned_skills = []
+        for pc in prereqs_checked:
+            if pc["mastery"] == "mastered" and pc["confidence"] >= 70:
+                sub_tree_ids: set[str] = set()
+                queue: list[str] = [pc["skill_id"]]
+                while queue:
+                    current = queue.pop(0)
+                    current_prereqs = await asyncio.to_thread(
+                        self.skills.get_prerequisites, current
+                    )
+                    for sp in current_prereqs:
+                        if sp.prereq_id not in sub_tree_ids:
+                            sub_tree_ids.add(sp.prereq_id)
+                            queue.append(sp.prereq_id)
+                for sid in sorted(sub_tree_ids):
+                    await asyncio.to_thread(self.skills.delete_skill, sid)
+                    pruned_skills.append({"skill_id": sid, "mastered_prereq": pc["skill_id"]})
+
         floor_confirmed = len(expanded_skills) == 0
 
         result = json.dumps(
@@ -245,6 +269,8 @@ class CheckBranchFloor(Tool):
                 "floor_confirmed": floor_confirmed,
                 "expanded_skills": expanded_skills,
                 "expanded_count": len(expanded_skills),
+                "pruned_skills": pruned_skills,
+                "pruned_count": len(pruned_skills),
             },
             ensure_ascii=False,
         )

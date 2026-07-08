@@ -691,9 +691,11 @@ def teacher_config(
 
     Deployed as the main agent of a learning session (agent_id = 'maestro').
     Tools: DeploySubagent with documentalist + evaluator subagents,
-    plus CheckBranchFloor for per-branch floor discovery."""
+    plus CheckBranchFloor for per-branch floor discovery,
+    plus RefocusTree for goal-change re-decomposition."""
     from cognits.agent.tool_deploy import DeploySubagent
     from cognits.agent.tool_floor import CheckBranchFloor
+    from cognits.agent.tool_refocus import RefocusTree
 
     doc_cfg: dict | None = None
     if tf_client is not None:
@@ -728,7 +730,7 @@ def teacher_config(
         )
     )
 
-    # Wire CheckBranchFloor when messages repo is available.
+    # Wire CheckBranchFloor + RefocusTree when messages repo is available.
     if messages is not None:
         registry.register(
             CheckBranchFloor(
@@ -740,6 +742,20 @@ def teacher_config(
                 tf_client=tf_client,
                 reports=reports,
                 assessment=assessment,
+                session_id=session_id,
+                emit=emit,
+                tinyfish_api_key=tinyfish_api_key,
+            )
+        )
+        registry.register(
+            RefocusTree(
+                skills=skills,
+                learner_state=learner_state,
+                assessment=assessment,
+                llm_client=llm_client,
+                rag_engine=rag_engine,
+                tf_client=tf_client,
+                reports=reports,
                 session_id=session_id,
                 emit=emit,
                 tinyfish_api_key=tinyfish_api_key,

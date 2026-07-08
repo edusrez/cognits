@@ -2560,3 +2560,297 @@ def test_mastery_judge_prompt_loads(store):
     prompt = load_agent_prompt("mastery_judge")
     assert "mastery_judge" in prompt.lower()
     assert "JSON" in prompt
+
+
+# ------------------------------------------------------------------
+# Fase C — SHRINK + RESHAPE tests
+# ------------------------------------------------------------------
+
+
+def test_check_branch_floor_prunes_mastered_subtree(floor_store):
+    """A prereq judged mastered (confidence 85) with a sub-tree (2 deeper
+    skills) → the sub-tree is pruned (delete_skill), the mastered prereq
+    kept as a leaf. pruned_skills lists the 2 removed, pruned_count: 2."""
+    skills, learner_state, messages, db, assessment = floor_store
+    from cognits.agent.tool_floor import CheckBranchFloor
+    from cognits.storage.models import Skill, new_skill_id
+
+    # Build: Root → PrereqA (mastered) → SubA1 → SubA2, plus PrereqB (mastered, no sub-tree)
+    root = Skill(id=new_skill_id(), domain="test", name="Root", source="test")
+    prereq_a = Skill(id=new_skill_id(), domain="test", name="PrereqA", description="mastered prereq", source="test")
+    sub_a1 = Skill(id=new_skill_id(), domain="test", name="SubA1", description="deep sub-skill 1", source="test")
+    sub_a2 = Skill(id=new_skill_id(), domain="test", name="SubA2", description="deep sub-skill 2", source="test")
+    prereq_b = Skill(id=new_skill_id(), domain="test", name="PrereqB", description="also mastered, no sub-tree", source="test")
+    for s in (root, prereq_a, sub_a1, sub_a2, prereq_b):
+        skills.upsert(s)
+    # Root → PrereqA, Root → PrereqB
+    skills.add_edge(root.id, prereq_a.id, "prereq")
+    skills.add_edge(root.id, prereq_b.id, "prereq")
+    # PrereqA → SubA1 → SubA2 (sub-tree)
+    skills.add_edge(prereq_a.id, sub_a1.id, "prereq")
+    skills.add_edge(sub_a1.id, sub_a2.id, "prereq")
+
+    class FakeLLM:
+        async def aclose(self): pass
+        async def chat_completion_stream(self, *a, **kw): pass
+
+    class FakeTF:
+        async def aclose(self): pass
+
+    tool = CheckBranchFloor(
+        skills=skills,
+        learner_state=learner_state,
+        messages=messages,
+        llm_client=FakeLLM(),
+        rag_engine=None,
+        tf_client=FakeTF(),
+        reports=skills,
+        assessment=assessment,
+        session_id=lambda: "s_test",
+    )
+
+    # Mock mastery_judge: PrereqA=mastered, PrereqB=mastered
+    async def mock_deploy_mj(query):
+        return {"mastery": "mastered", "confidence": 85, "reasoning": "evidenced"}
+
+    tool._deploy_mastery_judge = mock_deploy_mj
+
+    # Mock deploy.execute (should not be called since no not_mastered prereqs)
+    async def mock_deploy_exec(raw_args):
+        return json.dumps({"reportId": "r_none", "title": "none", "content": "none", "summary": "none"})
+
+    tool._deploy.execute = mock_deploy_exec
+
+    result = asyncio.run(tool.execute(json.dumps({"skill_id": root.id})))
+    data = json.loads(result)
+
+    # Pruned sub-tree: sub_a1 + sub_a2
+    assert data["pruned_count"] == 2
+    assert len(data["pruned_skills"]) == 2
+    pruned_ids = {ps["skill_id"] for ps in data["pruned_skills"]}
+    assert sub_a1.id in pruned_ids
+    assert sub_a2.id in pruned_ids
+
+    # Mastered prereqs themselves kept intact
+    assert skills.get(prereq_a.id) is not None
+    assert skills.get(prereq_b.id) is not None
+
+    # Sub-tree skills deleted
+    assert skills.get(sub_a1.id) is None
+    assert skills.get(sub_a2.id) is None
+
+    # floor_confirmed true (no expansion, pruning is expected)
+    assert data["floor_confirmed"] is True
+    assert len(data["prereqs_checked"]) == 2
+    assert all(pc["mastery"] == "mastered" for pc in data["prereqs_checked"])
+
+
+def test_check_branch_floor_no_prune_if_not_mastered(floor_store):
+    """A prereq not_mastered → no pruning (only expansion, not shrink)."""
+    skills, learner_state, messages, db, assessment = floor_store
+    from cognits.agent.tool_floor import CheckBranchFloor
+    from cognits.storage.models import Skill, new_skill_id
+
+    root = Skill(id=new_skill_id(), domain="test", name="Root", source="test")
+    prereq_a = Skill(id=new_skill_id(), domain="test", name="PrereqA", description="not mastered prereq with sub-tree", source="test")
+    sub_a1 = Skill(id=new_skill_id(), domain="test", name="SubA1", description="deep sub-skill", source="test")
+    for s in (root, prereq_a, sub_a1):
+        skills.upsert(s)
+    skills.add_edge(root.id, prereq_a.id, "prereq")
+    skills.add_edge(prereq_a.id, sub_a1.id, "prereq")
+
+    class FakeLLM:
+        async def aclose(self): pass
+        async def chat_completion_stream(self, *a, **kw): pass
+
+    class FakeTF:
+        async def aclose(self): pass
+
+    tool = CheckBranchFloor(
+        skills=skills,
+        learner_state=learner_state,
+        messages=messages,
+        llm_client=FakeLLM(),
+        rag_engine=None,
+        tf_client=FakeTF(),
+        reports=skills,
+        assessment=assessment,
+        session_id=lambda: "s_test",
+    )
+
+    # Mock mastery_judge: PrereqA=not_mastered
+    async def mock_deploy_mj(query):
+        return {"mastery": "not_mastered", "confidence": 100, "reasoning": "no evidence"}
+
+    tool._deploy_mastery_judge = mock_deploy_mj
+
+    # Mock deploy.execute for branch_builder (won't actually add skills)
+    async def mock_deploy_exec(raw_args):
+        return json.dumps({"reportId": "r_test", "title": "branch built", "content": "expanded", "summary": "ok"})
+
+    tool._deploy.execute = mock_deploy_exec
+
+    result = asyncio.run(tool.execute(json.dumps({"skill_id": root.id})))
+    data = json.loads(result)
+
+    # No pruning for not_mastered prereqs
+    assert data["pruned_count"] == 0
+    assert data["pruned_skills"] == []
+
+    # Sub-tree skill is NOT deleted (it stays — learner doesn't master base so needs deeper)
+    assert skills.get(sub_a1.id) is not None
+
+    # Mastered prereq itself stays
+    assert skills.get(prereq_a.id) is not None
+
+
+def test_refocus_tree_tool_definition():
+    """RefocusTree.definitions() has name 'refocus_tree' + params new_goal,
+    learner_profile, focus."""
+    from cognits.agent.tool_refocus import RefocusTree
+
+    tool = RefocusTree.__new__(RefocusTree)
+    assert tool.name == "refocus_tree"
+    assert tool.schema["required"] == ["new_goal", "learner_profile"]
+    props = tool.schema["properties"]
+    assert "new_goal" in props
+    assert "learner_profile" in props
+    assert "focus" in props
+    assert "focus" not in tool.schema["required"]
+
+
+def test_refocus_tree_in_maestro_registry(floor_store):
+    """teacher_config has refocus_tree in the tool registry."""
+    skills, learner_state, messages, db, assessment = floor_store
+    from cognits.agent.subagents import teacher_config
+
+    class FakeLLM:
+        async def aclose(self): pass
+        async def chat_completion_stream(self, *a, **kw): pass
+
+    class FakeTF:
+        async def aclose(self): pass
+
+    cfg = teacher_config(
+        model="deepseek-v4-pro",
+        reasoning="enabled",
+        max_steps=100,
+        llm_client=FakeLLM(),
+        rag_engine=None,
+        tf_client=FakeTF(),
+        reports=skills,
+        skills=skills,
+        assessment=assessment,
+        learner_state=learner_state,
+        messages=messages,
+        pedagogy=None,
+        session_id=lambda: "s_test",
+        emit=lambda ev: None,
+        tinyfish_api_key="fake_key",
+    )
+    assert cfg.name == "maestro"
+    tool_names = set(cfg.tools._tools.keys())
+    assert "refocus_tree" in tool_names
+    assert "check_branch_floor" in tool_names
+    assert "deploy_subagent" in tool_names
+
+
+def test_refocus_tree_executes(floor_store):
+    """Mock the DeploySubagent (skill_planner) → refocus_tree returns
+    {refocused: true, new_goal, summary}."""
+    skills, learner_state, messages, db, assessment = floor_store
+    from cognits.agent.tool_refocus import RefocusTree
+
+    class FakeLLM:
+        async def aclose(self): pass
+        async def chat_completion_stream(self, *a, **kw): pass
+
+    class FakeTF:
+        async def aclose(self): pass
+
+    tool = RefocusTree(
+        skills=skills,
+        learner_state=learner_state,
+        assessment=assessment,
+        llm_client=FakeLLM(),
+        rag_engine=None,
+        tf_client=FakeTF(),
+        reports=skills,
+        session_id=lambda: "s_test",
+        emit=None,
+        tinyfish_api_key="fake_key",
+    )
+
+    # Mock DeploySubagent.execute to return skill_planner result
+    async def mock_deploy_exec(raw_args):
+        parsed = json.loads(raw_args)
+        assert parsed["type"] == "skill_planner"
+        assert "RE-FOCUS" in parsed["query"]
+        return json.dumps({
+            "reportId": "r_refocus",
+            "title": "Tree re-decomposed",
+            "content": "Re-focus complete. Added 3 new skills, pruned 2 obsolete.",
+            "summary": "Tree reshaped for new goal",
+        })
+
+    tool._deploy.execute = mock_deploy_exec
+
+    result = asyncio.run(tool.execute(json.dumps({
+        "new_goal": "Build a 3D game engine",
+        "learner_profile": "intermediate programmer, knows Python and C",
+    })))
+    data = json.loads(result)
+    assert data["refocused"] is True
+    assert data["new_goal"] == "Build a 3D game engine"
+    assert "summary" in data
+    assert data["skill_count"] >= 0
+
+
+def test_refocus_tree_with_focus(floor_store):
+    """refocus_tree with optional focus field passes it through to the
+    skill_planner query."""
+    skills, learner_state, messages, db, assessment = floor_store
+    from cognits.agent.tool_refocus import RefocusTree
+
+    class FakeLLM:
+        async def aclose(self): pass
+        async def chat_completion_stream(self, *a, **kw): pass
+
+    class FakeTF:
+        async def aclose(self): pass
+
+    tool = RefocusTree(
+        skills=skills,
+        learner_state=learner_state,
+        assessment=assessment,
+        llm_client=FakeLLM(),
+        rag_engine=None,
+        tf_client=FakeTF(),
+        reports=skills,
+        session_id=lambda: "s_test",
+        emit=None,
+        tinyfish_api_key="fake_key",
+    )
+
+    captured_query = {}
+
+    async def mock_deploy_exec(raw_args):
+        captured_query["query"] = json.loads(raw_args)["query"]
+        return json.dumps({
+            "reportId": "r_focus",
+            "title": "Focus applied",
+            "content": "Re-focused on procedural generation.",
+            "summary": "Focus reshaped",
+        })
+
+    tool._deploy.execute = mock_deploy_exec
+
+    asyncio.run(tool.execute(json.dumps({
+        "new_goal": "Build a roguelike game",
+        "focus": "procedural generation systems",
+        "learner_profile": "junior developer, knows Python",
+    })))
+    q = captured_query["query"]
+    assert "RE-FOCUS" in q
+    assert "procedural generation systems" in q
+    assert "Build a roguelike game" in q
