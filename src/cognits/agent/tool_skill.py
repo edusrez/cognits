@@ -904,6 +904,17 @@ class SkillTreeSave(Tool):
                 "target": "Acyclic",
             })
 
+        # root_floor_breadth (NOTE — informational: roots = learner's floor)
+        n_roots = len(result["roots"])
+        root_pct = (n_roots / result["skills_n"] * 100) if result["skills_n"] else 0
+        gaps.append({
+            "criterion": "root_floor_breadth",
+            "severity": "NOTE",
+            "current": f"{n_roots} roots ({root_pct:.1f}% of skills)",
+            "target": "Roots = learner's floor \u2014 broad floor = many roots, "
+                      "correct for top-down goal-directed generation",
+        })
+
         # item_quality (WARN — for evaluator, does not block passed)
         n_lq = len(result["low_quality_item_ids"])
         if n_lq > 0:

@@ -378,13 +378,8 @@ def _audit(db_path: Path, objective: str = "") -> int:
         else:
             _ok(f"Edges/skill ratio {ratio:.2f} in [1.5, 2.0]", "edges_ratio")
 
-        if root_pct > 25:
-            _flag(
-                f"{len(roots)} roots ({root_pct:.1f}%) — > 25% of skills are roots",
-                "root_pct",
-            )
-        else:
-            _ok(f"Roots: {root_pct:.1f}% (≤ 25%)", "root_pct")
+        print(f"  Roots (floor breadth): {len(roots)}/{skills_n} ({root_pct:.1f}%) \u2014 "
+              f"roots = learner's floor; broad floor = many roots, correct for top-down goal-directed generation")
 
         # Orphans: skills with no prereq AND no dependents
         is_prereq_for = set(
@@ -521,9 +516,9 @@ def _audit(db_path: Path, objective: str = "") -> int:
             ("Edges/skill ratio",
              f"{ratio:.2f}",
              "PASS" if 1.5 <= ratio <= 2.0 else "WARN"),
-            ("Roots ≤ 25%",
-             f"{root_pct:.1f}%",
-             "PASS" if root_pct <= 25 else "FAIL"),
+            ("Roots (floor breadth)",
+             f"{len(roots)} ({root_pct:.1f}%)",
+             "NOTE"),
             ("Orphans",
              f"{len(orphans)}" if len(orphans) > 0 else "none",
              "PASS" if len(orphans) == 0 else "FAIL"),
