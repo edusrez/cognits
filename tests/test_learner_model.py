@@ -232,3 +232,87 @@ def _next_review_days(state) -> float:
     if last and nxt:
         return (nxt - last).total_seconds() / 86400.0
     return state.stability or 1.0
+
+
+# --- M4: Mastery threshold 0.98 (p=0.95 is proficient, not mastered) ---
+
+def test_p_095_is_proficient_not_mastered():
+    """p_mastery=0.95 with high confidence + stability → 'proficient' (NOT 'mastered')."""
+    st = LearnerState(skill_id="k_m4")
+    st.alpha = 190.0
+    st.beta = 10.0
+    st.p_mastery = 190.0 / 200.0  # 0.95
+    st.reps = 20
+    st.stability = 30.0
+    last = _parse_iso("2026-07-01T00:00:00Z")
+    next_rev = last + datetime.timedelta(days=30)
+    st.last_review = "2026-07-01T00:00:00Z"
+    st.next_review = next_rev.strftime("%Y-%m-%dT%H:%M:%SZ")
+    st.status_enum = "proficient"
+
+    now = "2026-07-02T00:00:00Z"
+    level = mastery_level(st, now)
+    assert level == "proficient", f"Expected 'proficient' but got '{level}' — 0.95 < 0.98 threshold"
+
+
+def test_p_098_is_mastered():
+    """p_mastery=0.98 with conf≥12, R≥0.90, stability≥21 → 'mastered'."""
+    st = LearnerState(skill_id="k_m4_m")
+    st.alpha = 196.0
+    st.beta = 4.0
+    st.p_mastery = 196.0 / 200.0  # 0.98
+    st.reps = 20
+    st.stability = 25.0
+    last = _parse_iso("2026-07-01T00:00:00Z")
+    next_rev = last + datetime.timedelta(days=25)
+    st.last_review = "2026-07-01T00:00:00Z"
+    st.next_review = next_rev.strftime("%Y-%m-%dT%H:%M:%SZ")
+    st.status_enum = "proficient"
+
+    now = "2026-07-02T00:00:00Z"
+    level = mastery_level(st, now)
+    assert level == "mastered", f"Expected 'mastered' for p=0.98 with high conf + stability, got '{level}'"
+
+
+# --- M7: Stability gate (≥ 21 days required for mastered) -------------
+
+def test_low_stability_prevents_mastered():
+    """p=0.99, conf=15, R=0.95, but stability=5.0 < 21 → 'proficient' (not 'mastered')."""
+    st = LearnerState(skill_id="k_m7_low")
+    st.alpha = 198.0
+    st.beta = 2.0
+    st.p_mastery = 198.0 / 200.0  # 0.99
+    st.reps = 20
+    st.stability = 5.0
+    last = _parse_iso("2026-07-05T00:00:00Z")
+    next_rev = last + datetime.timedelta(days=5)
+    st.last_review = "2026-07-05T00:00:00Z"
+    st.next_review = next_rev.strftime("%Y-%m-%dT%H:%M:%SZ")
+    st.status_enum = "proficient"
+
+    now = "2026-07-06T00:00:00Z"
+    level = mastery_level(st, now)
+    assert level == "proficient", (
+        f"Expected 'proficient' (stability 5.0 < 21), got '{level}'"
+    )
+
+
+def test_high_stability_allows_mastered():
+    """p=0.99, conf=15, R=0.95, stability=25.0 ≥ 21 → 'mastered'."""
+    st = LearnerState(skill_id="k_m7_hi")
+    st.alpha = 198.0
+    st.beta = 2.0
+    st.p_mastery = 198.0 / 200.0  # 0.99
+    st.reps = 20
+    st.stability = 25.0
+    last = _parse_iso("2026-07-01T00:00:00Z")
+    next_rev = last + datetime.timedelta(days=25)
+    st.last_review = "2026-07-01T00:00:00Z"
+    st.next_review = next_rev.strftime("%Y-%m-%dT%H:%M:%SZ")
+    st.status_enum = "proficient"
+
+    now = "2026-07-02T00:00:00Z"
+    level = mastery_level(st, now)
+    assert level == "mastered", (
+        f"Expected 'mastered' (stability 25.0 ≥ 21, p=0.99), got '{level}'"
+    )

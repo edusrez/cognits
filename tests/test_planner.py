@@ -1,5 +1,7 @@
 """Tests for study planner frontier + scoring with alt_prereq (OR) support."""
 
+import datetime
+
 from cognits.learner import planner as P
 from cognits.storage.models import LearnerState, Skill, SkillPrereq, new_skill_id
 
@@ -353,3 +355,85 @@ def test_reduced_priority_multiplier():
     assert diff == P.USER_PRIORITY_MULTIPLIER
     # The boost shouldn't dominate all scoring dimensions.
     assert diff < score_no_priority + 8.0  # old multiplier would have been >8
+
+
+# --- M2: R-based classification ---------------------------------------
+
+def _make_iso(dt: datetime.datetime) -> str:
+    return dt.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_classify_item_r_based_review():
+    """Skill with stability=5, last_review=10 days ago → R < 0.9 → 'review'."""
+    from cognits.agent.tool_study_plan import classify_item
+
+    now = datetime.datetime(2026, 7, 10, 0, 0, 0, tzinfo=datetime.timezone.utc)
+    last = now - datetime.timedelta(days=10)
+    state = LearnerState(
+        skill_id="k_r_tiny",
+        stability=5.0,
+        last_review=_make_iso(last),
+        reps=2,
+        p_mastery=0.70,
+        alpha=5.0,
+        beta=2.0,
+    )
+    states = {state.skill_id: state}
+    result = classify_item(state.skill_id, states, now)
+    assert result == "review", f"Expected 'review' but got '{result}'"
+
+
+def test_classify_item_r_based_new():
+    """Skill with stability=30, last_review=1 day ago → R > 0.9 → 'new'."""
+    from cognits.agent.tool_study_plan import classify_item
+
+    now = datetime.datetime(2026, 7, 10, 0, 0, 0, tzinfo=datetime.timezone.utc)
+    last = now - datetime.timedelta(days=1)
+    state = LearnerState(
+        skill_id="k_r_healthy",
+        stability=30.0,
+        last_review=_make_iso(last),
+        reps=5,
+        p_mastery=0.85,
+        alpha=10.0,
+        beta=2.0,
+    )
+    states = {state.skill_id: state}
+    result = classify_item(state.skill_id, states, now)
+    assert result == "new", f"Expected 'new' but got '{result}'"
+
+
+def test_classify_item_fallback_next_review():
+    """Skill without stability but with next_review in the past → 'review' (fallback)."""
+    from cognits.agent.tool_study_plan import classify_item
+
+    now = datetime.datetime(2026, 7, 10, 0, 0, 0, tzinfo=datetime.timezone.utc)
+    state = LearnerState(
+        skill_id="k_legacy",
+        next_review="2026-07-01T00:00:00Z",
+        reps=3,
+        p_mastery=0.70,
+        alpha=5.0,
+        beta=2.0,
+    )
+    states = {state.skill_id: state}
+    result = classify_item(state.skill_id, states, now)
+    assert result == "review", f"Expected 'review' via next_review fallback, got '{result}'"
+
+
+def test_classify_item_skip_seeded_known():
+    """p_mastery ≥ MASTERY_THRESHOLD, no last_review → 'skip'."""
+    from cognits.agent.tool_study_plan import classify_item
+
+    now = datetime.datetime(2026, 7, 10, 0, 0, 0, tzinfo=datetime.timezone.utc)
+    state = LearnerState(
+        skill_id="k_seeded",
+        p_mastery=0.99,
+        alpha=198.0,
+        beta=2.0,
+        reps=1,  # seeded-only, never reviewed
+        status_enum="mastered",
+    )
+    states = {state.skill_id: state}
+    result = classify_item(state.skill_id, states, now)
+    assert result == "skip", f"Expected 'skip' for seeded-known skill, got '{result}'"

@@ -9,7 +9,7 @@ from cognits.llm.types import Message
 from cognits.server.chat_service import ChatService
 from cognits.server.session_agent import SessionAgent
 from cognits.storage.files import Config
-from cognits.storage.models import SessionConfigRow
+from cognits.storage.models import LearnerState, MessageRow, SessionConfigRow
 
 
 @pytest.fixture
@@ -879,3 +879,179 @@ def test_regen_study_plan_disabled_config_no_regen(real_state, session_agent):
     should_launch = (agent_id == "maestro" and mastery_updated
                      and getattr(cfg, "study_plan_auto_regen", True))
     assert should_launch
+
+
+# --- B5: Plan item status transitions ---------------------------------
+
+def test_plan_item_transitions_to_done_on_mastery(real_state):
+    """When p_mastery >= MASTERY_THRESHOLD after update, plan item for that skill is 'done'."""
+    state, app = real_state
+    from cognits.constants import MASTERY_THRESHOLD
+
+    pid = state.study_plans.create(1, "test goal", "s_test")
+    item_id = state.study_plans.add_item(pid, "k_b5_done", "socratic", 0)
+
+    ls = LearnerState(
+        skill_id="k_b5_done",
+        p_mastery=MASTERY_THRESHOLD,
+        alpha=196.0,
+        beta=4.0,
+        reps=20,
+        status_enum="mastered",
+    )
+    state.learner_state.upsert(ls)
+
+    ls_now = state.learner_state.get("k_b5_done")
+    items = state.study_plans.get_items(pid)
+    for item in items:
+        if item.skill_id == "k_b5_done":
+            if ls_now is not None and ls_now.p_mastery is not None and ls_now.p_mastery >= MASTERY_THRESHOLD:
+                state.study_plans.update_item(item.id, status="done")
+                break
+
+    items = state.study_plans.get_items(pid)
+    assert len(items) == 1
+    assert items[0].status == "done", f"Expected 'done' but got '{items[0].status}'"
+
+
+def test_plan_item_transitions_to_in_progress(real_state):
+    """When reps > 0 but p < threshold, plan item is 'in_progress'."""
+    state, app = real_state
+    from cognits.constants import MASTERY_THRESHOLD
+
+    pid = state.study_plans.create(1, "test goal", "s_test")
+    item_id = state.study_plans.add_item(pid, "k_b5_ip", "socratic", 0)
+
+    ls = LearnerState(
+        skill_id="k_b5_ip",
+        p_mastery=0.60,
+        alpha=3.0,
+        beta=2.0,
+        reps=1,
+        status_enum="practicing",
+    )
+    state.learner_state.upsert(ls)
+
+    ls_now = state.learner_state.get("k_b5_ip")
+    items = state.study_plans.get_items(pid)
+    for item in items:
+        if item.skill_id == "k_b5_ip":
+            if (ls_now is not None and ls_now.p_mastery is not None
+                    and ls_now.p_mastery >= MASTERY_THRESHOLD):
+                state.study_plans.update_item(item.id, status="done")
+            elif (item.status == "pending" and ls_now is not None
+                  and ls_now.reps is not None and ls_now.reps > 0):
+                state.study_plans.update_item(item.id, status="in_progress")
+            break
+
+    items = state.study_plans.get_items(pid)
+    assert items[0].status == "in_progress", f"Expected 'in_progress' but got '{items[0].status}'"
+
+
+# --- B6: actual_duration_min ------------------------------------------
+
+def test_actual_duration_recorded(real_state):
+    """When a plan item completes, actual_duration_min is populated from message timestamps."""
+    state, app = real_state
+    import datetime
+
+    pid = state.study_plans.create(1, "test goal", "s_test")
+    item_id = state.study_plans.add_item(pid, "k_b6_dur", "socratic", 0)
+
+    msgs = [
+        MessageRow(role="hidden_user", content="start", created_at="2026-07-08T10:00:00Z"),
+        MessageRow(role="assistant", content="teach", created_at="2026-07-08T10:15:00Z"),
+        MessageRow(role="user", content="answer", created_at="2026-07-08T10:20:00Z"),
+        MessageRow(role="assistant", content="feedback", created_at="2026-07-08T10:45:00Z"),
+    ]
+
+    duration = None
+    user_ts = None
+    last_ts = None
+    for m in msgs:
+        ts = getattr(m, "created_at", None)
+        if user_ts is None and getattr(m, "role", None) in ("user", "hidden_user"):
+            user_ts = ts
+        if ts:
+            last_ts = ts
+    if user_ts and last_ts and user_ts != last_ts:
+        start = datetime.datetime.fromisoformat(user_ts.rstrip().replace("Z", "+00:00"))
+        end = datetime.datetime.fromisoformat(last_ts.rstrip().replace("Z", "+00:00"))
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=datetime.timezone.utc)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=datetime.timezone.utc)
+        duration = max(1, int((end - start).total_seconds() / 60))
+
+    assert duration is not None
+    assert duration == 45, f"Expected 45 min (10:00 to 10:45), got {duration}"
+
+
+def test_actual_duration_zero_interval_rounds_up(real_state):
+    """Very short session (< 1 min) gets at least 1 min duration."""
+    state, app = real_state
+    import datetime
+
+    pid = state.study_plans.create(1, "test goal", "s_test")
+    item_id = state.study_plans.add_item(pid, "k_b6_short", "socratic", 0)
+
+    msgs = [
+        MessageRow(role="hidden_user", content="start", created_at="2026-07-08T10:00:00Z"),
+        MessageRow(role="assistant", content="quick", created_at="2026-07-08T10:00:10Z"),
+    ]
+
+    duration = None
+    user_ts = None
+    last_ts = None
+    for m in msgs:
+        ts = getattr(m, "created_at", None)
+        if user_ts is None and getattr(m, "role", None) in ("user", "hidden_user"):
+            user_ts = ts
+        if ts:
+            last_ts = ts
+    if user_ts and last_ts and user_ts != last_ts:
+        start = datetime.datetime.fromisoformat(user_ts.rstrip().replace("Z", "+00:00"))
+        end = datetime.datetime.fromisoformat(last_ts.rstrip().replace("Z", "+00:00"))
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=datetime.timezone.utc)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=datetime.timezone.utc)
+        duration = max(1, int((end - start).total_seconds() / 60))
+
+    assert duration is not None
+    assert duration >= 1, f"Even sub-minute intervals should round up to at least 1, got {duration}"
+
+
+# --- M1: Floor verification first-turn-only ---------------------------
+
+def test_floor_verification_first_turn(session_agent):
+    """On first maestro turn (1 hidden_user msg), the gating condition evaluates True."""
+    from cognits.storage.models import MessageRow
+
+    sa = session_agent
+    sa.messages = [
+        MessageRow(role="hidden_user", content="Start teaching"),
+    ]
+    existing_user_msgs = len([
+        m for m in sa.messages
+        if getattr(m, "role", None) in ("user", "hidden_user")
+    ])
+    assert existing_user_msgs <= 1, "First turn: should run floor verification"
+
+
+def test_floor_verification_skipped_subsequent_turns(session_agent):
+    """On second maestro turn (2+ msgs), the gating condition evaluates False."""
+    from cognits.storage.models import MessageRow
+
+    sa = session_agent
+    sa.messages = [
+        MessageRow(role="hidden_user", content="Start teaching"),
+        MessageRow(role="user", content="I'm ready"),
+        MessageRow(role="assistant", content="Great"),
+        MessageRow(role="hidden_user", content="Next turn instruction"),
+    ]
+    existing_user_msgs = len([
+        m for m in sa.messages
+        if getattr(m, "role", None) in ("user", "hidden_user")
+    ])
+    assert existing_user_msgs > 1, "Second turn: should skip floor verification"

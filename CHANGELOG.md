@@ -221,6 +221,128 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`dev_run_skill_tree_cases.py`**: 3-floor comparison runner with
   qualitative exam output.
 
+## [0.0.8.1] - 2026-07-08
+
+### Added
+
+#### FIRe implicit repetition credit (simplified approximation — M2.a)
+- New `skill_encompassings` table for "encompassing" edges (separate from prerequisites).
+- `SkillEncompassing` dataclass in `storage/models.py` with `to_json`/`from_json`.
+- `SkillRepository` methods: `add_encompassing`, `get_encompassings`,
+  `get_encompassing_parents`, `delete_encompassing`.
+- `apply_implicit_credit()` in `learner/model.py` — applies fractional credit to
+  encompassed skills when the advanced skill is reviewed. Only triggers when
+  retrievability < target retention (prevents over-crediting). Caps credit at
+  `cap_fraction` (0.5) of current interval × weight.
+- FIRe hook in `UpdateMastery`: on successful review (rating ≥ 2), propagates
+  direct-only encompassing credit to `next_review` of encompassed skills.
+- Encompassing edge generation instructions in `skill_planner.md` prompt.
+
+#### SOTA improvements
+- **M1 — Floor gating first-turn-only:** `CheckBranchFloor.execute()` now runs
+  only on the maestro's first turn (gated by `existing_user_msgs <= 1`), not
+  every turn. Reduces redundant LLM calls from O(N prereqs) per turn to O(N)
+  once.
+- **M2 — R-based classification:** `classify_item()` in `tool_study_plan.py` now
+  uses FSRS retrievability (`R = retrievability(elapsed, stability)`) compared
+  to `target_retention` (default 0.9). Falls back to `next_review` date when
+  stability is unavailable. Seeded-known skills (p_mastery ≥ threshold, no
+  `last_review`) still classified as "skip".
+- **M3 — mastery_judge structured rubric:** mastery_judge.md rewritten with
+  three structured dimensions (explanation, application, transfer), evidence
+  requirements, BKT state acknowledgment, and calibrated confidence thresholds.
+- **M4 — Mastery threshold 0.98 (AFL):** `MASTERY_THRESHOLD` raised from 0.95
+  to 0.98 (EDM 2025 Zhang et al. Accelerated Future Learning finding). Skills
+  with 0.95 ≤ p < 0.98 are now "proficient", not "mastered".
+- **M5 — NO_INTERVENTION signaling:** maestro.md now includes a "When NOT to
+  intervene" section targeting 30-40% silence/minimal-acknowledgment turns.
+  Specific criteria for productive silence, lightest-touch intervention ladder,
+  and self-check prompt.
+- **M6 — Preventative R-based retreat:** Pre-turn retrievability check in
+  `chat_service.py` — if R < 0.80 for a `proficient`/`mastered` skill, injects
+  an advisory retention warning into the maestro's system prompt (complements
+  the reactive 0.10 p_mastery drop retreat).
+- **M7 — Stability gate ≥ 21 days for "mastered":** `mastery_level()` in
+  `model.py` now requires `stability ≥ 21 days` as a fourth gate (alongside
+  p ≥ 0.98, confidence ≥ 12, retrievability ≥ 0.90) before classifying a skill
+  as "mastered". Prevents "mastered yesterday, forgotten tomorrow."
+
+#### Bugfixes
+- **B1 — SkillPrereq.from_json():** Added `SkillPrereq.from_json()` classmethod
+  supporting both camelCase and snake_case keys. Updated all call sites
+  (`chat_service.py`, `tool_study_plan.py`, `routes_study.py`,
+  `test_learning_flow_e2e.py`). Removed dead code at `tool_study_plan.py:152-158`.
+  **Severity: CRITICAL** — the study plan feedback loop was broken (TypeError
+  silently caught, plan never regenerated).
+- **B2 — mastery_judge híbrido (BKT auto + LLM informado):** `tool_floor.py`
+  adds auto-mastered gate (BKT p ≥ 0.95, confidence ≥ 12, reps ≥ 3 → skip LLM)
+  and auto-not-mastered gate (no evidence → skip LLM). Ambiguous cases pass
+  full BKT state to mastery_judge.
+- **B3 — Maestro prompt usa status_enum:** maestro.md scaffolding section
+  rewritten from raw p_mastery ranges (0.3/0.7/0.9) to `status_enum`-based
+  levels. `chat_service.py` injects `status_enum` + p_mastery + stability into
+  the maestro system prompt context.
+- **B4 — SeedMastery inicializa stability:** `SeedMastery.execute()` now sets
+  `state.stability` based on the seeded prior (21 days for prior ≥ 0.95, 7 for
+  ≥ 0.80, 3 for ≥ 0.60, 1 otherwise) plus neutral `difficulty = 5.0`. Prevents
+  FSRS from treating a seeded-known skill as brand-new in the review pipeline.
+- **B5 — Plan items transicionan status:** `chat_service.py` now calls
+  `plans.update_item()` to transition items: `pending → in_progress` on first
+  interaction, `in_progress → done` when p_mastery ≥ MASTERY_THRESHOLD. Runs
+  before `_regen_study_plan_async` so done items are not re-included.
+- **B6 — actual_duration_min se registra:** Computes session duration from
+  message timestamps (first user/hidden_user → last message). Populates
+  `actual_duration_min` on `update_item()` when item transitions to `done`.
+  Best-effort (skips silently if timestamps unavailable).
+
+### Changed
+
+- **MASTERY_THRESHOLD**: 0.95 → 0.98 (AFL-optimized, Zhang et al. EDM 2025).
+- **mastery_level()**: added stability gate (STABILITY_MASTERED_MIN_DAYS = 21.0)
+  as a fourth gate for "mastered" classification.
+- **classify_item()**: now R-based (retrievability vs target_retention) with
+  legacy next_review fallback. `target_retention` parameter defaults to 0.9.
+- **Floor verification**: now first-turn-only (M1), not every maestro turn.
+- **Maestro prompt**: scaffolding uses status_enum (B3); added NO_INTERVENTION
+  section (M5); living-tree section updated to reflect first-turn enforcement.
+- **mastery_judge.md**: rewritten with structured 3-dimension rubric (M3),
+  BKT state acknowledgment (B2), and conservative calibration guidelines.
+
+### Fixed
+
+- **B1 — SkillPrereq.from_json()**: `SkillPrereq(**e)` where `e` is camelCase
+  raised TypeError. Fixed with defensive `from_json()` classmethod supporting
+  both camelCase and snake_case. The entire feedback loop (regen study plan)
+  was dead on multi-skill trees with prerequisites.
+- **B2 — mastery_judge blind to BKT**: added auto-mastered/not-mastered gates
+  and BKT state injection in query. Prevents LLM overconfidence while saving
+  LLM calls for clear cases.
+- **B3 — Maestro p_mastery ranges diverging from classifier**: scaffolding
+  now uses the system's deterministic `status_enum`, not raw p_mastery ranges
+  that diverged from `model.py:mastery_level()`.
+- **B4 — Seeded skills missing stability**: `SeedMastery` now initializes
+  stability from the seed prior, preventing FSRS first-review initialization
+  for known skills.
+- **B5 — Plan items frozen at pending**: wired `update_item()` calls for
+  status transitions. Items now progress pending → in_progress → done.
+- **B6 — actual_duration_min never populated**: computed from message
+  timestamps and stored via `update_item()`.
+
+### Internal
+
+- **New constants in constants.py**: `PROFICIENT_HIGH_P = 0.95`,
+  `STABILITY_MASTERED_MIN_DAYS = 21.0`, `RETREAT_PREVENTATIVE_R = 0.80`.
+- **New table**: `skill_encompassings` (SQLite) with `(skill_id,
+  encompasses_skill_id, weight, created_at)`, primary key + two indexes.
+- **New dataclass**: `SkillEncompassing` in `storage/models.py`.
+- **New function**: `apply_implicit_credit()` in `learner/model.py`.
+- **New repo methods**: 4 methods on `SkillRepository` for encompassing CRUD.
+- **Research reports**: 4 new SOTA reports in `_research/`:
+  `2026-07-08-sota-adaptive-scheduling.md`,
+  `2026-07-08-sota-knowledge-tracing.md`,
+  `2026-07-08-sota-learner-profiling.md`,
+  `2026-07-08-fire-algorithm-deep-dive.md`.
+
 ## [0.0.7.1] - 2026-07-07
 
 ### Fixed
