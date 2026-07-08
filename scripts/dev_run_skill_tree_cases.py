@@ -309,16 +309,16 @@ def _examine(db_path: Path, case_label: str) -> None:
         # ---------------------------------------------------------------
         print(f"\n--- Item quality sample (3 items — are they good?) ---")
         item_rows = conn.execute(
-            "SELECT a.rowid, a.skill_id, a.content, a.item_type "
+            "SELECT a.rowid, a.skill_id, a.question, a.question_type "
             "FROM skill_assessment_items a ORDER BY RANDOM() LIMIT 3"
         ).fetchall()
-        for rowid, sid, content, itype in item_rows:
+        for rowid, sid, question, qtype in item_rows:
             name = skill_name.get(sid, sid)[:80]
             bloom = skill_bloom.get(sid, "?")
-            content_short = (content or "")[:200]
+            question_short = (question or "")[:200]
             print(f"    Skill [{bloom}]: {name}")
-            print(f"      Type: {itype or '?'}")
-            print(f"      Content: {content_short}")
+            print(f"      Type: {qtype or '?'}")
+            print(f"      Question: {question_short}")
 
         # ---------------------------------------------------------------
         # Floor calibration (does seeded mastery match profile claims?)
@@ -465,9 +465,9 @@ def _depth_from_root(
 
 
 def _items_for_skill(conn: sqlite3.Connection, skill_id: str) -> list[str]:
-    """Return the content of assessment items for a skill."""
+    """Return the question text of assessment items for a skill."""
     rows = conn.execute(
-        "SELECT content FROM skill_assessment_items WHERE skill_id = ?",
+        "SELECT question FROM skill_assessment_items WHERE skill_id = ?",
         (skill_id,),
     ).fetchall()
     return [r[0] or "" for r in rows]
