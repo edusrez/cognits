@@ -118,9 +118,20 @@ def _summarize_tree(db: "Database") -> None:
     print(f"Seeded mastery: {seed_n} skills")
 
 
-async def main(argv: list[str] | None = None) -> None:
-    args = _parse_args(argv)
+async def generate(
+    objective: str,
+    profile: str,
+    config_dir: Path,
+    data_dir: Path,
+    *,
+    fresh: bool = False,
+    session_id: str = "dev-build",
+    emit: "Callable[[dict], None] | None" = None,
+) -> "Database":
+    """Generate a skill tree and return the open Database.
 
+    The caller is responsible for calling ``db.shutdown()`` when done.
+    """
     from cognits.storage.files import Store
     from cognits.storage.database import Database
     from cognits.storage.skills import SkillRepository
@@ -136,12 +147,12 @@ async def main(argv: list[str] | None = None) -> None:
     from cognits.llm.types import Message, ROLE_USER
     from cognits.constants import DEFAULT_MODEL, SKILL_PLANNER_MAX_STEPS
 
-    config_dir = Path(args.config_dir)
-    data_dir = Path(args.data_dir)
+    local_emit = emit if emit is not None else _emit
+
     data_dir.mkdir(parents=True, exist_ok=True)
     db_path = data_dir / "cognits.db"
 
-    if args.fresh:
+    if fresh:
         for suffix in ("", "-wal", "-shm", "-journal"):
             p = data_dir / f"cognits.db{suffix}"
             if p.exists():
@@ -154,86 +165,99 @@ async def main(argv: list[str] | None = None) -> None:
     elif db_path.exists():
         print(f"[INIT] DB exists at {db_path} — resuming incremental build")
 
-    db: Database | None = None
+    # 1. Load config (decrypts API keys).
+    store = Store(config_dir)
+    cfg = store.load_config()
+    print(f"[INIT] Config loaded from {config_dir}")
+    print(f"       LLM key: {'present' if cfg.llm_api_key else 'MISSING'}")
+    print(f"       TinyFish key: {'present' if cfg.tinyfish_api_key else 'MISSING'}")
+    print(f"       Config model: {cfg.llm_model or '(not set — will use default)'}")
+
+    if not cfg.llm_api_key:
+        print("[FATAL] No LLM API key found in config.json — aborting.")
+        sys.exit(1)
+
+    # 2. Open DB + construct repos.
+    db = Database(db_path)
+    skills_repo = SkillRepository(db)
+    learner_state_repo = LearnerStateRepository(db)
+    reports_repo = ReportRepository(db)
+    study_plans_repo = StudyPlanRepository(db)
+    assessment_repo = AssessmentItemRepository(db)
+
+    # 3. Create clients.
+    llm_client = DeepSeekClient(cfg.llm_api_key)
+    tf_client = TinyfishClient(cfg.tinyfish_api_key)
+
+    print("\n[RAG] Disabled — reports will be saved but not indexed during this "
+          "run.\n       Run `cognits` later to backfill-index via the startup scan.\n")
+
+    # 4. Build the skill_planner agent config.
+    planner_cfg = skill_planner_config(
+        model=DEFAULT_MODEL,
+        reasoning="max",
+        max_steps=SKILL_PLANNER_MAX_STEPS,
+        llm_client=llm_client,
+        rag_engine=None,
+        tf_client=tf_client,
+        reports=reports_repo,
+        skills=skills_repo,
+        assessment=assessment_repo,
+        learner_state=learner_state_repo,
+        session_id=lambda: session_id,
+        emit=local_emit,
+        tinyfish_api_key=cfg.tinyfish_api_key,
+        tool_emit=local_emit,
+    )
+    # Ensure model+reasoning are set (mirrors tool_deploy.py:153)
+    planner_cfg = dataclasses.replace(
+        planner_cfg, model=DEFAULT_MODEL, reasoning="max"
+    )
+
+    # 5. Construct message.
+    prompt = (
+        f"Build a skill tree for: {objective}\n\n"
+        f"Learner profile:\n{profile}"
+    )
+    messages = [Message(role=ROLE_USER, content=prompt)]
+
+    # 6. Run agent.
+    agent = Agent(planner_cfg, llm_client, tracer=NoopTracer())
+    print(f"\n[RUN] Starting skill_planner (max_steps={planner_cfg.max_steps}, "
+          f"model={planner_cfg.model}, reasoning={planner_cfg.reasoning})")
+    print(f"      Objective: {objective[:120]}...")
+    print(f"      Session: {session_id}\n")
+
+    result = await agent.run(messages, emit=local_emit)
+
+    # 7. Summarize.
+    print(f"\n[DONE] Agent finished.")
+    short = result[:2000]
+    print(f"\n--- Agent output (first 2000 chars) ---\n{short}")
+    if len(result) > 2000:
+        print(f"\n... (truncated, total {len(result)} chars)")
+
+    _summarize_tree(db)
+
+    return db
+
+
+async def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
+
+    config_dir = Path(args.config_dir)
+    data_dir = Path(args.data_dir)
+
+    db = None
     try:
-        # 1. Load config (decrypts API keys).
-        store = Store(config_dir)
-        cfg = store.load_config()
-        print(f"[INIT] Config loaded from {config_dir}")
-        print(f"       LLM key: {'present' if cfg.llm_api_key else 'MISSING'}")
-        print(f"       TinyFish key: {'present' if cfg.tinyfish_api_key else 'MISSING'}")
-        print(f"       Config model: {cfg.llm_model or '(not set — will use default)'}")
-
-        if not cfg.llm_api_key:
-            print("[FATAL] No LLM API key found in config.json — aborting.")
-            sys.exit(1)
-
-        # 2. Open DB + construct repos.
-        db = Database(db_path)
-        skills_repo = SkillRepository(db)
-        learner_state_repo = LearnerStateRepository(db)
-        reports_repo = ReportRepository(db)
-        study_plans_repo = StudyPlanRepository(db)
-        assessment_repo = AssessmentItemRepository(db)
-
-        # 3. Create clients.
-        llm_client = DeepSeekClient(cfg.llm_api_key)
-        tf_client = TinyfishClient(cfg.tinyfish_api_key)
-
-        print("\n[RAG] Disabled — reports will be saved but not indexed during this "
-              "run.\n       Run `cognits` later to backfill-index via the startup scan.\n")
-
-        # 4. Build the skill_planner agent config.
-        planner_cfg = skill_planner_config(
-            model=DEFAULT_MODEL,
-            reasoning="max",
-            max_steps=SKILL_PLANNER_MAX_STEPS,
-            llm_client=llm_client,
-            rag_engine=None,
-            tf_client=tf_client,
-            reports=reports_repo,
-            skills=skills_repo,
-            assessment=assessment_repo,
-            learner_state=learner_state_repo,
-            session_id=lambda: args.session_id,
-            emit=_emit,
-            tinyfish_api_key=cfg.tinyfish_api_key,
-            tool_emit=_emit,
+        db = await generate(
+            objective=args.objective,
+            profile=args.profile,
+            config_dir=config_dir,
+            data_dir=data_dir,
+            fresh=args.fresh,
+            session_id=args.session_id,
         )
-        # Ensure model+reasoning are set (mirrors tool_deploy.py:153)
-        planner_cfg = dataclasses.replace(
-            planner_cfg, model=DEFAULT_MODEL, reasoning="max"
-        )
-
-        # 5. Construct message.
-        prompt = (
-            f"Build a skill tree for: {args.objective}\n\n"
-            f"Learner profile:\n{args.profile}"
-        )
-        messages = [Message(role=ROLE_USER, content=prompt)]
-
-        # 6. Run agent.
-        agent = Agent(planner_cfg, llm_client, tracer=NoopTracer())
-        print(f"\n[RUN] Starting skill_planner (max_steps={planner_cfg.max_steps}, "
-              f"model={planner_cfg.model}, reasoning={planner_cfg.reasoning})")
-        print(f"      Objective: {args.objective[:120]}...")
-        print(f"      Session: {args.session_id}\n")
-
-        result = await agent.run(messages, emit=_emit)
-
-        # 7. Summarize.
-        print(f"\n[DONE] Agent finished.")
-        short = result[:2000]
-        print(f"\n--- Agent output (first 2000 chars) ---\n{short}")
-        if len(result) > 2000:
-            print(f"\n... (truncated, total {len(result)} chars)")
-
-        _summarize_tree(db)
-
-        if db:
-            db.shutdown()
-            db = None
-
     except Exception:
         traceback.print_exc()
     finally:
