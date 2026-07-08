@@ -124,6 +124,186 @@ async def _run_session_namer(
 
 
 
+# ---------------------------------------------------------------------------
+# Helpers for orchestrator study plan push and maestro floor enforcement
+# ---------------------------------------------------------------------------
+
+from cognits.agent.tool_study_plan import classify_item as _classify_item
+
+
+async def _fetch_plan_summary(st) -> tuple:
+    """Fetch the active study plan with classified items for orchestrator injection.
+
+    All DB I/O is inside asyncio.to_thread per AGENTS.md invariant.
+    Returns (plan, classified_items, summary_string).
+    """
+    from datetime import datetime, timezone
+
+    def _fetch():
+        plans = st.study_plans
+        if plans is None:
+            return None, [], ""
+
+        plan = plans.get_active()
+        if plan is None:
+            return None, [], ""
+
+        items = plans.get_items(plan.id)
+        if not items:
+            return plan, [], "empty plan"
+
+        states = st.learner_state.get_all()
+
+        # Pre-fetch skill names inside the to_thread closure
+        classified = []
+        total_new = 0
+        total_review = 0
+        total_estimated_min = 0
+        now = datetime.now(timezone.utc)
+
+        for item in items:
+            sk = st.skills.get(item.skill_id)
+            name = sk.name if sk else item.skill_id
+            item_type = _classify_item(item.skill_id, states, now)
+            if item_type == "skip":
+                continue
+            duration = item.estimated_duration_min or 0
+
+            classified.append({
+                "skill_id": item.skill_id,
+                "name": name,
+                "type": item_type,
+                "order_index": item.order_index,
+                "estimated_duration_min": duration,
+                "mode": item.mode,
+            })
+
+            if item_type == "review":
+                total_review += 1
+            else:
+                total_new += 1
+            total_estimated_min += duration
+
+        # Build summary string
+        parts = []
+        if total_new:
+            parts.append(f"{total_new} new skill{'s' if total_new != 1 else ''}")
+        if total_review:
+            parts.append(f"{total_review} review skill{'s' if total_review != 1 else ''}")
+        if total_estimated_min:
+            parts.append(f"~{total_estimated_min} min total")
+        summary = " + ".join(parts) if parts else "empty plan"
+
+        return plan, classified, summary
+
+    return await asyncio.to_thread(_fetch)
+
+
+def _format_plan_for_prompt(items, plan, st) -> str:
+    """Format the study plan as a Markdown section for the orchestrator's system prompt."""
+    if not items:
+        return ""
+
+    lines = [
+        "## Current Study Plan (deterministic \u2014 follow this priority)",
+        "",
+        f"**Goal:** {plan.goal or '(no goal set)'}",
+    ]
+
+    new_count = sum(1 for i in items if i.get("type") == "new")
+    review_count = sum(1 for i in items if i.get("type") == "review")
+    total_min = sum(i.get("estimated_duration_min", 0) for i in items)
+
+    summary_parts = []
+    if new_count:
+        summary_parts.append(f"{new_count} new skill{'s' if new_count != 1 else ''}")
+    if review_count:
+        summary_parts.append(f"{review_count} review skill{'s' if review_count != 1 else ''}")
+    if total_min:
+        summary_parts.append(f"~{total_min} min total")
+
+    lines.append(
+        f"**Summary:** {', '.join(summary_parts)}"
+        if summary_parts
+        else "**Summary:** empty plan"
+    )
+    lines.append("")
+    lines.append("**Next items (by priority):**")
+
+    for i, item in enumerate(items, 1):
+        type_label = "[Nuevo]" if item.get("type") == "new" else "[Repaso]"
+        name = item.get("name", item.get("skill_id", "?"))
+        sid = item.get("skill_id", "?")
+        mode = item.get("mode", "?")
+        duration = item.get("estimated_duration_min", 0)
+        dur_str = f" \u2014 ~{duration} min" if duration else ""
+
+        lines.append(f"{i}. {type_label} {name} ({sid}) \u2014 stage: {mode}{dur_str}")
+
+    lines.append("")
+    lines.append(
+        "Follow this priority order. Do not re-derive the frontier from the "
+        "skill tree summary."
+    )
+
+    return "\n".join(lines)
+
+
+def _format_floor_report(floor_data: dict) -> str:
+    """Format the floor check result as a Markdown section for the maestro's system prompt."""
+    branch_root = floor_data.get("branch_root", "?")
+    floor_confirmed = floor_data.get("floor_confirmed", True)
+    prereqs_checked = floor_data.get("prereqs_checked", [])
+    expanded = floor_data.get("expanded_skills", [])
+    pruned = floor_data.get("pruned_skills", [])
+
+    lines = [
+        "## Floor Verification (system-enforced)",
+        "",
+        "The learner's floor has been re-verified before starting this branch.",
+        "",
+        f"**Branch root:** {branch_root}",
+        f"**Floor confirmed:** {str(floor_confirmed).lower()}",
+        "",
+    ]
+
+    if prereqs_checked:
+        lines.append("**Prerequisites checked:**")
+        for pc in prereqs_checked:
+            name = pc.get("name", "") or pc.get("skill_id", "?")
+            sid = pc.get("skill_id", "?")
+            mastery = pc.get("mastery", "?")
+            confidence = pc.get("confidence", 0)
+            lines.append(f"- {name} ({sid}): {mastery} (confidence {confidence}%)")
+        lines.append("")
+
+    if expanded:
+        lines.append(
+            "**Expanded skills (prerequisites not mastered \u2014 teach these first):**"
+        )
+        for es in expanded:
+            name = es.get("name", es.get("skill_id", "?"))
+            sid = es.get("skill_id", "?")
+            lines.append(f"- {name} ({sid})")
+        lines.append("")
+
+    if pruned:
+        lines.append("**Pruned skills (mastered \u2014 removed over-decomposition):**")
+        for ps in pruned:
+            sid = ps.get("skill_id", "?")
+            lines.append(f"- {sid}")
+        lines.append("")
+
+    if expanded:
+        lines.append(
+            "If expanded skills exist, teach those prerequisites first before "
+            "the branch root."
+        )
+
+    return "\n".join(lines)
+
+
+
 log = logging.getLogger("cognits.chat")
 
 
@@ -210,6 +390,48 @@ class ChatService:
                 previous_p_mastery = ls.p_mastery if ls is not None else None
                 self.system_prompt += "\n\n" + engine.prompt_context()
                 pedagogy_engine = engine
+
+            # --- study plan injection (orchestrator only, push not pull) ---
+            if self.agent_id == "orchestrator":
+                try:
+                    plan, items, plan_summary = await _fetch_plan_summary(st)
+                    if plan is not None and items:
+                        plan_text = _format_plan_for_prompt(items, plan, st)
+                        if plan_text:
+                            self.system_prompt += "\n\n" + plan_text
+                except Exception as e:
+                    log.warning("orchestrator: plan injection failed: %s", e)
+
+            # --- system-enforced floor verification (maestro only) ---
+            if self.agent_id == "maestro" and self.skill_id:
+                try:
+                    from cognits.agent.tool_floor import CheckBranchFloor
+                    floor_tool = CheckBranchFloor(
+                        skills=st.skills,
+                        learner_state=st.learner_state,
+                        messages=st.messages,
+                        llm_client=llm_client,
+                        rag_engine=st.rag_or_none,
+                        tf_client=tf_client,
+                        reports=st.reports,
+                        assessment=st.assessment,
+                        session_id=lambda: sid,
+                        emit=process_event,
+                        tinyfish_api_key=cfg.tinyfish_api_key,
+                    )
+                    floor_result_raw = await floor_tool.execute(
+                        json.dumps({"skill_id": self.skill_id})
+                    )
+                    floor_data = json.loads(floor_result_raw)
+                    if not floor_data.get("error"):
+                        floor_confirmed = floor_data.get("floor_confirmed", True)
+                        expanded = floor_data.get("expanded_skills", [])
+                        pruned = floor_data.get("pruned_skills", [])
+                        if expanded or pruned or not floor_confirmed:
+                            floor_text = _format_floor_report(floor_data)
+                            self.system_prompt += "\n\n" + floor_text
+                except Exception as e:
+                    log.warning("maestro: floor verification failed: %s", e)
 
             max_steps = cfg.max_steps or ORCHESTRATOR_MAX_STEPS
             ag = Agent(
@@ -572,8 +794,8 @@ class ChatService:
                 llm_client,
                 st.rag_or_none,
                 tf_client,
-                st.reports, st.skills, st.assessment, st.learner_state, st.pedagogy,
-                lambda: sid, process_event,
+                st.reports, st.skills, st.assessment, st.learner_state, st.messages,
+                session_id=lambda: sid, emit=process_event,
                 system_prompt_override=te_prompt,
                 tinyfish_api_key=cfg.tinyfish_api_key,
                 suspended_subagents=st.suspended_subagents,
@@ -630,6 +852,49 @@ class ChatService:
         if self.agent_id == "maestro":
             registry.register(
                 ApplyProfile(store=st.store, session_id=sid, emit=process_event)
+            )
+            from cognits.agent.tool_floor import CheckBranchFloor
+            from cognits.agent.tool_refocus import RefocusTree
+            registry.register(
+                CheckBranchFloor(
+                    skills=st.skills,
+                    learner_state=st.learner_state,
+                    messages=st.messages,
+                    llm_client=llm_client,
+                    rag_engine=st.rag_or_none,
+                    tf_client=tf_client,
+                    reports=st.reports,
+                    assessment=st.assessment,
+                    session_id=lambda: sid,
+                    emit=process_event,
+                    tinyfish_api_key=cfg.tinyfish_api_key,
+                )
+            )
+            registry.register(
+                RefocusTree(
+                    skills=st.skills,
+                    learner_state=st.learner_state,
+                    assessment=st.assessment,
+                    llm_client=llm_client,
+                    rag_engine=st.rag_or_none,
+                    tf_client=tf_client,
+                    reports=st.reports,
+                    session_id=lambda: sid,
+                    emit=process_event,
+                    tinyfish_api_key=cfg.tinyfish_api_key,
+                )
+            )
+
+        if self.agent_id in ("orchestrator", "maestro"):
+            from cognits.agent.tool_study_plan import GetCurrentStudyPlan
+            registry.register(
+                GetCurrentStudyPlan(
+                    study_plans=st.study_plans,
+                    skills=st.skills,
+                    learner_state=st.learner_state,
+                    session_id=lambda: sid,
+                    emit=process_event,
+                )
             )
 
         return registry
