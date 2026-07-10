@@ -107,6 +107,32 @@ def _estimate_duration(difficulty: float, bloom_level: str) -> int:
     return round(base * bloom_mult / 5) * 5
 
 
+def _compute_mastered(
+    skills: list[Skill],
+    edges: list[SkillPrereq],
+    states: dict[str, LearnerState],
+) -> set[str]:
+    """Compute which skills are considered mastered using adaptive
+    proficiency thresholds.
+
+    Skills with many downstream dependents (as hard/alt prereqs) need higher
+    confidence: 0 deps→0.75, 5 deps→0.95 (capped).
+
+    Mirrors the frontier's own mastered definition — call once and reuse
+    to keep scoring (multi-path bonus) consistent with frontier gating.
+    """
+    dependent_count: dict[str, int] = {}
+    for e in edges:
+        if e.edge_type in ("prereq", "alt_prereq"):
+            dependent_count[e.prereq_id] = dependent_count.get(e.prereq_id, 0) + 1
+
+    return {
+        sid
+        for sid, st in states.items()
+        if st.p_mastery >= _proficient_threshold(sid, dependent_count)
+    }
+
+
 # --- frontier ---------------------------------------------------------
 
 def compute_frontier(
@@ -129,17 +155,7 @@ def compute_frontier(
     Uses adaptive proficiency thresholds: skills with many downstream
     dependents require higher confidence (smoothly scaled: 0 deps→0.75,
     5 deps→0.95, capped at 0.95)."""
-    # Count how many skills depend on each skill (as hard prereq).
-    dependent_count: dict[str, int] = {}
-    for e in edges:
-        if e.edge_type in ("prereq", "alt_prereq"):
-            dependent_count[e.prereq_id] = dependent_count.get(e.prereq_id, 0) + 1
-
-    mastered: set[str] = {
-        sid
-        for sid, st in states.items()
-        if st.p_mastery >= _proficient_threshold(sid, dependent_count)
-    }
+    mastered = _compute_mastered(skills, edges, states)
 
     # Build per-skill prerequisite structure:
     #   prereqs_by_skill[sid] = {
@@ -318,6 +334,7 @@ def generate_plan(
 ) -> list[StudyPlanItem]:
     """Compute frontier, score & rank, produce an ordered StudyPlanItem list."""
     frontier = compute_frontier(skills, edges, states)
+    mastered = _compute_mastered(skills, edges, states)
 
     # Score only frontier skills.
     goal_distances = compute_goal_distances(edges, goal, skills)
@@ -340,8 +357,7 @@ def generate_plan(
     for sid, groups in alt_groups_by_skill.items():
         for gid, members in groups.items():
             if any(
-                states.get(p) is not None
-                and states[p].p_mastery >= MASTERY_THRESHOLD
+                p in mastered
                 for p in members
             ):
                 alt_satisfied[sid] = True
